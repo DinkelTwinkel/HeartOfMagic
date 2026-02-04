@@ -1,5 +1,5 @@
 /**
- * SkyrimNet Integration Module
+ * LLM Integration Module
  * Handles LLM-driven tree generation and AI features
  * 
  * Depends on:
@@ -11,14 +11,14 @@
  * - modules/uiHelpers.js (updateStatus, setStatusIcon)
  * 
  * Exports (global):
- * - initializeSkyrimNetAPI()
+ * - initializeLLMAPI()
  * - onGenerateTrees()
  * - onGenerateGrowthStyles()
  * - suggestSchoolColorsWithLLM()
  */
 
 // =============================================================================
-// SKYRIMNET INTEGRATION
+// LLM INTEGRATION
 // =============================================================================
 
 // Helper to append progress messages to output textarea
@@ -54,14 +54,14 @@ function clearOutputWithMessage(message) {
     }
 }
 
-function checkSkyrimNetAvailability() {
-    console.log('[SpellLearning] Checking SkyrimNet availability...');
+function checkLLMAvailability() {
+    console.log('[SpellLearning] Checking LLM availability...');
     if (window.callCpp) {
-        window.callCpp('CheckSkyrimNet', '');
+        window.callCpp('CheckLLM', '');
     } else {
         console.log('[SpellLearning] window.callCpp not available yet');
         // Retry after a short delay
-        setTimeout(checkSkyrimNetAvailability, 500);
+        setTimeout(checkLLMAvailability, 500);
     }
 }
 
@@ -120,7 +120,7 @@ function sendCorrectionRequest(schoolName, originalResponse, reachabilityInfo) {
     appendToOutput('>>> CORRECTION: ' + schoolName + ' (fixing ' + reachabilityInfo.unreachable.length + ' nodes)');
     
     if (window.callCpp) {
-        window.callCpp('SkyrimNetGenerate', JSON.stringify(request));
+        window.callCpp('LLMGenerate', JSON.stringify(request));
     }
 }
 
@@ -174,7 +174,7 @@ function sendMissingSpellsCorrectionRequest(schoolName, originalResponse, missin
     appendToOutput('>>> CORRECTION: ' + schoolName + ' (adding ' + missingSpells.length + ' missing spells)');
     
     if (window.callCpp) {
-        window.callCpp('SkyrimNetGenerate', JSON.stringify(request));
+        window.callCpp('LLMGenerate', JSON.stringify(request));
     }
 }
 
@@ -218,19 +218,19 @@ function findMissingSpells(treeData, schoolName, expectedFormIds, fullSpellData)
     };
 }
 
-window.onSkyrimNetStatus = function(statusStr) {
-    console.log('[SpellLearning] SkyrimNet status raw:', statusStr);
+window.onLLMStatus = function(statusStr) {
+    console.log('[SpellLearning] LLM status raw:', statusStr);
     
     var status;
     try {
         status = typeof statusStr === 'string' ? JSON.parse(statusStr) : statusStr;
     } catch (e) {
-        console.error('[SpellLearning] Failed to parse SkyrimNet status:', e);
+        console.error('[SpellLearning] Failed to parse LLM status:', e);
         return;
     }
     
-    console.log('[SpellLearning] SkyrimNet status parsed:', status);
-    state.skyrimNetAvailable = status.available;
+    console.log('[SpellLearning] LLM status parsed:', status);
+    state.llmAvailable = status.available;
     
     console.log('[SpellLearning] API status updated, available:', status.available);
 };
@@ -289,8 +289,8 @@ function startFullAutoGenerate() {
     }
     
     // Build queue
-    state.skyrimNetQueue = [];
-    state.skyrimNetStats = {
+    state.llmQueue = [];
+    state.llmStats = {
         totalSpells: 0,
         processedSpells: 0,
         failedSchools: [],
@@ -301,18 +301,18 @@ function startFullAutoGenerate() {
     var schoolCount = 0;
     for (var school in schoolSpells) {
         if (schoolSpells[school].length > 0) {
-            state.skyrimNetQueue.push({
+            state.llmQueue.push({
                 school: school,
                 spells: schoolSpells[school]
             });
-            state.skyrimNetStats.totalSpells += schoolSpells[school].length;
+            state.llmStats.totalSpells += schoolSpells[school].length;
             schoolCount++;
         }
     }
     
     console.log('[SpellLearning] Found ' + schoolCount + ' schools:', Object.keys(schoolSpells).join(', '));
     
-    if (state.skyrimNetQueue.length === 0) {
+    if (state.llmQueue.length === 0) {
         updateStatus('No spells to process');
         setStatusIcon('*');
         resetFullAutoButton();
@@ -320,17 +320,17 @@ function startFullAutoGenerate() {
     }
     
     console.log('[SpellLearning] Full Auto: Queued ' + schoolCount + ' schools');
-    state.skyrimNetGenerating = true;
+    state.llmGenerating = true;
     
     // Clear output and show generation header
     clearOutputWithMessage('=== TREE GENERATION STARTED ===');
     appendToOutput('Schools to generate: ' + schoolCount);
-    appendToOutput('Total spells: ' + state.skyrimNetStats.totalSpells);
+    appendToOutput('Total spells: ' + state.llmStats.totalSpells);
     appendToOutput('Model: ' + getEffectiveModel());
     appendToOutput('');
     
     // Process first school
-    processNextSkyrimNetSchool();
+    processNextLLMSchool();
 }
 
 function resetFullAutoButton() {
@@ -371,37 +371,37 @@ function retryFailedSchools() {
     }
     
     // Build queue from failed schools
-    state.skyrimNetQueue = [];
-    state.skyrimNetStats = {
+    state.llmQueue = [];
+    state.llmStats = {
         totalSpells: 0,
         processedSpells: 0,
         failedSchools: [],
-        successSchools: state.skyrimNetStats.successSchools || [],  // Keep previous successes
+        successSchools: state.llmStats.successSchools || [],  // Keep previous successes
         needsAttentionSchools: []  // Schools with unreachable nodes after auto-fix
     };
     
     state.lastFailedSchools.forEach(function(school) {
         var spells = state.lastSpellData.spells.filter(function(s) { return s.school === school; });
         if (spells.length > 0) {
-            state.skyrimNetQueue.push({ school: school, spells: spells });
-            state.skyrimNetStats.totalSpells += spells.length;
+            state.llmQueue.push({ school: school, spells: spells });
+            state.llmStats.totalSpells += spells.length;
         }
     });
     
-    if (state.skyrimNetQueue.length === 0) {
+    if (state.llmQueue.length === 0) {
         updateStatus('No spells found for failed schools');
         resetFullAutoButton();
         return;
     }
     
     state.lastFailedSchools = [];  // Clear the retry list
-    state.skyrimNetGenerating = true;
+    state.llmGenerating = true;
     state.fullAutoMode = true;
     
-    updateStatus('Retrying ' + state.skyrimNetQueue.length + ' failed school(s)...');
+    updateStatus('Retrying ' + state.llmQueue.length + ' failed school(s)...');
     
     // Start processing
-    processNextSkyrimNetSchool();
+    processNextLLMSchool();
 }
 
 /**
@@ -414,7 +414,7 @@ function retrySpecificSchool(schoolName) {
         return;
     }
     
-    if (state.skyrimNetGenerating) {
+    if (state.llmGenerating) {
         console.warn('[SpellLearning] Generation already in progress');
         return;
     }
@@ -442,28 +442,28 @@ function retrySpecificSchool(schoolName) {
     appendToOutput('');
     
     // Initialize stats for single school retry
-    state.skyrimNetQueue = [{ school: schoolName, spells: spells }];
-    state.skyrimNetStats = {
+    state.llmQueue = [{ school: schoolName, spells: spells }];
+    state.llmStats = {
         totalSpells: spells.length,
         processedSpells: 0,
         failedSchools: [],
-        successSchools: state.skyrimNetStats.successSchools.filter(function(s) { return s !== schoolName; }), // Remove this school from success
-        needsAttentionSchools: state.skyrimNetStats.needsAttentionSchools.filter(function(s) { return s.school !== schoolName; }) // Remove from needs attention
+        successSchools: state.llmStats.successSchools.filter(function(s) { return s !== schoolName; }), // Remove this school from success
+        needsAttentionSchools: state.llmStats.needsAttentionSchools.filter(function(s) { return s.school !== schoolName; }) // Remove from needs attention
     };
     
-    state.skyrimNetGenerating = true;
-    state.skyrimNetCorrectionCount = 0;
-    state.skyrimNetRetryCount = 0;
+    state.llmGenerating = true;
+    state.llmCorrectionCount = 0;
+    state.llmRetryCount = 0;
     
     // Disable buttons during retry
-    var btn = document.getElementById('skyrimnet-auto-btn');
+    var btn = document.getElementById('llm-auto-btn');
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<span class="btn-icon">⏳</span> Retrying ' + schoolName + '...';
     }
     
     // Start processing
-    processNextSkyrimNetSchool();
+    processNextLLMSchool();
 }
 
 // Make retrySpecificSchool available globally for UI buttons
@@ -480,14 +480,14 @@ function getSchoolsNeedingAttention() {
 // Make available globally
 window.getSchoolsNeedingAttention = getSchoolsNeedingAttention;
 
-function startSkyrimNetAutoGenerate() {
+function startLLMAutoGenerate() {
     // First, check if we have spell data
     if (!state.lastSpellData) {
         setTreeStatus('Scan spells first (Spell Scan tab)');
         return;
     }
     
-    console.log('[SpellLearning] Starting SkyrimNet auto-generation');
+    console.log('[SpellLearning] Starting LLM auto-generation');
     
     // state.lastSpellData is already a parsed object (set in updateSpellData)
     var spellData = state.lastSpellData;
@@ -527,8 +527,8 @@ function startSkyrimNetAutoGenerate() {
     }
     
     // Build queue of schools with spells
-    state.skyrimNetQueue = [];
-    state.skyrimNetStats = {
+    state.llmQueue = [];
+    state.llmStats = {
         totalSpells: 0,
         processedSpells: 0,
         failedSchools: [],
@@ -538,52 +538,52 @@ function startSkyrimNetAutoGenerate() {
     
     for (var school in schoolSpells) {
         if (schoolSpells[school].length > 0) {
-            state.skyrimNetQueue.push({
+            state.llmQueue.push({
                 school: school,
                 spells: schoolSpells[school]
             });
-            state.skyrimNetStats.totalSpells += schoolSpells[school].length;
+            state.llmStats.totalSpells += schoolSpells[school].length;
         }
     }
     
-    if (state.skyrimNetQueue.length === 0) {
+    if (state.llmQueue.length === 0) {
         setTreeStatus('No spells to process');
         return;
     }
     
-    console.log('[SpellLearning] Queued ' + state.skyrimNetQueue.length + ' schools: ' + 
-                Object.keys(schoolSpells).join(', ') + ' (' + state.skyrimNetStats.totalSpells + ' total spells)');
+    console.log('[SpellLearning] Queued ' + state.llmQueue.length + ' schools: ' + 
+                Object.keys(schoolSpells).join(', ') + ' (' + state.llmStats.totalSpells + ' total spells)');
     
-    state.skyrimNetGenerating = true;
+    state.llmGenerating = true;
     
     // Disable the button during generation
-    var btn = document.getElementById('skyrimnet-auto-btn');
+    var btn = document.getElementById('llm-auto-btn');
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<span class="btn-icon">â³</span> Generating...';
     }
     
     // Start processing first school
-    processNextSkyrimNetSchool();
+    processNextLLMSchool();
 }
 
-function processNextSkyrimNetSchool() {
-    if (state.skyrimNetQueue.length === 0) {
+function processNextLLMSchool() {
+    if (state.llmQueue.length === 0) {
         // All done
-        finishSkyrimNetGeneration();
+        finishLLMGeneration();
         return;
     }
     
-    var schoolData = state.skyrimNetQueue.shift();
-    state.skyrimNetCurrentSchool = schoolData.school;
+    var schoolData = state.llmQueue.shift();
+    state.llmCurrentSchool = schoolData.school;
     
     // Track expected spell IDs for validation after response
-    state.skyrimNetExpectedSpellIds = schoolData.spells.map(function(s) { return s.formId; });
-    state.skyrimNetExpectedSpellCount = schoolData.spells.length;
-    state.skyrimNetCurrentSpells = schoolData.spells; // Keep full spell data for correction requests
+    state.llmExpectedSpellIds = schoolData.spells.map(function(s) { return s.formId; });
+    state.llmExpectedSpellCount = schoolData.spells.length;
+    state.llmCurrentSpells = schoolData.spells; // Keep full spell data for correction requests
     
-    var step = state.skyrimNetStats.successSchools.length + state.skyrimNetStats.failedSchools.length + 1;
-    var remaining = state.skyrimNetQueue.length;
+    var step = state.llmStats.successSchools.length + state.llmStats.failedSchools.length + 1;
+    var remaining = state.llmQueue.length;
     var total = step + remaining;
     
     var progressMsg = 'Generating ' + schoolData.school + ' (' + schoolData.spells.length + ' spells)...';
@@ -622,12 +622,12 @@ function processNextSkyrimNetSchool() {
     appendToOutput('    Model: ' + request.model + ', Max Tokens: ' + request.maxTokens);
     
     if (window.callCpp) {
-        window.callCpp('SkyrimNetGenerate', JSON.stringify(request));
+        window.callCpp('LLMGenerate', JSON.stringify(request));
     }
 }
 
-window.onSkyrimNetQueued = function(responseStr) {
-    console.log('[SpellLearning] SkyrimNet request queued raw:', responseStr);
+window.onLLMQueued = function(responseStr) {
+    console.log('[SpellLearning] LLM request queued raw:', responseStr);
     
     var response;
     try {
@@ -638,22 +638,22 @@ window.onSkyrimNetQueued = function(responseStr) {
         return;
     }
     
-    console.log('[SpellLearning] SkyrimNet request queued parsed:', response);
+    console.log('[SpellLearning] LLM request queued parsed:', response);
     setTreeStatus(response.school + ': ' + response.message);
     
     // Start polling for response
-    if (state.skyrimNetPollInterval) {
-        clearInterval(state.skyrimNetPollInterval);
+    if (state.llmPollInterval) {
+        clearInterval(state.llmPollInterval);
     }
     
-    state.skyrimNetPollInterval = setInterval(function() {
+    state.llmPollInterval = setInterval(function() {
         if (window.callCpp) {
-            window.callCpp('PollSkyrimNetResponse', '');
+            window.callCpp('PollLLMResponse', '');
         }
     }, 2000); // Poll every 2 seconds
 };
 
-window.onSkyrimNetPollResult = function(resultStr) {
+window.onLLMPollResult = function(resultStr) {
     var result;
     try {
         result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
@@ -667,28 +667,28 @@ window.onSkyrimNetPollResult = function(resultStr) {
     }
     
     // Stop polling
-    if (state.skyrimNetPollInterval) {
-        clearInterval(state.skyrimNetPollInterval);
-        state.skyrimNetPollInterval = null;
+    if (state.llmPollInterval) {
+        clearInterval(state.llmPollInterval);
+        state.llmPollInterval = null;
     }
     
-    console.log('[SpellLearning] Got SkyrimNet response, success=' + result.success + ', currentSchool=' + state.skyrimNetCurrentSchool);
+    console.log('[SpellLearning] Got LLM response, success=' + result.success + ', currentSchool=' + state.llmCurrentSchool);
     
     // Ignore stray responses when not expecting any
-    if (!state.skyrimNetCurrentSchool) {
+    if (!state.llmCurrentSchool) {
         console.warn('[SpellLearning] Received response but no current school - ignoring stray response');
         return;
     }
     
     // Check if this is a color suggestion response
-    if (state.skyrimNetCurrentSchool === '_ColorSuggestion') {
+    if (state.llmCurrentSchool === '_ColorSuggestion') {
         console.log('[SpellLearning] Routing to color suggestion handler');
         if (typeof handleColorSuggestionResponse === 'function') {
             handleColorSuggestionResponse(result);
         }
-        state.skyrimNetCurrentSchool = null;
+        state.llmCurrentSchool = null;
         // Continue with next school in queue if any
-        setTimeout(processNextSkyrimNetSchool, 500);
+        setTimeout(processNextLLMSchool, 500);
         return;
     }
     
@@ -711,13 +711,13 @@ window.onSkyrimNetPollResult = function(resultStr) {
                 }
             }
             
-            state.skyrimNetStats.processedSpells += spellCount;
+            state.llmStats.processedSpells += spellCount;
             // Note: successSchools is pushed AFTER validation (see below) to avoid duplicates during correction
             
-            console.log('[SpellLearning] ' + state.skyrimNetCurrentSchool + ': ' + spellCount + ' spells, layout: ' + layoutStyle);
+            console.log('[SpellLearning] ' + state.llmCurrentSchool + ': ' + spellCount + ' spells, layout: ' + layoutStyle);
             
             // Output to textarea
-            appendToOutput('<<< RECEIVED: ' + state.skyrimNetCurrentSchool + ' - SUCCESS');
+            appendToOutput('<<< RECEIVED: ' + state.llmCurrentSchool + ' - SUCCESS');
             appendToOutput('    Spells: ' + spellCount + ', Layout: ' + layoutStyle);
             appendToOutput('    Response size: ' + (result.response.length / 1024).toFixed(1) + ' KB');
             
@@ -731,24 +731,24 @@ window.onSkyrimNetPollResult = function(resultStr) {
             
             // Check for unreachable nodes and attempt self-correction if enabled
             if (tempParseResult.success && settings.llmSelfCorrection) {
-                var schoolData = TreeParser.schools[state.skyrimNetCurrentSchool];
+                var schoolData = TreeParser.schools[state.llmCurrentSchool];
                 if (schoolData && schoolData.root) {
-                    var reachabilityInfo = TreeParser.getUnreachableNodesInfo(state.skyrimNetCurrentSchool, schoolData.root);
+                    var reachabilityInfo = TreeParser.getUnreachableNodesInfo(state.llmCurrentSchool, schoolData.root);
                     
                     if (!reachabilityInfo.valid && reachabilityInfo.unreachable.length > 0) {
                         // Initialize correction count if needed
-                        state.skyrimNetCorrectionCount = state.skyrimNetCorrectionCount || 0;
+                        state.llmCorrectionCount = state.llmCorrectionCount || 0;
                         
-                        if (state.skyrimNetCorrectionCount < settings.llmSelfCorrectionMaxLoops) {
-                            state.skyrimNetCorrectionCount++;
+                        if (state.llmCorrectionCount < settings.llmSelfCorrectionMaxLoops) {
+                            state.llmCorrectionCount++;
                             
                             appendToOutput('    VALIDATION: ' + reachabilityInfo.unreachable.length + ' unreachable nodes detected');
-                            appendToOutput('    Requesting LLM self-correction (attempt ' + state.skyrimNetCorrectionCount + '/' + settings.llmSelfCorrectionMaxLoops + ')...');
+                            appendToOutput('    Requesting LLM self-correction (attempt ' + state.llmCorrectionCount + '/' + settings.llmSelfCorrectionMaxLoops + ')...');
                             
-                            console.log('[SpellLearning] Self-correction attempt ' + state.skyrimNetCorrectionCount + ' for ' + state.skyrimNetCurrentSchool);
+                            console.log('[SpellLearning] Self-correction attempt ' + state.llmCorrectionCount + ' for ' + state.llmCurrentSchool);
                             
                             // Send correction request
-                            sendCorrectionRequest(state.skyrimNetCurrentSchool, result.response, reachabilityInfo);
+                            sendCorrectionRequest(state.llmCurrentSchool, result.response, reachabilityInfo);
                             return; // Don't proceed to next school yet
                         } else {
                             appendToOutput('    VALIDATION: Max correction loops reached (' + settings.llmSelfCorrectionMaxLoops + ')');
@@ -756,21 +756,21 @@ window.onSkyrimNetPollResult = function(resultStr) {
                             console.log('[SpellLearning] Max self-correction loops reached, using gentle fix');
                             
                             // Actually apply the gentle fix
-                            var fixesMade = TreeParser.detectAndFixCycles(state.skyrimNetCurrentSchool, schoolData.root);
+                            var fixesMade = TreeParser.detectAndFixCycles(state.llmCurrentSchool, schoolData.root);
                             appendToOutput('    AUTO-FIX: Applied ' + fixesMade + ' path fixes');
                             
                             // Re-validate after auto-fix
-                            var postFixInfo = TreeParser.getUnreachableNodesInfo(state.skyrimNetCurrentSchool, schoolData.root);
+                            var postFixInfo = TreeParser.getUnreachableNodesInfo(state.llmCurrentSchool, schoolData.root);
                             if (!postFixInfo.valid && postFixInfo.unreachable.length > 0) {
                                 // Still has unreachable nodes after fix - track for retry
                                 appendToOutput('    WARNING: ' + postFixInfo.unreachable.length + ' nodes still unreachable after auto-fix');
                                 appendToOutput('    Unreachable: ' + postFixInfo.unreachable.map(function(n) { return n.name || n.id; }).join(', '));
-                                state.skyrimNetStats.needsAttentionSchools.push({
-                                    school: state.skyrimNetCurrentSchool,
+                                state.llmStats.needsAttentionSchools.push({
+                                    school: state.llmCurrentSchool,
                                     unreachableCount: postFixInfo.unreachable.length,
                                     unreachableNodes: postFixInfo.unreachable.map(function(n) { return n.name || n.id; })
                                 });
-                                console.log('[SpellLearning] ' + state.skyrimNetCurrentSchool + ' needs attention: ' + postFixInfo.unreachable.length + ' unreachable');
+                                console.log('[SpellLearning] ' + state.llmCurrentSchool + ' needs attention: ' + postFixInfo.unreachable.length + ' unreachable');
                             } else {
                                 appendToOutput('    AUTO-FIX: SUCCESS - all nodes now reachable!');
                             }
@@ -785,35 +785,35 @@ window.onSkyrimNetPollResult = function(resultStr) {
             // MISSING SPELL VALIDATION
             // Check if all expected spells are present in the response
             // =====================================================================
-            if (state.skyrimNetExpectedSpellIds && state.skyrimNetExpectedSpellIds.length > 0) {
+            if (state.llmExpectedSpellIds && state.llmExpectedSpellIds.length > 0) {
                 var missingInfo = findMissingSpells(
                     treeData, 
-                    state.skyrimNetCurrentSchool, 
-                    state.skyrimNetExpectedSpellIds,
-                    state.skyrimNetCurrentSpells
+                    state.llmCurrentSchool, 
+                    state.llmExpectedSpellIds,
+                    state.llmCurrentSpells
                 );
                 
                 if (!missingInfo.valid && missingInfo.missing.length > 0) {
                     appendToOutput('    SPELL COUNT: ' + missingInfo.received + '/' + missingInfo.expected + ' spells');
                     
                     // Initialize missing spell correction count if needed
-                    state.skyrimNetMissingCorrectionCount = state.skyrimNetMissingCorrectionCount || 0;
+                    state.llmMissingCorrectionCount = state.llmMissingCorrectionCount || 0;
                     
                     // Try to correct missing spells (up to 3 attempts)
                     var maxMissingCorrections = 3;
-                    if (state.skyrimNetMissingCorrectionCount < maxMissingCorrections) {
-                        state.skyrimNetMissingCorrectionCount++;
+                    if (state.llmMissingCorrectionCount < maxMissingCorrections) {
+                        state.llmMissingCorrectionCount++;
                         
                         appendToOutput('    WARNING: ' + missingInfo.missing.length + ' spells missing from response!');
                         appendToOutput('    Requesting LLM to add missing spells (attempt ' + 
-                            state.skyrimNetMissingCorrectionCount + '/' + maxMissingCorrections + ')...');
+                            state.llmMissingCorrectionCount + '/' + maxMissingCorrections + ')...');
                         
                         console.log('[SpellLearning] Missing spell correction attempt ' + 
-                            state.skyrimNetMissingCorrectionCount + ' for ' + state.skyrimNetCurrentSchool);
+                            state.llmMissingCorrectionCount + ' for ' + state.llmCurrentSchool);
                         
                         // Send correction request with missing spells
                         sendMissingSpellsCorrectionRequest(
-                            state.skyrimNetCurrentSchool, 
+                            state.llmCurrentSchool, 
                             result.response, 
                             missingInfo.missing,
                             missingInfo.expected
@@ -823,12 +823,12 @@ window.onSkyrimNetPollResult = function(resultStr) {
                         // Max corrections reached - log warning and continue
                         appendToOutput('    WARNING: Max missing spell corrections reached (' + maxMissingCorrections + ')');
                         appendToOutput('    ' + missingInfo.missing.length + ' spells still missing - continuing with partial tree');
-                        console.warn('[SpellLearning] ' + state.skyrimNetCurrentSchool + ' has ' + 
+                        console.warn('[SpellLearning] ' + state.llmCurrentSchool + ' has ' + 
                             missingInfo.missing.length + ' missing spells after ' + maxMissingCorrections + ' correction attempts');
                         
                         // Track as needs attention
-                        state.skyrimNetStats.needsAttentionSchools.push({
-                            school: state.skyrimNetCurrentSchool,
+                        state.llmStats.needsAttentionSchools.push({
+                            school: state.llmCurrentSchool,
                             missingCount: missingInfo.missing.length,
                             missingSpells: missingInfo.missing.slice(0, 10).map(function(s) { return s.name; }) // First 10 names
                         });
@@ -839,93 +839,93 @@ window.onSkyrimNetPollResult = function(resultStr) {
             }
             
             // Reset correction counts on successful validation
-            state.skyrimNetCorrectionCount = 0;
-            state.skyrimNetMissingCorrectionCount = 0;
+            state.llmCorrectionCount = 0;
+            state.llmMissingCorrectionCount = 0;
             
             // Add to successSchools AFTER validation (avoid duplicates from correction loops)
-            if (state.skyrimNetStats.successSchools.indexOf(state.skyrimNetCurrentSchool) === -1) {
-                state.skyrimNetStats.successSchools.push(state.skyrimNetCurrentSchool);
+            if (state.llmStats.successSchools.indexOf(state.llmCurrentSchool) === -1) {
+                state.llmStats.successSchools.push(state.llmCurrentSchool);
             }
             
             loadTreeData(treeData);
             var statusSuffix = '';
-            if (state.skyrimNetStats.needsAttentionSchools.some(function(s) { return s.school === state.skyrimNetCurrentSchool; })) {
+            if (state.llmStats.needsAttentionSchools.some(function(s) { return s.school === state.llmCurrentSchool; })) {
                 statusSuffix = ' (needs attention)';
             }
-            setTreeStatus(state.skyrimNetCurrentSchool + ' imported (' + spellCount + ' spells)' + statusSuffix);
-            state.skyrimNetRetryCount = 0;  // Reset retry counter on success
+            setTreeStatus(state.llmCurrentSchool + ' imported (' + spellCount + ' spells)' + statusSuffix);
+            state.llmRetryCount = 0;  // Reset retry counter on success
             
         } catch (e) {
-            console.error('[SpellLearning] Failed to parse tree response for ' + state.skyrimNetCurrentSchool + ':', e);
+            console.error('[SpellLearning] Failed to parse tree response for ' + state.llmCurrentSchool + ':', e);
             console.error('[SpellLearning] Raw response (first 500 chars):', result.response ? result.response.substring(0, 500) : 'empty');
             
             // Output failure to textarea
-            appendToOutput('<<< RECEIVED: ' + state.skyrimNetCurrentSchool + ' - PARSE ERROR');
+            appendToOutput('<<< RECEIVED: ' + state.llmCurrentSchool + ' - PARSE ERROR');
             appendToOutput('    Error: ' + e.message);
             
             // Retry logic
-            state.skyrimNetRetryCount = (state.skyrimNetRetryCount || 0) + 1;
-            if (state.skyrimNetRetryCount < 2) {
-                console.log('[SpellLearning] Retrying ' + state.skyrimNetCurrentSchool + ' (attempt ' + (state.skyrimNetRetryCount + 1) + ')...');
-                setTreeStatus(state.skyrimNetCurrentSchool + ' failed to parse, retrying...');
-                appendToOutput('    Retrying... (attempt ' + (state.skyrimNetRetryCount + 1) + ')');
+            state.llmRetryCount = (state.llmRetryCount || 0) + 1;
+            if (state.llmRetryCount < 2) {
+                console.log('[SpellLearning] Retrying ' + state.llmCurrentSchool + ' (attempt ' + (state.llmRetryCount + 1) + ')...');
+                setTreeStatus(state.llmCurrentSchool + ' failed to parse, retrying...');
+                appendToOutput('    Retrying... (attempt ' + (state.llmRetryCount + 1) + ')');
                 
                 // Re-queue this school at the front
-                var retrySchool = state.skyrimNetCurrentSchool;
+                var retrySchool = state.llmCurrentSchool;
                 var retrySpells = state.lastSpellData.spells.filter(function(s) { return s.school === retrySchool; });
-                state.skyrimNetQueue.unshift({ school: retrySchool, spells: retrySpells });
+                state.llmQueue.unshift({ school: retrySchool, spells: retrySpells });
                 
                 // Longer delay before retry
-                setTimeout(processNextSkyrimNetSchool, 3000);
+                setTimeout(processNextLLMSchool, 3000);
                 return;
             }
             
-            state.skyrimNetStats.failedSchools.push(state.skyrimNetCurrentSchool);
-            setTreeStatus(state.skyrimNetCurrentSchool + ' failed: invalid JSON after ' + state.skyrimNetRetryCount + ' attempts');
-            appendToOutput('    FAILED after ' + state.skyrimNetRetryCount + ' attempts');
-            state.skyrimNetRetryCount = 0;
+            state.llmStats.failedSchools.push(state.llmCurrentSchool);
+            setTreeStatus(state.llmCurrentSchool + ' failed: invalid JSON after ' + state.llmRetryCount + ' attempts');
+            appendToOutput('    FAILED after ' + state.llmRetryCount + ' attempts');
+            state.llmRetryCount = 0;
         }
     } else {
-        console.error('[SpellLearning] ' + state.skyrimNetCurrentSchool + ' request failed:', result.response || 'unknown error');
+        console.error('[SpellLearning] ' + state.llmCurrentSchool + ' request failed:', result.response || 'unknown error');
         
         // Output failure to textarea
-        appendToOutput('<<< RECEIVED: ' + state.skyrimNetCurrentSchool + ' - REQUEST FAILED');
+        appendToOutput('<<< RECEIVED: ' + state.llmCurrentSchool + ' - REQUEST FAILED');
         appendToOutput('    Error: ' + (result.response || 'unknown error'));
         
         // Retry logic for failed requests
-        state.skyrimNetRetryCount = (state.skyrimNetRetryCount || 0) + 1;
-        if (state.skyrimNetRetryCount < 2) {
-            console.log('[SpellLearning] Retrying ' + state.skyrimNetCurrentSchool + ' (attempt ' + (state.skyrimNetRetryCount + 1) + ')...');
-            setTreeStatus(state.skyrimNetCurrentSchool + ' failed, retrying...');
-            appendToOutput('    Retrying... (attempt ' + (state.skyrimNetRetryCount + 1) + ')');
+        state.llmRetryCount = (state.llmRetryCount || 0) + 1;
+        if (state.llmRetryCount < 2) {
+            console.log('[SpellLearning] Retrying ' + state.llmCurrentSchool + ' (attempt ' + (state.llmRetryCount + 1) + ')...');
+            setTreeStatus(state.llmCurrentSchool + ' failed, retrying...');
+            appendToOutput('    Retrying... (attempt ' + (state.llmRetryCount + 1) + ')');
             
             // Re-queue this school at the front
-            var retrySchool = state.skyrimNetCurrentSchool;
+            var retrySchool = state.llmCurrentSchool;
             var retrySpells = state.lastSpellData.spells.filter(function(s) { return s.school === retrySchool; });
-            state.skyrimNetQueue.unshift({ school: retrySchool, spells: retrySpells });
+            state.llmQueue.unshift({ school: retrySchool, spells: retrySpells });
             
             // Longer delay before retry
-            setTimeout(processNextSkyrimNetSchool, 3000);
+            setTimeout(processNextLLMSchool, 3000);
             return;
         }
         
-        state.skyrimNetStats.failedSchools.push(state.skyrimNetCurrentSchool);
-        setTreeStatus(state.skyrimNetCurrentSchool + ' failed: ' + (result.response || 'unknown error'));
-        appendToOutput('    FAILED after ' + state.skyrimNetRetryCount + ' attempts');
-        state.skyrimNetRetryCount = 0;
+        state.llmStats.failedSchools.push(state.llmCurrentSchool);
+        setTreeStatus(state.llmCurrentSchool + ' failed: ' + (result.response || 'unknown error'));
+        appendToOutput('    FAILED after ' + state.llmRetryCount + ' attempts');
+        state.llmRetryCount = 0;
     }
     
     // Process next school after a short delay
-    setTimeout(processNextSkyrimNetSchool, 1000);
+    setTimeout(processNextLLMSchool, 1000);
 }
 
-function finishSkyrimNetGeneration() {
-    state.skyrimNetGenerating = false;
-    state.skyrimNetCurrentSchool = null;
-    state.skyrimNetRetryCount = 0;
+function finishLLMGeneration() {
+    state.llmGenerating = false;
+    state.llmCurrentSchool = null;
+    state.llmRetryCount = 0;
     
     // Show summary
-    var stats = state.skyrimNetStats;
+    var stats = state.llmStats;
     var statusMsg = 'Complete! ' + stats.successSchools.length + ' schools, ' + stats.processedSpells + ' spells';
     
     // Output final summary to textarea
@@ -992,7 +992,7 @@ function finishSkyrimNetGeneration() {
     } else {
         setTreeStatus(statusMsg);
         // Re-enable the generate button (for single school retry)
-        var btn = document.getElementById('skyrimnet-auto-btn');
+        var btn = document.getElementById('llm-auto-btn');
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<span class="btn-icon">🪄</span> Auto Generate';

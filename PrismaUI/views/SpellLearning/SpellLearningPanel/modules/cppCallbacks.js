@@ -20,6 +20,58 @@
  */
 
 // =============================================================================
+// DUPLICATE NODE SHARED STATE HELPERS
+// =============================================================================
+
+/**
+ * Get the canonical (original) formId for a node.
+ * Duplicate nodes spawned in edit mode have originalFormId set,
+ * or have _dup_ in their formId. Returns the original spell's formId
+ * so all copies share the same progress/state key.
+ */
+function getCanonicalFormId(node) {
+    if (node.originalFormId) return node.originalFormId;
+    var id = node.formId || node.id;
+    var dupIdx = id.indexOf('_dup_');
+    if (dupIdx !== -1) return id.substring(0, dupIdx);
+    return id;
+}
+
+/**
+ * Find all sibling nodes that share the same original spell.
+ * Returns an array of nodes (excluding the source node itself).
+ */
+function findDuplicateSiblings(sourceNode) {
+    if (!state.treeData || !state.treeData.nodes) return [];
+    var canonicalId = getCanonicalFormId(sourceNode);
+    return state.treeData.nodes.filter(function(n) {
+        if (n === sourceNode) return false;
+        return getCanonicalFormId(n) === canonicalId;
+    });
+}
+
+/**
+ * Sync state from one node to all its duplicate siblings.
+ * Call this after any state change on a node.
+ */
+function syncDuplicateState(sourceNode) {
+    var siblings = findDuplicateSiblings(sourceNode);
+    if (siblings.length === 0) return;
+
+    siblings.forEach(function(sibling) {
+        if (sibling.state !== sourceNode.state) {
+            console.log('[SharedState] Syncing ' + (sibling.name || sibling.formId) +
+                        ': ' + sibling.state + ' -> ' + sourceNode.state);
+            sibling.state = sourceNode.state;
+        }
+    });
+
+    if (typeof CanvasRenderer !== 'undefined') {
+        CanvasRenderer._needsRender = true;
+    }
+}
+
+// =============================================================================
 // C++ CALLBACKS
 // =============================================================================
 
@@ -413,19 +465,23 @@ window.updateSpellState = function(jsonOrFormId, newState) {
     
     debugOutput('[LEARN] Searching ' + state.treeData.nodes.length + ' nodes...');
     
-    var node = state.treeData.nodes.find(function(n) { return n.formId === formId || n.id === formId; });
-    
+    // Find node by formId, id, or originalFormId (for duplicates)
+    var node = state.treeData.nodes.find(function(n) {
+        return n.formId === formId || n.id === formId || n.originalFormId === formId;
+    });
+
     if (!node) {
         debugOutput('[LEARN] ERROR: Node NOT FOUND! formId=' + formId);
-        var sample = state.treeData.nodes.slice(0, 3).map(function(n) { 
-            return n.name + '(id:' + n.id + ')'; 
+        var sample = state.treeData.nodes.slice(0, 3).map(function(n) {
+            return n.name + '(id:' + n.id + ')';
         }).join(', ');
         debugOutput('[LEARN] Sample nodes: ' + sample);
         return;
     }
-    
+
     var oldState = node.state;
     node.state = stateValue;
+    syncDuplicateState(node);
     debugOutput('[LEARN] ' + node.name + ': ' + oldState + ' -> ' + stateValue);
     
     var wasLearning = oldState === 'learning' || oldState === 'Learning';
@@ -520,16 +576,13 @@ window.onResetTreeStates = function() {
 // This refreshes progress and checks which spells the player knows
 window.onSaveGameLoaded = function() {
     console.log('[SpellLearning] Save game loaded - refreshing player data');
-    
+
     // First reset tree to clean state
     window.onResetTreeStates();
-    
+
     // Then request fresh data from C++
     if (window.callCpp) {
-        // Get progression data from co-save
         window.callCpp('GetProgress', '');
-        
-        // Get player's known spells
         window.callCpp('GetPlayerKnownSpells', '');
     }
 };
@@ -555,45 +608,65 @@ window.onSaveGameLoaded = function() {
 // =============================================================================
 
 function isSpellMastered(formId) {
-    var progress = state.spellProgress[formId];
+    // Resolve canonical formId (strips _dup_ suffix for duplicate nodes)
+    var canonId = resolveCanonicalId(formId);
+    var progress = state.spellProgress[canonId] || state.spellProgress[formId];
     if (!progress) return false;
-    
+
     // Must be marked as unlocked AND have 100% progress (or close enough)
     var progressPercent = progress.required > 0 ? (progress.xp / progress.required) * 100 : 0;
     var mastered = progress.unlocked === true && progressPercent >= 99.9;
-    
+
     return mastered;
 }
 
 // Check if spell is currently being learned (has early access but not mastered)
 // This now also checks state.weakenedSpells which comes from C++
 function isSpellLearning(formId) {
+    // Resolve canonical formId for duplicate nodes
+    var canonId = resolveCanonicalId(formId);
+
     // First check: Is this spell in the weakened spells list from C++?
     // This is the authoritative source - C++ tracks all early-learned spells
-    if (state.weakenedSpells && state.weakenedSpells.has(formId)) {
+    if (state.weakenedSpells && (state.weakenedSpells.has(canonId) || state.weakenedSpells.has(formId))) {
         return true;
     }
-    
+
     // Fallback: Check if this spell is a current learning target with partial progress
     var isLearningTarget = false;
     for (var school in state.learningTargets) {
-        if (state.learningTargets[school] === formId) {
+        if (state.learningTargets[school] === canonId || state.learningTargets[school] === formId) {
             isLearningTarget = true;
             break;
         }
     }
-    
+
     if (!isLearningTarget) return false;
-    
+
     // Check if player has it (from early grant) but not mastered
-    var progress = state.spellProgress[formId];
+    var progress = state.spellProgress[canonId] || state.spellProgress[formId];
     if (!progress) return false;
-    
+
     var progressPercent = progress.required > 0 ? (progress.xp / progress.required) * 100 : 0;
-    
+
     // Learning = has progress but not at 100%
-    return progressPercent >= (settings.earlySpellLearning.unlockThreshold || 20) && 
+    return progressPercent >= (settings.earlySpellLearning.unlockThreshold || 20) &&
            progressPercent < 99.9;
+}
+
+/**
+ * Resolve a formId to its canonical (original) form.
+ * Strips _dup_ suffixes so all copies of a spell share the same progress key.
+ * Also checks node's originalFormId if available.
+ */
+function resolveCanonicalId(formId) {
+    if (!formId) return formId;
+    // Strip _dup_XXXXX suffix
+    var dupIdx = formId.indexOf('_dup_');
+    if (dupIdx !== -1) {
+        return formId.substring(0, dupIdx);
+    }
+    return formId;
 }
 
 // Helper function to recalculate node availability based on prerequisites
@@ -616,36 +689,50 @@ function recalculateNodeAvailability() {
     function isPrereqMastered(prereqId) {
         var prereqNode = nodeMap[prereqId];
         if (!prereqNode) return false;
-        
+
         // If node state is 'unlocked', it's either mastered or already-known
         // (we've already filtered out learning spells in onPlayerKnownSpells)
         if (prereqNode.state === 'unlocked') {
             return true;
         }
-        
-        // Double-check with progress data
-        var progress = state.spellProgress[prereqNode.formId || prereqId];
+
+        // Double-check with progress data (use canonical formId for duplicates)
+        var canonicalId = getCanonicalFormId(prereqNode);
+        var progress = state.spellProgress[canonicalId] || state.spellProgress[prereqNode.formId || prereqId];
         if (progress && progress.unlocked) {
             return true;
         }
-        
+
+        // Check if any duplicate sibling is unlocked
+        var siblings = findDuplicateSiblings(prereqNode);
+        for (var i = 0; i < siblings.length; i++) {
+            if (siblings[i].state === 'unlocked') return true;
+        }
+
         return false;
     }
     
     // For each node, check if all prerequisites are MASTERED
     var changedCount = 0;
     state.treeData.nodes.forEach(function(node) {
+        // Use canonical formId for duplicate-aware lookups
+        var canonId = getCanonicalFormId(node);
+
         // Skip if already mastered (unlocked with 100% XP)
-        if (node.state === 'unlocked' && isSpellMastered(node.formId)) {
+        if (node.state === 'unlocked' && isSpellMastered(canonId)) {
             return;
         }
-        
-        // If node is "unlocked" but NOT mastered (edge case), fix it
-        if (node.state === 'unlocked' && !isSpellMastered(node.formId)) {
-            // This shouldn't happen with proper C++ sync, but fix it anyway
-            node.state = 'available';
-            changedCount++;
-            console.warn('[SpellLearning] Fixed node ' + (node.name || node.id) + ' - was unlocked but not mastered');
+
+        // If node is "unlocked" but NOT mastered AND player doesn't have the spell, fix it
+        // Don't downgrade if player actually has the spell (progress data may just be stale)
+        if (node.state === 'unlocked' && !isSpellMastered(canonId)) {
+            var playerHas = state.playerKnownSpells &&
+                           (state.playerKnownSpells.has(canonId) || state.playerKnownSpells.has(node.formId));
+            if (!playerHas) {
+                node.state = 'available';
+                changedCount++;
+                console.warn('[SpellLearning] Fixed node ' + (node.name || node.id) + ' - was unlocked but not mastered and player does not have spell');
+            }
         }
         
         // Check prerequisites (filter out self-references)
@@ -657,15 +744,15 @@ function recalculateNodeAvailability() {
         });
         
         if (prereqs.length === 0) {
-            // No prerequisites - should be available
-            if (node.state !== 'available' && node.state !== 'unlocked') {
+            // No prerequisites - should be available (but preserve 'learning' state)
+            if (node.state !== 'available' && node.state !== 'unlocked' && node.state !== 'learning') {
                 node.state = 'available';
                 changedCount++;
             }
         } else {
             // Has prerequisites - check if ALL are MASTERED (100% XP)
             var allPrereqsMastered = prereqs.every(isPrereqMastered);
-            
+
             if (allPrereqsMastered) {
                 if (node.state === 'locked') {
                     node.state = 'available';
@@ -673,8 +760,8 @@ function recalculateNodeAvailability() {
                     console.log('[SpellLearning] Node ' + (node.name || node.id) + ' now available (all prereqs MASTERED)');
                 }
             } else {
-                // Prerequisites not mastered - should be locked
-                if (node.state !== 'locked' && node.state !== 'unlocked') {
+                // Prerequisites not mastered - should be locked (but preserve 'learning' and 'unlocked' states)
+                if (node.state !== 'locked' && node.state !== 'unlocked' && node.state !== 'learning') {
                     node.state = 'locked';
                     changedCount++;
                     console.log('[SpellLearning] Node ' + (node.name || node.id) + ' locked (prereqs not mastered)');
@@ -715,9 +802,11 @@ window.onPlayerKnownSpells = function(dataStr) {
             state.treeData.nodes.forEach(function(node) {
                 // Only check nodes marked as unlocked
                 if (node.state !== 'unlocked') return;
-                
+
+                // Use canonical formId for duplicates
+                var canonId = getCanonicalFormId(node);
                 // If player doesn't have this spell, relock it
-                if (!state.playerKnownSpells.has(node.formId)) {
+                if (!state.playerKnownSpells.has(canonId) && !state.playerKnownSpells.has(node.formId)) {
                     // Root nodes go to "available" (always learnable), others go to "locked"
                     var newState = node.isRoot ? 'available' : 'locked';
                     
@@ -727,12 +816,15 @@ window.onPlayerKnownSpells = function(dataStr) {
                     // Reset state
                     node.state = newState;
                     
-                    // Clear progress data
-                    if (state.spellProgress[node.formId]) {
-                        state.spellProgress[node.formId].unlocked = false;
-                        state.spellProgress[node.formId].xp = 0;
+                    // Clear progress data (use canonical ID so duplicates share state)
+                    if (state.spellProgress[canonId]) {
+                        state.spellProgress[canonId].unlocked = false;
+                        state.spellProgress[canonId].xp = 0;
                     }
-                    
+
+                    // Sync visual state to all duplicate siblings
+                    syncDuplicateState(node);
+
                     relockedCount++;
                 }
             });
@@ -743,13 +835,16 @@ window.onPlayerKnownSpells = function(dataStr) {
             
             // First pass: Determine correct state for each known spell
             state.treeData.nodes.forEach(function(node) {
-                // Skip if not in player's known spells
-                if (!state.playerKnownSpells.has(node.formId)) {
+                // Use canonical formId for duplicate nodes
+                var canonId = getCanonicalFormId(node);
+
+                // Skip if not in player's known spells (check both canonical and actual formId)
+                if (!state.playerKnownSpells.has(canonId) && !state.playerKnownSpells.has(node.formId)) {
                     return;
                 }
-                
+
                 // Check if this spell is currently being LEARNED (active target, early-learned)
-                if (isSpellLearning(node.formId)) {
+                if (isSpellLearning(canonId) || isSpellLearning(node.formId)) {
                     // LEARNING (early-learned, not mastered) - keep available, NOT unlocked
                     // Player has the spell (weakened) but children stay locked
                     if (node.state === 'locked') {
@@ -760,8 +855,11 @@ window.onPlayerKnownSpells = function(dataStr) {
                         node.state = 'available';  // Fix invalid state
                         console.warn('[SpellLearning] Fixed ' + (node.name || node.formId) + ' - was unlocked while still learning');
                     }
+                    // Sync visual state to all duplicate siblings
+                    syncDuplicateState(node);
+
                     learningCount++;
-                    var progress = state.spellProgress[node.formId];
+                    var progress = state.spellProgress[canonId];
                     var pct = progress ? ((progress.xp / progress.required) * 100).toFixed(0) : '?';
                     console.log('[SpellLearning] ' + (node.name || node.formId) + ' is LEARNING (' + pct + '%) - children stay locked');
                 } else {
@@ -774,27 +872,30 @@ window.onPlayerKnownSpells = function(dataStr) {
                     if (node.state !== 'unlocked') {
                         node.state = 'unlocked';
                         
-                        // Also ensure progress data marks it as unlocked
-                        if (!state.spellProgress[node.formId]) {
+                        // Also ensure progress data marks it as unlocked (use canonical ID)
+                        if (!state.spellProgress[canonId]) {
                             // No progress data - spell from other source, create entry
-                            state.spellProgress[node.formId] = { 
-                                xp: 100, 
-                                required: 100, 
-                                unlocked: true, 
-                                ready: true 
+                            state.spellProgress[canonId] = {
+                                xp: 100,
+                                required: 100,
+                                unlocked: true,
+                                ready: true
                             };
                             alreadyKnownCount++;
                             console.log('[SpellLearning] ' + (node.name || node.formId) + ' - ALREADY KNOWN (vanilla/console/other)');
-                        } else if (!state.spellProgress[node.formId].unlocked) {
+                        } else if (!state.spellProgress[canonId].unlocked) {
                             // Has partial progress but not marked unlocked - player got it another way
-                            state.spellProgress[node.formId].unlocked = true;
-                            state.spellProgress[node.formId].xp = state.spellProgress[node.formId].required || 100;
+                            state.spellProgress[canonId].unlocked = true;
+                            state.spellProgress[canonId].xp = state.spellProgress[canonId].required || 100;
                             alreadyKnownCount++;
                             console.log('[SpellLearning] ' + (node.name || node.formId) + ' - marked UNLOCKED (player already has)');
                         } else {
                             masteredCount++;
                             console.log('[SpellLearning] ' + (node.name || node.formId) + ' is MASTERED');
                         }
+
+                        // Sync visual state to all duplicate siblings
+                        syncDuplicateState(node);
                     } else {
                         masteredCount++;
                     }
@@ -833,28 +934,23 @@ window.onPrismaReady = function() {
     console.log('[SpellLearning] Prisma connection established');
     updateStatus('Ready to scan spells...');
     setStatusIcon('*');
-    
+
     if (window.callCpp) {
         // Load unified config (all settings, API key, field settings in one file)
         console.log('[SpellLearning] Loading unified config...');
         window.callCpp('LoadUnifiedConfig', '');
-        
+
         // Load tree rules prompt
         window.callCpp('LoadPrompt', '');
-        
+
         // Check API availability (uses settings from unified config)
-        checkSkyrimNetAvailability();
-        
-        // Load progression data
-        window.callCpp('GetProgress', '');
-        
+        checkLLMAvailability();
+
         // Auto-load saved spell tree (if exists)
+        // loadTreeData() in treeViewerUI.js calls GetProgress and GetPlayerKnownSpells after loading
+        // Do NOT call those here - let loadTreeData handle it to avoid race conditions
         console.log('[SpellLearning] Auto-loading saved spell tree...');
         window.callCpp('LoadSpellTree', '');
-        
-        // Get player's known spells to sync with tree
-        console.log('[SpellLearning] Getting player known spells...');
-        window.callCpp('GetPlayerKnownSpells', '');
     }
 };
 
@@ -865,8 +961,8 @@ window._panelVisible = true;
 window.onPanelShowing = function() {
     console.log('[SpellLearning] Panel showing - resuming rendering');
     window._panelVisible = true;
-    
-    // Resume render loop
+
+    // Resume render loop and force re-render
     if (typeof CanvasRenderer !== 'undefined') {
         if (CanvasRenderer.startRenderLoop) {
             CanvasRenderer.startRenderLoop();
@@ -874,14 +970,25 @@ window.onPanelShowing = function() {
         // Force a render to refresh the display
         CanvasRenderer._needsRender = true;
     }
-    
-    // Refresh data from C++ to sync learning states
-    if (window.callCpp) {
-        // Get progression data (includes learning targets)
+
+    // Re-fetch progress and known spells from C++ to catch any XP gained while panel was hidden
+    if (window.callCpp && state.treeData) {
+        console.log('[SpellLearning] Panel showing - syncing progress from C++');
         window.callCpp('GetProgress', '');
-        
-        // Get player's known spells to sync with tree
         window.callCpp('GetPlayerKnownSpells', '');
+    }
+
+    // Refresh renderers
+    if (typeof SmartRenderer !== 'undefined' && SmartRenderer.refresh) {
+        SmartRenderer.refresh();
+    }
+    if (typeof WheelRenderer !== 'undefined') {
+        WheelRenderer.updateNodeStates();
+    }
+
+    // Refresh selected node details panel if a node is selected
+    if (state.selectedNode && typeof showSpellDetails === 'function') {
+        showSpellDetails(state.selectedNode);
     }
 };
 
@@ -895,10 +1002,10 @@ window.onPanelHiding = function() {
         CanvasRenderer.stopRenderLoop();
     }
     
-    // Stop SkyrimNet polling if active
-    if (state.skyrimNetPollInterval) {
-        clearInterval(state.skyrimNetPollInterval);
-        state.skyrimNetPollInterval = null;
+    // Stop LLM polling if active
+    if (state.llmPollInterval) {
+        clearInterval(state.llmPollInterval);
+        state.llmPollInterval = null;
     }
     
     // Auto-save settings when panel closes

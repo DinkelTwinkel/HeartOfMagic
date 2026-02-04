@@ -17,6 +17,90 @@ using json = nlohmann::json;
 
 namespace OpenRouterAPI {
 
+    // =============================================================================
+    // UTF-8 SANITIZATION - Fixes invalid characters that crash JSON serialization
+    // =============================================================================
+    
+    /**
+     * Sanitize a string to valid UTF-8 by replacing invalid bytes with ASCII equivalents.
+     * Windows-1252 characters (0x80-0x9F) and other invalid UTF-8 sequences break JSON parsing.
+     * This prevents crashes like: [json.exception.type_error.316] invalid UTF-8 byte
+     */
+    static std::string SanitizeToUTF8(const std::string& input)
+    {
+        std::string result;
+        result.reserve(input.size());
+        
+        size_t i = 0;
+        while (i < input.size()) {
+            unsigned char c = static_cast<unsigned char>(input[i]);
+            
+            if (c < 0x80) {
+                // ASCII (0x00-0x7F) - always valid
+                result += static_cast<char>(c);
+                i++;
+            } else if (c >= 0x80 && c <= 0x9F) {
+                // Windows-1252 control characters - replace with ASCII equivalents
+                switch (c) {
+                    case 0x91: result += '\''; break;  // Left single quote
+                    case 0x92: result += '\''; break;  // Right single quote
+                    case 0x93: result += '"'; break;   // Left double quote
+                    case 0x94: result += '"'; break;   // Right double quote
+                    case 0x96: result += '-'; break;   // En dash
+                    case 0x97: result += '-'; break;   // Em dash
+                    case 0x85: result += "..."; break; // Ellipsis
+                    case 0x99: result += "(TM)"; break; // Trademark
+                    default: result += '?'; break;     // Unknown - replace with ?
+                }
+                i++;
+            } else if ((c & 0xE0) == 0xC0) {
+                // 2-byte UTF-8 sequence (110xxxxx 10xxxxxx)
+                if (i + 1 < input.size() && (static_cast<unsigned char>(input[i + 1]) & 0xC0) == 0x80) {
+                    result += input[i];
+                    result += input[i + 1];
+                    i += 2;
+                } else {
+                    result += '?';  // Invalid sequence
+                    i++;
+                }
+            } else if ((c & 0xF0) == 0xE0) {
+                // 3-byte UTF-8 sequence (1110xxxx 10xxxxxx 10xxxxxx)
+                if (i + 2 < input.size() && 
+                    (static_cast<unsigned char>(input[i + 1]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(input[i + 2]) & 0xC0) == 0x80) {
+                    result += input[i];
+                    result += input[i + 1];
+                    result += input[i + 2];
+                    i += 3;
+                } else {
+                    result += '?';  // Invalid sequence
+                    i++;
+                }
+            } else if ((c & 0xF8) == 0xF0) {
+                // 4-byte UTF-8 sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+                if (i + 3 < input.size() && 
+                    (static_cast<unsigned char>(input[i + 1]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(input[i + 2]) & 0xC0) == 0x80 &&
+                    (static_cast<unsigned char>(input[i + 3]) & 0xC0) == 0x80) {
+                    result += input[i];
+                    result += input[i + 1];
+                    result += input[i + 2];
+                    result += input[i + 3];
+                    i += 4;
+                } else {
+                    result += '?';  // Invalid sequence
+                    i++;
+                }
+            } else {
+                // Invalid UTF-8 lead byte or continuation byte in wrong position
+                result += '?';
+                i++;
+            }
+        }
+        
+        return result;
+    }
+
     static Config s_config;
     static bool s_initialized = false;
     static std::filesystem::path s_configPath = "Data/SKSE/Plugins/SpellLearning/openrouter_config.json";
@@ -226,15 +310,20 @@ namespace OpenRouterAPI {
             json j = json::parse(httpResponse);
             
             if (j.contains("error")) {
-                response.error = j["error"].value("message", "Unknown API error");
+                // Sanitize error message too in case it contains invalid UTF-8
+                response.error = SanitizeToUTF8(j["error"].value("message", "Unknown API error"));
                 logger::error("OpenRouterAPI: API error: {}", response.error);
                 return response;
             }
 
             if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
-                response.content = j["choices"][0]["message"]["content"].get<std::string>();
+                // Sanitize LLM response to valid UTF-8 before storing
+                // This prevents JSON serialization crashes from invalid byte sequences
+                std::string rawContent = j["choices"][0]["message"]["content"].get<std::string>();
+                response.content = SanitizeToUTF8(rawContent);
                 response.success = true;
-                logger::info("OpenRouterAPI: Success, content length: {}", response.content.length());
+                logger::info("OpenRouterAPI: Success, content length: {} (sanitized from {})", 
+                            response.content.length(), rawContent.length());
             } else {
                 response.error = "Invalid response format";
                 logger::error("OpenRouterAPI: {}", response.error);

@@ -219,13 +219,13 @@ var state = {
     pasteTarget: null,
     // Full Auto mode flag
     fullAutoMode: false,
-    // SkyrimNet integration
-    skyrimNetAvailable: false,
-    skyrimNetGenerating: false,
-    skyrimNetQueue: [],
-    skyrimNetCurrentSchool: null,
-    skyrimNetPollInterval: null,
-    skyrimNetStats: {
+    // LLM integration
+    llmAvailable: false,
+    llmGenerating: false,
+    llmQueue: [],
+    llmCurrentSchool: null,
+    llmPollInterval: null,
+    llmStats: {
         totalSpells: 0,
         processedSpells: 0,
         failedSchools: [],

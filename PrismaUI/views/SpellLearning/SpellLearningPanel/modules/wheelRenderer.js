@@ -1357,8 +1357,9 @@ var WheelRenderer = {
     
     getNodeXPProgress: function(node) {
         if (node.state === 'unlocked') return 100;
-        if (!state.spellProgress || !state.spellProgress[node.formId]) return 0;
-        var progress = state.spellProgress[node.formId];
+        var _canonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
+        if (!state.spellProgress || !state.spellProgress[_canonId]) return 0;
+        var progress = state.spellProgress[_canonId];
         var currentXP = progress.xp || 0;
         var requiredXP = (typeof getXPForTier === 'function' ? getXPForTier(node.level) : 100) || 100;
         return Math.min(100, Math.floor((currentXP / requiredXP) * 100));
@@ -2223,7 +2224,8 @@ var WheelRenderer = {
         var progressPercent = this.getNodeXPProgress(node);
         
         // Check if player has spell (via early learning) or it's fully unlocked
-        var progress = state.spellProgress[node.formId] || {};
+        var _tCanonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
+        var progress = state.spellProgress[_tCanonId] || {};
         var playerHasSpell = progress.unlocked || node.state === 'unlocked';
         
         // Progressive reveal logic (same as details panel)
@@ -3049,8 +3051,9 @@ var WheelRenderer = {
                 nodeBg.classList.remove('unlocked-bg');
             }
             
-            var isLearningTarget = state.learningTargets[node.school] === node.formId;
-            var progress = state.spellProgress[node.formId];
+            var _uCanonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
+            var isLearningTarget = state.learningTargets[node.school] === _uCanonId || state.learningTargets[node.school] === node.formId;
+            var progress = state.spellProgress[_uCanonId];
             
             if (isLearningTarget && node.state !== 'unlocked') {
                 el.classList.add('learning');

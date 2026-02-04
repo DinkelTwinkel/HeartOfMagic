@@ -365,25 +365,25 @@ body {
     box-shadow: none;
 }
 
-.btn-skyrimnet {
+.btn-llm {
     background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
     color: white;
     border: 1px solid rgba(139, 92, 246, 0.5);
     font-weight: 600;
 }
 
-.btn-skyrimnet:hover:not(:disabled) {
+.btn-llm:hover:not(:disabled) {
     background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
 }
 
-.btn-skyrimnet:disabled {
+.btn-llm:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.btn-skyrimnet .btn-icon {
+.btn-llm .btn-icon {
     margin-right: 6px;
 }
 
@@ -1215,6 +1215,23 @@ body {
 
 .zoom-btn:hover {
     background: var(--btn-bg-hover);
+}
+
+.zoom-btn.active {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
+
+.edit-tools {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 4px;
+    padding-left: 4px;
+    border-left: 1px solid var(--divider);
+}
+
+.edit-tool {
+    font-size: 12px;
 }
 
 #zoom-level {

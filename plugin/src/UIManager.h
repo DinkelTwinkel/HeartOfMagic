@@ -28,6 +28,7 @@ public:
     void SendTreeData(const std::string& jsonData);
     void SendSpellInfo(const std::string& jsonData);
     void SendSpellInfoBatch(const std::string& jsonData);
+    void SendValidationResult(const std::string& jsonData);
     void UpdateSpellState(const std::string& formId, const std::string& state);
     void UpdateTreeStatus(const std::string& message);
 
@@ -110,9 +111,9 @@ private:
     static void OnGetClipboard(const char* argument);
 
     // LLM integration callbacks (OpenRouter)
-    static void OnCheckSkyrimNet(const char* argument);  // Now checks OpenRouter config
-    static void OnSkyrimNetGenerate(const char* argument);  // Now uses OpenRouter directly
-    static void OnPollSkyrimNetResponse(const char* argument);  // Kept for compatibility
+    static void OnCheckLLM(const char* argument);
+    static void OnLLMGenerate(const char* argument);
+    static void OnPollLLMResponse(const char* argument);
     static void OnLoadLLMConfig(const char* argument);
     static void OnSaveLLMConfig(const char* argument);
     static void OnLogMessage(const char* argument);

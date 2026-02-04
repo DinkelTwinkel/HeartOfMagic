@@ -269,7 +269,7 @@ but the Papyrus event hooks need proper quest/alias setup in an ESP.
 | Module | Lines | Purpose |
 |--------|-------|---------|
 | `constants.js` | 267 | `DEFAULT_TREE_RULES`, `DIFFICULTY_PROFILES`, `KEY_CODES`, palettes |
-| `state.js` | 210 | `settings`, `state` (incl. skyrimNetStats), `customProfiles`, `xpOverrides` |
+| `state.js` | 210 | `settings`, `state` (incl. llmStats), `customProfiles`, `xpOverrides` |
 | `config.js` | 266 | `TREE_CONFIG` layout and visual configuration |
 | `spellCache.js` | 114 | Spell data caching with async batch requests |
 | `colorUtils.js` | 258 | School colors, dynamic CSS generation |
@@ -284,7 +284,7 @@ but the Papyrus event hooks need proper quest/alias setup in an ESP.
 | `llmApiSettings.js` | 230 | OpenRouter API configuration UI |
 | `buttonHandlers.js` | 264 | Scan, learn, unlock, import/export handlers |
 | `cppCallbacks.js` | 438 | `window.onScanComplete`, `onTreeDataReceived`, etc. |
-| `skyrimNetIntegration.js` | 930 | LLM tree generation, validation, retry, color suggestions |
+| `llmIntegration.js` | 930 | LLM tree generation, validation, retry, color suggestions |
 
 **Module Load Order (in index.html):**
 ```html
@@ -302,7 +302,7 @@ settingsPanel.js → treeViewerUI.js → progressionUI.js → difficultyProfiles
 llmApiSettings.js → buttonHandlers.js
 
 <!-- 5. Integrations -->
-cppCallbacks.js → skyrimNetIntegration.js
+cppCallbacks.js → llmIntegration.js
 
 <!-- 6. Main Application -->
 script.js
@@ -387,7 +387,7 @@ User clicks "Full Auto" → Send scan data to OpenRouter LLM
 
 **Key State:**
 ```javascript
-state.skyrimNetStats = {
+state.llmStats = {
     totalSpells: 0,
     processedSpells: 0,
     failedSchools: [],           // Schools that failed to generate
@@ -402,12 +402,12 @@ state.skyrimNetStats = {
 - `retrySpecificSchool(schoolName)` regenerates just that school
 - Avoids duplicate school names in success list
 
-**Key Functions (skyrimNetIntegration.js):**
-- `processSkyrimNetResponse()` - Main response handler with validation flow
+**Key Functions (llmIntegration.js):**
+- `processLLMResponse()` - Main response handler with validation flow
 - `sendCorrectionRequest()` - Request LLM to fix unreachable nodes
 - `retrySpecificSchool(schoolName)` - Regenerate single school
 - `getSchoolsNeedingAttention()` - Get list of problem schools
-- `finishSkyrimNetGeneration()` - Summary with attention tracking
+- `finishLLMGeneration()` - Summary with attention tracking
 
 **Key Functions (treeParser.js):**
 - `getUnreachableNodesInfo(school, rootId)` - Analyze reachability, return unreachable nodes
@@ -554,7 +554,7 @@ SpellLearning/
 │           ├── llmApiSettings.js ✅ LLM API config
 │           ├── buttonHandlers.js ✅ Button event handlers
 │           ├── cppCallbacks.js   ✅ C++ callback handlers
-│           └── skyrimNetIntegration.js ✅ LLM integration
+│           └── llmIntegration.js ✅ LLM integration
 ├── esp/
 │   └── ESP_SETUP_GUIDE.md        ✅ ESP creation instructions
 └── docs/
@@ -593,7 +593,7 @@ MO2/mods/SpellLearning_RELEASE/
 │                   ├── llmApiSettings.js
 │                   ├── buttonHandlers.js
 │                   ├── cppCallbacks.js
-│                   └── skyrimNetIntegration.js
+│                   └── llmIntegration.js
 ├── Scripts/
 │   ├── SpellLearning_Bridge.pex
 │   └── Source/
@@ -601,7 +601,7 @@ MO2/mods/SpellLearning_RELEASE/
 ├── SKSE/
 │   └── Plugins/
 │       ├── SpellLearning.dll
-│       └── SkyrimNet/
+│       └── SpellLearning/
 │           └── custom_prompts/
 └── (ESP if applicable)
 ```

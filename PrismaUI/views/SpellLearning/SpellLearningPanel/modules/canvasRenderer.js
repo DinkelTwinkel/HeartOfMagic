@@ -76,7 +76,8 @@ var CanvasRenderer = {
     _learningPath: null,       // { nodeId, path: [{x,y}...], progress: 0-1, startTime, color }
     _learningPathDuration: 1200,  // ms for the path to animate
     _learningPathAnimationComplete: true,  // Static path only shows after animation
-    
+    _animatingPathNodes: null,    // Set of node IDs in the CURRENTLY ANIMATING path only
+
     // Persistent learning state - tracks which nodes are being learned
     _learningNodeIds: null,       // Set of node IDs currently in learning state
     _learningPathNodes: null,     // Set of all node IDs along paths to learning nodes
@@ -736,7 +737,12 @@ var CanvasRenderer = {
         
         // Nodes
         this.renderNodes(ctx, viewLeft, viewRight, viewTop, viewBottom);
-        
+
+        // Edit mode overlay (pen line, eraser path)
+        if (typeof EditMode !== 'undefined' && EditMode.isActive) {
+            EditMode.renderOverlay(ctx);
+        }
+
         ctx.restore();
         
         // =====================================================================
@@ -969,10 +975,15 @@ var CanvasRenderer = {
             // Skip if hidden school
             if (settings.schoolVisibility && settings.schoolVisibility[node.school] === false) continue;
             
-            // Check if this node is on a learning path (only show after animation completes)
-            var isOnLearningPath = this._learningPathAnimationComplete && 
-                                   this._learningPathNodes instanceof Set && 
+            // Check if this node is on a learning path
+            var isOnLearningPath = this._learningPathNodes instanceof Set &&
                                    this._learningPathNodes.has(node.id);
+
+            // During animation, hide ONLY the nodes in the currently animating path
+            // (let animation draw that path progressively, but keep other learning paths visible)
+            if (isOnLearningPath && this._animatingPathNodes && this._animatingPathNodes.has(node.id)) {
+                isOnLearningPath = false;  // Hide - animation will draw this
+            }
             
             // Draw if unlocked OR if on a learning path (after animation)
             if (node.state !== 'unlocked' && !isOnLearningPath) continue;
@@ -1007,8 +1018,8 @@ var CanvasRenderer = {
             
             if (!fromNode || !toNode) continue;
             
-            // Discovery mode: skip if either node not visible
-            if (this._discoveryVisibleIds) {
+            // Discovery mode: skip if either node not visible (disabled in edit mode)
+            if (this._discoveryVisibleIds && !(typeof EditMode !== 'undefined' && EditMode.isActive)) {
                 var fromVisible = this._discoveryVisibleIds.has(edge.from) || this._discoveryVisibleIds.has(fromNode.id);
                 var toVisible = this._discoveryVisibleIds.has(edge.to) || this._discoveryVisibleIds.has(toNode.id);
                 if (!fromVisible || !toVisible) continue;
@@ -1024,10 +1035,20 @@ var CanvasRenderer = {
                 continue;
             }
             
-            // Check if this edge is on a learning path (only show after animation completes)
-            var fromOnPath = this._learningPathAnimationComplete && hasLearningPaths && this._learningPathNodes.has(fromNode.id);
-            var toOnPath = this._learningPathAnimationComplete && hasLearningPaths && this._learningPathNodes.has(toNode.id);
+            // Check if this edge is on a learning path
+            var fromOnPath = hasLearningPaths && this._learningPathNodes.has(fromNode.id);
+            var toOnPath = hasLearningPaths && this._learningPathNodes.has(toNode.id);
             var isLearningEdge = fromOnPath && toOnPath;
+
+            // During animation, hide edges that are part of the CURRENTLY ANIMATING path only
+            // (other learning paths remain visible)
+            if (isLearningEdge && this._animatingPathNodes) {
+                var fromAnimating = this._animatingPathNodes.has(fromNode.id);
+                var toAnimating = this._animatingPathNodes.has(toNode.id);
+                if (fromAnimating && toAnimating) {
+                    isLearningEdge = false;  // Hide - animation will draw this
+                }
+            }
             
             var bothUnlocked = fromNode.state === 'unlocked' && toNode.state === 'unlocked';
             var toLearning = toNode.state === 'learning';
@@ -1070,12 +1091,12 @@ var CanvasRenderer = {
                 continue;
             }
             
-            // Discovery mode visibility
-            if (this._discoveryVisibleIds) {
+            // Discovery mode visibility (disabled in edit mode - show everything)
+            if (this._discoveryVisibleIds && !(typeof EditMode !== 'undefined' && EditMode.isActive)) {
                 if (!this._discoveryVisibleIds.has(node.id) && !this._discoveryVisibleIds.has(node.formId)) {
                     continue;
                 }
-                
+
                 // Show locked nodes as mystery
                 if (node.state === 'locked') {
                     this.renderMysteryNode(ctx, node);
@@ -1159,13 +1180,22 @@ var CanvasRenderer = {
         var size, fillColor, strokeColor, strokeWidth, alpha;
         var learningPathColor = this._learningPathColor || '#00ffff';
         var ringColor = this._heartRingColor || '#b8a878';  // Gold ring color for outlines
-        // Only show learning path styling after animation completes
-        var isOnLearningPath = this._learningPathAnimationComplete && 
-                               (this._learningPathNodes instanceof Set) && 
+        // Check if on learning path
+        var isOnLearningPath = (this._learningPathNodes instanceof Set) &&
                                this._learningPathNodes.has(node.id);
-        var isLearning = this._learningPathAnimationComplete && 
-                         (node.state === 'learning' || node.state === 'Learning');
-        
+        var isLearning = (node.state === 'learning' || node.state === 'Learning');
+
+        // During animation, hide learning path styling ONLY for nodes in the animating path
+        // (other learning paths remain visible)
+        var isBeingAnimated = this._animatingPathNodes && this._animatingPathNodes.has(node.id);
+        if (isOnLearningPath && isBeingAnimated) {
+            isOnLearningPath = false;  // Hide path styling - animation will draw this
+        }
+
+        // If this is the learning node but it's being animated, don't show learning styling yet
+        // (show as 'available' until animation completes and reaches this node)
+        var showLearningStyle = isLearning && !isBeingAnimated;
+
         if (node.state === 'unlocked') {
             size = 12;
             fillColor = schoolColor;
@@ -1173,14 +1203,15 @@ var CanvasRenderer = {
             strokeColor = isOnLearningPath ? ringColor : schoolColor;
             strokeWidth = 1.5;
             alpha = 1.0;
-        } else if (isLearning) {
-            // Learning state - cyan fill, ring color outline
+        } else if (showLearningStyle) {
+            // Learning state - cyan fill, ring color outline (only after animation completes)
             size = 12;  // Same as unlocked
             fillColor = learningPathColor;  // Cyan fill
             strokeColor = ringColor;  // Ring color outline for learning node
             strokeWidth = 1.5;
             alpha = 1.0;
-        } else if (node.state === 'available') {
+        } else if (node.state === 'available' || (isLearning && isBeingAnimated)) {
+            // Available nodes OR learning nodes still being animated (show as available temporarily)
             size = 9;
             fillColor = '#1a1a2e';
             strokeColor = schoolColor;  // Use school/tree color for available nodes
@@ -1433,11 +1464,20 @@ var CanvasRenderer = {
             startTime: performance.now(),
             color: color
         };
-        
+
+        // Store which nodes are in THIS specific animating path
+        // (so we can hide only these during animation, not other learning paths)
+        this._animatingPathNodes = new Set();
+        for (var i = 0; i < path.length; i++) {
+            if (path[i].node && path[i].node.id) {
+                this._animatingPathNodes.add(path[i].node.id);
+            }
+        }
+
         // Don't show static learning path until animation completes
         this._learningPathAnimationComplete = false;
-        
-        console.log('[CanvasRenderer] Learning animation started for:', node.name, 'path length:', path.length);
+
+        console.log('[CanvasRenderer] Learning animation started for:', node.name, 'path length:', path.length, 'animating nodes:', this._animatingPathNodes.size);
         this._needsRender = true;
     },
     
@@ -1517,7 +1557,8 @@ var CanvasRenderer = {
         if (progress >= 1) {
             // Animation complete - mark as done so static path can show
             this._learningPathAnimationComplete = true;
-            
+            this._animatingPathNodes = null;  // Clear animating nodes - all paths now visible
+
             // Clear the animation object shortly after completion
             if (elapsed > this._learningPathDuration + 200) {
                 this._learningPath = null;
@@ -1547,36 +1588,52 @@ var CanvasRenderer = {
         for (var i = 0; i < this.nodes.length && labelsDrawn < maxLabels; i++) {
             var node = this.nodes[i];
             
-            // Show labels for unlocked, learning, AND available (learnable) nodes
-            if (node.state !== 'unlocked' && node.state !== 'learning' && node.state !== 'available') continue;
-            if (!node.name) continue;
+            // In edit mode: show ALL labels. Otherwise: only unlocked/learning/available
+            var isEditActive = typeof EditMode !== 'undefined' && EditMode.isActive;
+            if (!isEditActive && node.state !== 'unlocked' && node.state !== 'learning' && node.state !== 'available') continue;
+            if (!node.name && !isEditActive) continue;
             if (settings.schoolVisibility && settings.schoolVisibility[node.school] === false) continue;
-            
+
+            // Check if name should be revealed based on XP progress
+            var labelText = node.name || node.formId;
+            if (!isEditActive && node.state !== 'unlocked' && settings.cheatMode !== true) {
+                var _canonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
+                var _prog = state.spellProgress ? state.spellProgress[_canonId] : null;
+                var _pct = _prog && _prog.required > 0 ? (_prog.xp / _prog.required) * 100 : 0;
+                var _threshold = settings.revealName || 10;
+                if (_pct < _threshold && node.state !== 'learning') {
+                    labelText = '???';
+                }
+            }
+
             // Set color based on state
             if (node.state === 'unlocked') {
                 ctx.fillStyle = '#fff';
             } else if (node.state === 'learning') {
                 // Learning - static cyan text
                 ctx.fillStyle = this._learningPathColor || '#00ffff';
+            } else if (labelText === '???') {
+                // Hidden name - very dim
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
             } else {
                 // Available/learnable - use dimmer color
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             }
-            
+
             // Transform node position WITH rotation, but text stays screen-aligned
             var rotatedX = node.x * cos - node.y * sin;
             var rotatedY = node.x * sin + node.y * cos;
-            
+
             var screenX = rotatedX * this.zoom + this.panX + cx;
             var screenY = rotatedY * this.zoom + this.panY + cy;
-            
+
             // Viewport check
             if (screenX < -50 || screenX > this._width + 50 || screenY < -50 || screenY > this._height + 50) {
                 continue;
             }
-            
+
             // Draw text at screen position (no rotation)
-            ctx.fillText(node.name.substring(0, 12), screenX, screenY + 14 * this.zoom);
+            ctx.fillText(labelText.substring(0, 12), screenX, screenY + 14 * this.zoom);
             labelsDrawn++;
         }
     },

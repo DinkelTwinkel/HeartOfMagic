@@ -830,8 +830,8 @@ function initializeSettings() {
             console.log('[SpellLearning] Pause game on focus:', settings.pauseGameOnFocus);
             
             // Notify C++ immediately
-            if (typeof SkyrimNetBridge !== 'undefined' && SkyrimNetBridge.call) {
-                SkyrimNetBridge.call('SetPauseGameOnFocus', settings.pauseGameOnFocus ? 'true' : 'false');
+            if (window.callCpp) {
+                window.callCpp('SetPauseGameOnFocus', settings.pauseGameOnFocus ? 'true' : 'false');
             }
         });
     }
@@ -2896,6 +2896,7 @@ function initializeHeartSettings() {
     applyHeartSettingsToRenderer();
     applyGlobeSettings();
     console.log('[HeartSettings] Initialized successfully');
+
 }
 
 /**

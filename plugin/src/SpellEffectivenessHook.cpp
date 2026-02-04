@@ -6,6 +6,8 @@
 #include <chrono>
 #include <set>
 #include <iomanip>
+#include <mutex>
+#include <shared_mutex>
 #include "RE/M/MagicMenu.h"
 #include "RE/G/GFxValue.h"
 #include "RE/T/TESDescription.h"
@@ -26,26 +28,33 @@ SpellEffectivenessHook* SpellEffectivenessHook::GetSingleton()
 
 // Hook structure for ActiveEffect::AdjustForPerks
 // This is a virtual function hook using SKSE's vtable patching
-// 
+//
 // From ActiveEffect.h:
 //   virtual void AdjustForPerks(Actor* a_caster, MagicTarget* a_target);  // index 00
 struct AdjustForPerksHook
 {
+    // PERFORMANCE: Cache player pointer - GetSingleton() returns stable pointer
+    static inline RE::PlayerCharacter* s_cachedPlayer = nullptr;
+
     static void thunk(RE::ActiveEffect* a_effect, RE::Actor* a_caster, RE::MagicTarget* a_target)
     {
         // Call original first to let perks apply
         func(a_effect, a_caster, a_target);
-        
+
         // PERFORMANCE: Early exit for non-player casters BEFORE any other checks
         // This is the most common case (NPC spells) - exit as fast as possible
         if (!a_caster) {
             return;
         }
-        RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
-        if (!player || a_caster != player) {
+
+        // PERFORMANCE: Use cached player pointer instead of GetSingleton() every call
+        if (!s_cachedPlayer) {
+            s_cachedPlayer = RE::PlayerCharacter::GetSingleton();
+        }
+        if (!s_cachedPlayer || a_caster != s_cachedPlayer) {
             return;  // Exit immediately for NPC spells
         }
-        
+
         // Now we know it's a player spell - do the full check
         SpellEffectivenessHook::GetSingleton()->ApplyEffectivenessScalingFast(a_effect);
     }
@@ -130,37 +139,29 @@ struct SpellNameHook
         }
         
         RE::FormID spellId = spell->GetFormID();
-        
-        // Log first time we see ANY spell name query (to confirm hook works)
-        static std::unordered_set<RE::FormID> loggedSpells;
-        static bool firstLog = true;
-        if (firstLog) {
-            logger::info("SpellNameHook: HOOK IS WORKING - first spell queried: {} ({:08X})",
+
+        // PERFORMANCE: One-time log to confirm hook is working (thread-safe)
+        static std::once_flag s_firstLogFlag;
+        std::call_once(s_firstLogFlag, [&]() {
+            logger::info("SpellNameHook: Hook active - first spell queried: {} ({:08X})",
                 originalName ? originalName : "(null)", spellId);
-            firstLog = false;
-        }
-        
+        });
+
         auto* hook = SpellEffectivenessHook::GetSingleton();
         if (!hook || !hook->GetSettings().modifyGameDisplay) {
             return originalName;
         }
-        
+
         // Check if spell is early-learned
         if (!hook->IsEarlyLearnedSpell(spellId)) {
             return originalName;
         }
-        
-        // Log when we find an early-learned spell
-        if (loggedSpells.find(spellId) == loggedSpells.end()) {
-            loggedSpells.insert(spellId);
-            logger::info("SpellNameHook: Early-learned spell name requested: {} ({:08X})", 
-                originalName ? originalName : "(null)", spellId);
-        }
-        
+
         // Get the modified name from cache
         g_modifiedName = hook->GetModifiedSpellName(spell);
         if (!g_modifiedName.empty()) {
-            logger::info("SpellNameHook: Returning modified name for {:08X}: {}", spellId, g_modifiedName);
+            // PERFORMANCE: Use trace level for hot path logging
+            logger::trace("SpellNameHook: Returning modified name for {:08X}", spellId);
             return g_modifiedName.c_str();
         }
         
@@ -567,7 +568,7 @@ void SpellEffectivenessHook::ApplyEffectivenessScaling(RE::ActiveEffect* a_effec
 
 void SpellEffectivenessHook::SetSettings(const EarlyLearningSettings& settings)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_settings = settings;
     logger::info("SpellEffectivenessHook: Settings updated - enabled: {}, unlock: {}%, min: {}%, max: {}%",
         settings.enabled, settings.unlockThreshold, settings.minEffectiveness, settings.maxEffectiveness);
@@ -579,25 +580,25 @@ void SpellEffectivenessHook::SetSettings(const EarlyLearningSettings& settings)
 
 void SpellEffectivenessHook::AddEarlyLearnedSpell(RE::FormID formId)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_earlyLearnedSpells.insert(formId);
     logger::info("SpellEffectivenessHook: Added spell {:08X} to early-learned set", formId);
 }
 
 void SpellEffectivenessHook::RemoveEarlyLearnedSpell(RE::FormID formId)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_earlyLearnedSpells.erase(formId);
     logger::info("SpellEffectivenessHook: Removed spell {:08X} from early-learned set (mastered)", formId);
 }
 
 bool SpellEffectivenessHook::IsEarlyLearnedSpell(RE::FormID formId) const
 {
-    // PERFORMANCE: Fast check without lock if no early spells at all
+    // PERFORMANCE: Use shared_lock for read-only access (allows concurrent reads)
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (m_earlyLearnedSpells.empty()) {
         return false;
     }
-    std::lock_guard<std::mutex> lock(m_mutex);
     return m_earlyLearnedSpells.find(formId) != m_earlyLearnedSpells.end();
 }
 
@@ -619,7 +620,7 @@ bool SpellEffectivenessHook::NeedsNerfing(RE::FormID spellFormId) const
 
 void SpellEffectivenessHook::SetPowerSteps(const std::vector<PowerStep>& steps)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     
     // Copy steps and ensure Mastered is always at the end
     m_powerSteps.clear();
@@ -656,8 +657,8 @@ int SpellEffectivenessHook::GetCurrentPowerStep(RE::FormID spellFormId) const
 {
     auto progress = ProgressionManager::GetSingleton()->GetProgress(spellFormId);
     float progressPercent = progress.progressPercent * 100.0f;
-    
-    std::lock_guard<std::mutex> lock(m_mutex);
+
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     int numSteps = static_cast<int>(m_powerSteps.size());
     
     // Find which step we're at (highest step where progress >= threshold)
@@ -672,7 +673,7 @@ int SpellEffectivenessHook::GetCurrentPowerStep(RE::FormID spellFormId) const
 float SpellEffectivenessHook::GetSteppedEffectiveness(RE::FormID spellFormId) const
 {
     int step = GetCurrentPowerStep(spellFormId);
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (step >= 0 && step < static_cast<int>(m_powerSteps.size())) {
         return m_powerSteps[step].effectiveness;
     }
@@ -681,7 +682,7 @@ float SpellEffectivenessHook::GetSteppedEffectiveness(RE::FormID spellFormId) co
 
 const char* SpellEffectivenessHook::GetPowerStepLabel(int step) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (step < 0 || step >= static_cast<int>(m_powerSteps.size())) {
         return "Unknown";
     }
@@ -764,10 +765,10 @@ void SpellEffectivenessHook::MarkMastered(RE::FormID spellFormId)
     
     // Clear display cache since spell is now at full power
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
         m_displayCache.erase(spellFormId);
     }
-    
+
     logger::info("SpellEffectivenessHook: Spell {:08X} mastered - nerf removed, name restored", spellFormId);
     
     // Notify UI
@@ -810,10 +811,10 @@ void SpellEffectivenessHook::RemoveEarlySpellFromPlayer(RE::FormID spellFormId)
     
     // Clear display cache
     {
-        std::lock_guard<std::mutex> lock(hook->m_mutex);
+        std::unique_lock<std::shared_mutex> lock(hook->m_mutex);
         hook->m_displayCache.erase(spellFormId);
     }
-    
+
     // Notify UI
     UIManager::GetSingleton()->UpdateSpellState(
         std::format("0x{:08X}", spellFormId), "available");
@@ -885,19 +886,19 @@ std::string SpellEffectivenessHook::GetModifiedSpellName(RE::SpellItem* spell)
         return spell->GetName();
     }
     
-    // Check cache
+    // Check cache (read-only)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         auto it = m_displayCache.find(spellId);
         if (it != m_displayCache.end() && !it->second.modifiedName.empty()) {
             return it->second.modifiedName;
         }
     }
-    
+
     // Build modified name - update cache
     UpdateSpellDisplayCache(spellId, spell);
-    
-    std::lock_guard<std::mutex> lock(m_mutex);
+
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     return m_displayCache[spellId].modifiedName;
 }
 
@@ -916,9 +917,9 @@ void SpellEffectivenessHook::UpdateSpellDisplayCache(RE::FormID spellFormId, RE:
     std::string stepLabel = "Unknown";
     int numSteps = 0;
     
-    // Get step info under lock
+    // Get step info under lock (read-only)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         numSteps = static_cast<int>(m_powerSteps.size());
         if (step >= 0 && step < numSteps) {
             effectiveness = m_powerSteps[step].effectiveness;
@@ -932,7 +933,7 @@ void SpellEffectivenessHook::UpdateSpellDisplayCache(RE::FormID spellFormId, RE:
     // This prevents stacking modifications like "Spell (Learning - 20%) (Learning - 35%)"
     std::string originalName;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
         auto it = m_originalSpellNames.find(spellFormId);
         if (it != m_originalSpellNames.end()) {
             // Use stored original name
@@ -941,7 +942,7 @@ void SpellEffectivenessHook::UpdateSpellDisplayCache(RE::FormID spellFormId, RE:
             // First time seeing this spell - store its current name as original
             originalName = spell->GetName();
             m_originalSpellNames[spellFormId] = originalName;
-            logger::info("SpellEffectivenessHook: Stored original name for {:08X}: '{}'", 
+            logger::info("SpellEffectivenessHook: Stored original name for {:08X}: '{}'",
                 spellFormId, originalName);
         }
     }
@@ -957,9 +958,9 @@ void SpellEffectivenessHook::UpdateSpellDisplayCache(RE::FormID spellFormId, RE:
     // Build modified description with scaled values
     std::string modifiedDesc = GetScaledSpellDescription(spell);
     
-    // Update cache
+    // Update cache (write operation)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
         SpellDisplayCache& cache = m_displayCache[spellFormId];
         cache.originalName = originalName;
         cache.modifiedName = modifiedName;
@@ -981,9 +982,9 @@ bool SpellEffectivenessHook::CheckAndUpdatePowerStep(RE::FormID spellFormId)
     int currentStep = GetCurrentPowerStep(spellFormId);
     int numSteps = GetNumPowerSteps();
     
-    // Check against cached step
+    // Check against cached step (read-only)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         auto it = m_displayCache.find(spellFormId);
         if (it != m_displayCache.end()) {
             if (it->second.currentStep == currentStep) {
@@ -1008,10 +1009,10 @@ bool SpellEffectivenessHook::CheckAndUpdatePowerStep(RE::FormID spellFormId)
 void SpellEffectivenessHook::RefreshAllSpellDisplays()
 {
     logger::info("SpellEffectivenessHook: Refreshing all spell displays after load...");
-    
+
     std::unordered_set<RE::FormID> spellsCopy;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         spellsCopy = m_earlyLearnedSpells;
     }
     
@@ -1050,11 +1051,11 @@ void SpellEffectivenessHook::ApplyModifiedSpellName(RE::FormID spellFormId)
         return;
     }
     
-    // Make sure we have the display cache updated
+    // Make sure we have the display cache updated (read-only)
     std::string modifiedName;
     std::string originalName;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         auto it = m_displayCache.find(spellFormId);
         if (it == m_displayCache.end()) {
             return;  // No cache entry
@@ -1085,8 +1086,8 @@ void SpellEffectivenessHook::RestoreOriginalSpellName(RE::FormID spellFormId)
     // Get original name from storage (more reliable than cache)
     std::string originalName;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+
         // First try the dedicated original name storage
         auto origIt = m_originalSpellNames.find(spellFormId);
         if (origIt != m_originalSpellNames.end()) {
@@ -1116,10 +1117,10 @@ void SpellEffectivenessHook::RestoreOriginalSpellName(RE::FormID spellFormId)
 void SpellEffectivenessHook::RefreshAllSpellNames()
 {
     logger::info("SpellEffectivenessHook: Refreshing all spell names and descriptions...");
-    
+
     std::unordered_set<RE::FormID> spellsCopy;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         spellsCopy = m_earlyLearnedSpells;
     }
     
@@ -1163,9 +1164,9 @@ void SpellEffectivenessHook::ApplyModifiedDescriptions(RE::FormID spellFormId)
         auto* baseEffect = effect->baseEffect;
         RE::FormID effectId = baseEffect->GetFormID();
         
-        // Store original description if not already stored
+        // Store original description if not already stored (write operation)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::unique_lock<std::shared_mutex> lock(m_mutex);
             if (m_originalEffectDescriptions.find(effectId) == m_originalEffectDescriptions.end()) {
                 if (baseEffect->magicItemDescription.data()) {
                     m_originalEffectDescriptions[effectId] = baseEffect->magicItemDescription.data();
@@ -1173,7 +1174,7 @@ void SpellEffectivenessHook::ApplyModifiedDescriptions(RE::FormID spellFormId)
                         effectId, m_originalEffectDescriptions[effectId]);
                 }
             }
-            
+
             // Increment usage count
             m_effectUsageCount[effectId]++;
         }
@@ -1186,10 +1187,10 @@ void SpellEffectivenessHook::ApplyModifiedDescriptions(RE::FormID spellFormId)
         float scaledMag = magnitude * effectiveness;
         float scaledDur = duration * effectiveness;
         
-        // Get original description template
+        // Get original description template (read-only)
         std::string originalDesc;
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
             auto it = m_originalEffectDescriptions.find(effectId);
             if (it != m_originalEffectDescriptions.end()) {
                 originalDesc = it->second;
@@ -1251,10 +1252,10 @@ void SpellEffectivenessHook::RestoreOriginalDescriptions(RE::FormID spellFormId)
         
         std::string originalDesc;
         bool shouldRestore = false;
-        
+
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            
+            std::unique_lock<std::shared_mutex> lock(m_mutex);
+
             // Decrement usage count
             auto countIt = m_effectUsageCount.find(effectId);
             if (countIt != m_effectUsageCount.end()) {
@@ -1265,7 +1266,7 @@ void SpellEffectivenessHook::RestoreOriginalDescriptions(RE::FormID spellFormId)
                     m_effectUsageCount.erase(countIt);
                 }
             }
-            
+
             if (shouldRestore) {
                 auto descIt = m_originalEffectDescriptions.find(effectId);
                 if (descIt != m_originalEffectDescriptions.end()) {
@@ -1286,10 +1287,10 @@ void SpellEffectivenessHook::RestoreOriginalDescriptions(RE::FormID spellFormId)
 void SpellEffectivenessHook::RefreshAllDescriptions()
 {
     logger::info("SpellEffectivenessHook: Refreshing all spell descriptions...");
-    
+
     std::unordered_set<RE::FormID> spellsCopy;
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
         spellsCopy = m_earlyLearnedSpells;
     }
     
@@ -1340,11 +1341,11 @@ static std::string ScaleDescriptionNumbers(const std::string& description,
         }
     }
     
-    // Use regex to find numbers in the description
+    // PERFORMANCE: Static regex - compiled once instead of every call
     // Match numbers that are:
     // - Preceded by word boundary or space
     // - Followed by word boundary, space, or common suffixes like "points", "damage", "%"
-    std::regex numberRegex(R"(\b(\d+(?:\.\d+)?)\b)");
+    static const std::regex numberRegex(R"(\b(\d+(?:\.\d+)?)\b)");
     
     std::string::const_iterator searchStart(result.cbegin());
     std::smatch match;
@@ -1494,7 +1495,7 @@ std::string SpellEffectivenessHook::GetScaledSpellDescription(RE::SpellItem* spe
 
 void SpellEffectivenessHook::OnGameSaved(SKSE::SerializationInterface* a_intfc)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     
     if (!a_intfc->OpenRecord(kEarlyLearnedRecord, 1)) {
         logger::error("SpellEffectivenessHook: Failed to open early-learned record for saving");
@@ -1516,7 +1517,7 @@ void SpellEffectivenessHook::OnGameSaved(SKSE::SerializationInterface* a_intfc)
 void SpellEffectivenessHook::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
 {
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
         
         uint32_t type, version, length;
         
@@ -1563,7 +1564,7 @@ void SpellEffectivenessHook::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
 
 void SpellEffectivenessHook::OnRevert(SKSE::SerializationInterface* a_intfc)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_earlyLearnedSpells.clear();
     m_displayCache.clear();
     logger::info("SpellEffectivenessHook: Cleared early-learned spells and display cache on revert");

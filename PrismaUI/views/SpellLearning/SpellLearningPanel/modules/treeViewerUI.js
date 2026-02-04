@@ -221,14 +221,14 @@ function initializeTreeViewer() {
     var importTreeBtn = document.getElementById('import-tree-btn');
     var loadSavedBtn = document.getElementById('load-saved-btn');
     var importBtn = document.getElementById('import-btn');
-    var skyrimNetAutoBtn = document.getElementById('skyrimnet-auto-btn');
-    var skyrimNetToolbarBtn = document.getElementById('skyrimnet-toolbar-btn');
-    
+    var llmAutoBtn = document.getElementById('llm-auto-btn');
+    var llmToolbarBtn = document.getElementById('llm-toolbar-btn');
+
     if (importTreeBtn) importTreeBtn.addEventListener('click', showImportModal);
     if (loadSavedBtn) loadSavedBtn.addEventListener('click', loadSavedTree);
     if (importBtn) importBtn.addEventListener('click', showImportModal);
-    if (skyrimNetAutoBtn) skyrimNetAutoBtn.addEventListener('click', startSkyrimNetAutoGenerate);
-    if (skyrimNetToolbarBtn) skyrimNetToolbarBtn.addEventListener('click', startSkyrimNetAutoGenerate);
+    if (llmAutoBtn) llmAutoBtn.addEventListener('click', startLLMAutoGenerate);
+    if (llmToolbarBtn) llmToolbarBtn.addEventListener('click', startLLMAutoGenerate);
     
     // Save/Reload/Clear tree buttons (cheat mode only)
     var clearTreeBtn = document.getElementById('clear-tree-btn');
@@ -272,8 +272,8 @@ function initializeTreeViewer() {
         });
     }
     
-    // Check if SkyrimNet is available on init
-    checkSkyrimNetAvailability();
+    // Check if LLM is available on init
+    checkLLMAvailability();
     
     // Modal controls
     var modalCloseBtn = document.getElementById('modal-close-btn');
@@ -668,16 +668,21 @@ function showSpellDetails(node) {
     console.log('[SpellLearning] showSpellDetails - Looking for:', node.formId);
     console.log('[SpellLearning] Available progress keys:', progressKeys.join(', '));
     
-    // Try multiple formId formats (with/without 0x prefix, different cases)
+    // Use canonical formId for duplicates, then try multiple formats
+    var lookupId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
     var formIdVariants = [
-        node.formId,
-        node.formId.toLowerCase(),
-        node.formId.toUpperCase(),
-        node.formId.replace(/^0x/i, ''),
-        '0x' + node.formId.replace(/^0x/i, ''),
-        '0x' + node.formId.replace(/^0x/i, '').toUpperCase(),
-        '0x' + node.formId.replace(/^0x/i, '').toLowerCase()
+        lookupId,
+        lookupId.toLowerCase(),
+        lookupId.toUpperCase(),
+        lookupId.replace(/^0x/i, ''),
+        '0x' + lookupId.replace(/^0x/i, ''),
+        '0x' + lookupId.replace(/^0x/i, '').toUpperCase(),
+        '0x' + lookupId.replace(/^0x/i, '').toLowerCase()
     ];
+    // Also check the node's own formId if different from canonical
+    if (lookupId !== node.formId) {
+        formIdVariants.push(node.formId);
+    }
     
     var progress = null;
     var matchedKey = null;
@@ -695,9 +700,9 @@ function showSpellDetails(node) {
     }
     progress = progress || { xp: 0, required: 100, progress: 0 };
     
-    // Calculate XP required based on tier (use tier XP if progress.required not set)
+    // Calculate XP required based on tier (always use current settings, not stale C++ value)
     var tierXP = getXPForTier(node.level);
-    var requiredXP = progress.required || tierXP || 100;
+    var requiredXP = xpOverrides[node.formId] !== undefined ? xpOverrides[node.formId] : (tierXP || 100);
     
     // Calculate progress percent - use xp/required directly since progress.progress may not be set
     var progressPercent = requiredXP > 0 ? ((progress.xp || 0) / requiredXP) * 100 : 0;
@@ -705,20 +710,24 @@ function showSpellDetails(node) {
         '| revealName:', settings.revealName, '| showName should be:', progressPercent >= settings.revealName);
     
     // Check if player has the spell (via early learning or other means)
-    var playerHasSpell = progress.unlocked || 
-                         state.playerKnownSpells.has(node.formId) || 
+    // Use canonical formId for duplicates
+    var playerHasSpell = progress.unlocked ||
+                         state.playerKnownSpells.has(lookupId) ||
+                         state.playerKnownSpells.has(node.formId) ||
                          node.state === 'unlocked';
     
     // Determine what to show based on state and progress
     // Cheat mode shows ALL info (includes former debug mode features)
+    // Edit mode reveals everything so the user can see what they're editing
     // Player having the spell (early learning) also reveals full info
     // Available (learnable) spells always show their name
-    var showFullInfo = playerHasSpell || settings.cheatMode;
-    var isLearnable = node.state === 'available';
+    var isEditActive = typeof EditMode !== 'undefined' && EditMode.isActive;
+    var showFullInfo = playerHasSpell || settings.cheatMode || isEditActive;
+    var isLearnable = node.state === 'available' || node.state === 'learning';
     var showName = showFullInfo || isLearnable || progressPercent >= settings.revealName;
     var showEffects = showFullInfo || progressPercent >= settings.revealEffects;
     var showDescription = showFullInfo || progressPercent >= settings.revealDescription;
-    var showLevelAndCost = node.state !== 'locked' || settings.cheatMode;  // Always show for available
+    var showLevelAndCost = node.state !== 'locked' || settings.cheatMode || isEditActive;  // Always show for available
     
     // School badge always visible
     document.getElementById('spell-school').textContent = node.school;
@@ -835,7 +844,55 @@ function showSpellDetails(node) {
         var n = state.treeData ? state.treeData.nodes.find(function(x) { return x.id === id; }) : null;
         var li = document.createElement('li');
         var showPrereqName = settings.cheatMode || (n && n.state !== 'locked');
-        li.textContent = showPrereqName ? (n ? (n.name || n.formId) : id) : '???';
+
+        // Check if edit mode is active
+        var isEditMode = typeof EditMode !== 'undefined' && EditMode.isActive;
+
+        if (isEditMode) {
+            li.classList.add('prereq-edit-item');
+
+            // Name span
+            var nameSpan = document.createElement('span');
+            nameSpan.className = 'prereq-name';
+            nameSpan.textContent = showPrereqName ? (n ? (n.name || n.formId) : id) : '???';
+            nameSpan.dataset.id = id;
+            li.appendChild(nameSpan);
+
+            // Edit controls container
+            var controls = document.createElement('span');
+            controls.className = 'prereq-edit-controls';
+
+            // Toggle hard/soft button
+            var toggleBtn = document.createElement('button');
+            toggleBtn.className = 'prereq-toggle-btn ' + (isHard ? 'hard' : 'soft');
+            toggleBtn.textContent = isHard ? 'H' : 'S';
+            toggleBtn.title = isHard ? 'Hard (required) - click to make Soft' : 'Soft (optional) - click to make Hard';
+            toggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (typeof EditMode !== 'undefined') {
+                    EditMode.togglePrereqType(node, id);
+                }
+            });
+            controls.appendChild(toggleBtn);
+
+            // Delete button
+            var deleteBtn = document.createElement('button');
+            deleteBtn.className = 'prereq-delete-btn';
+            deleteBtn.textContent = '×';
+            deleteBtn.title = 'Remove prerequisite';
+            deleteBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (typeof EditMode !== 'undefined') {
+                    EditMode.deletePrerequisite(node, id);
+                }
+            });
+            controls.appendChild(deleteBtn);
+
+            li.appendChild(controls);
+        } else {
+            li.textContent = showPrereqName ? (n ? (n.name || n.formId) : id) : '???';
+        }
+
         li.dataset.id = id;
         if (isMet) li.classList.add('prereq-met');
         if (!showPrereqName) li.classList.add('prereq-hidden');  // Not clickable
@@ -880,9 +937,38 @@ function showSpellDetails(node) {
             hardPrereqsList.appendChild(createPrereqItem(id, true, isPrereqMet(id)));
         });
         
-        // Update soft needed label
+        // Update soft needed label (editable in edit mode)
         if (softNeededCount) {
-            softNeededCount.textContent = '(need ' + softNeeded + ' of ' + softPrereqs.length + ')';
+            var isEditMode = typeof EditMode !== 'undefined' && EditMode.isActive;
+
+            if (isEditMode && softPrereqs.length > 0) {
+                // Create editable input
+                softNeededCount.innerHTML = '';
+                var needLabel = document.createTextNode('(need ');
+                softNeededCount.appendChild(needLabel);
+
+                var input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'soft-needed-input';
+                input.min = '0';
+                input.max = String(softPrereqs.length);
+                input.value = String(softNeeded);
+                input.addEventListener('change', function() {
+                    var newVal = parseInt(this.value) || 0;
+                    if (typeof EditMode !== 'undefined') {
+                        EditMode.updateSoftNeeded(node, newVal);
+                    }
+                });
+                input.addEventListener('click', function(e) {
+                    e.stopPropagation();  // Prevent panel close
+                });
+                softNeededCount.appendChild(input);
+
+                var ofLabel = document.createTextNode(' of ' + softPrereqs.length + ')');
+                softNeededCount.appendChild(ofLabel);
+            } else {
+                softNeededCount.textContent = '(need ' + softNeeded + ' of ' + softPrereqs.length + ')';
+            }
         }
         
         // Populate soft prereqs
@@ -949,9 +1035,23 @@ function updateDetailsProgression(node) {
     var xpCurrentInput = document.getElementById('xp-current-input');
     var xpRequiredInput = document.getElementById('xp-required-input');
     
-    // Get progress data for this spell
-    var progress = state.spellProgress[node.formId] || { xp: 0, required: 100, unlocked: false, ready: false };
-    var isLearningTarget = state.learningTargets[node.school] === node.formId;
+    // Get progress data for this spell (use canonical ID for duplicates)
+    var canonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(node) : node.formId;
+    var progress = state.spellProgress[canonId] || { xp: 0, required: 100, unlocked: false, ready: false };
+    var isLearningTarget = state.learningTargets[node.school] === canonId || state.learningTargets[node.school] === node.formId;
+
+    // Debug: log learning target check to file via C++
+    var debugMsg = '[SELECT] ' + (node.name || node.formId) +
+                   ' | school:' + node.school +
+                   ' | formId:' + node.formId +
+                   ' | targets:' + JSON.stringify(state.learningTargets) +
+                   ' | isTarget:' + isLearningTarget +
+                   ' | state:' + node.state +
+                   ' | isRoot:' + (node.isRoot || false);
+    console.log(debugMsg);
+    if (window.callCpp) {
+        window.callCpp('LogMessage', JSON.stringify({ level: 'info', message: debugMsg }));
+    }
     
     // Update learning status badge
     updateLearningStatusBadge(node, progress);
@@ -985,14 +1085,14 @@ function updateDetailsProgression(node) {
                     var newXP = Math.max(0, parseInt(this.value) || 0);
                     this.value = newXP;
                     progress.xp = newXP;
-                    state.spellProgress[node.formId] = progress;
+                    state.spellProgress[canonId] = progress;
                     // Update progress bar
                     var percent = requiredXP > 0 ? (newXP / requiredXP) * 100 : 0;
                     progressBar.style.width = Math.min(percent, 100) + '%';
                     progressBar.classList.toggle('ready', newXP >= requiredXP);
-                    // Tell C++ about the XP change
+                    // Tell C++ about the XP change (send canonical ID)
                     if (window.callCpp) {
-                        window.callCpp('SetSpellXP', JSON.stringify({ formId: node.formId, xp: newXP }));
+                        window.callCpp('SetSpellXP', JSON.stringify({ formId: canonId, xp: newXP }));
                     }
                 };
             }
@@ -1030,11 +1130,25 @@ function updateDetailsProgression(node) {
             unlockBtn.textContent = 'Relock Spell';
             unlockBtn.style.background = '#ef4444';  // Red for relock
             progressBar.classList.add('ready');
+            learnBtn.classList.add('hidden');
         } else {
-            // Not unlocked - show unlock option
+            // Not unlocked - show both learn and cheat unlock options
             unlockBtn.textContent = 'Unlock (Cheat)';
             unlockBtn.style.background = '';  // Default color
             progressBar.classList.toggle('ready', progress.xp >= requiredXP);
+
+            // Also show learn button in cheat mode (for normal learning path)
+            if (node.state === 'available' || node.state === 'learning') {
+                learnBtn.classList.remove('hidden');
+                var isLearningTarget = state.learningTargets && state.learningTargets[node.school] === node.formId;
+                if (isLearningTarget) {
+                    learnBtn.textContent = 'Learning...';
+                    learnBtn.classList.add('active');
+                } else {
+                    learnBtn.textContent = 'Learn This';
+                    learnBtn.classList.remove('active');
+                }
+            }
         }
         return;
     }

@@ -581,6 +581,12 @@
                         <button id="zoom-out" class="zoom-btn" title="Zoom Out">−</button>
                         <span id="renderer-badge" class="renderer-badge" title="Active renderer">SVG</span>
                         <button id="heart-settings-btn" class="zoom-btn" title="Heart Animation Settings">⚙</button>
+                        <button id="edit-tree-btn" class="zoom-btn" title="Edit Tree">✎</button>
+                        <span id="edit-tools" class="edit-tools" style="display: none;">
+                            <button id="edit-tool-move" class="zoom-btn edit-tool active" title="Move Tool">✥</button>
+                            <button id="edit-tool-pen" class="zoom-btn edit-tool" title="Pen Tool - Draw Prerequisites">✒</button>
+                            <button id="edit-tool-eraser" class="zoom-btn edit-tool" title="Eraser Tool - Remove Links">⌫</button>
+                        </span>
                     </div>
                     
                     <!-- Heart Animation Settings Popup -->
@@ -935,8 +941,8 @@
                         <button id="import-btn" class="btn btn-secondary btn-sm">
                             <span class="btn-icon">[v]</span> Import
                         </button>
-                        <button id="skyrimnet-toolbar-btn" class="btn btn-skyrimnet btn-sm hidden" title="Auto-generate trees via SkyrimNet LLM">
-                            <span class="btn-icon">[AI]</span> SkyrimNet
+                        <button id="llm-toolbar-btn" class="btn btn-llm btn-sm hidden" title="Auto-generate trees via LLM">
+                            <span class="btn-icon">[AI]</span> LLM
                         </button>
                         <span class="spell-count">
                             <span id="total-count">0</span> spells | 
@@ -1960,6 +1966,26 @@
         </div>
     </div>
 
+    <!-- Spawn Spell Modal (Edit Mode) -->
+    <div id="spawn-spell-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content spawn-modal">
+            <div class="modal-header">
+                <h3>Spawn Spell Node</h3>
+                <button class="modal-close" id="spawn-modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="spawn-search" class="spawn-search" placeholder="Search spells..." autofocus>
+                <div id="spawn-spell-list" class="spawn-spell-list">
+                    <div class="spawn-loading">Loading spells...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="spawn-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Tooltip -->
     <div id="tooltip" class="tooltip hidden">
         <div class="tooltip-name"></div>
@@ -1993,6 +2019,7 @@
     <script src="modules/starfield.js"></script>
     <script src="modules/globe3D.js"></script>
     <script src="modules/canvasRenderer.js"></script>
+    <script src="modules/editMode.js"></script>
     <!-- Note: WebGL is NOT supported in Ultralight/PrismaUI - Canvas 2D is used for large trees -->
     
     <!-- 5. UI Panels and Features -->
@@ -2006,7 +2033,7 @@
     
     <!-- 6. Integrations and Callbacks -->
     <script src="modules/cppCallbacks.js"></script>
-    <script src="modules/skyrimNetIntegration.js"></script>
+    <script src="modules/llmIntegration.js"></script>
     <script src="modules/proceduralTreeBuilder.js"></script>
     
     <!-- 6.5. Visual-First Tree Builder -->

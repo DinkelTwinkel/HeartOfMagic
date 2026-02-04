@@ -3,6 +3,7 @@
 #include "PCH.h"
 #include <unordered_set>
 #include <unordered_map>
+#include <shared_mutex>
 
 // =============================================================================
 // SpellEffectivenessHook
@@ -174,6 +175,6 @@ private:
     // Track which effects are being used by early-learned spells (effect FormID -> count)
     std::unordered_map<RE::FormID, int> m_effectUsageCount;
     
-    // Mutex for thread safety
-    mutable std::mutex m_mutex;
+    // Mutex for thread safety (shared_mutex allows concurrent reads)
+    mutable std::shared_mutex m_mutex;
 };

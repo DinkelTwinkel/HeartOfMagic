@@ -9,7 +9,7 @@ A spell progression system for Skyrim SE/AE that creates skill trees for learnin
 - **SKSE64** - [Download](https://skse.silverlock.org/)
 - **Address Library for SKSE Plugins** - [Nexus](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
 - **PrismaUI** - UI framework (included or separate download)
-- **SkyrimNet** - For AI NPC interactions (optional but recommended)
+- **OpenRouter API Key** - For LLM-powered tree generation (optional)
 
 ### Optional (for Complex Build mode)
 - **Python 3.10+** - Required for the "BUILD TREE (Complex)" option
@@ -173,7 +173,7 @@ This usually happens for one of these reasons:
 ## Credits
 - SKSE Team for SKSE64
 - PrismaUI developers
-- SkyrimNet for AI integration
+- OpenRouter for LLM API access
 
 ## License
 This mod is provided as-is for personal use. Do not redistribute without permission.

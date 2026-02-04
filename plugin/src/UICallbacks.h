@@ -66,12 +66,12 @@ void OnCopyToClipboard(UIManager* ui, const char* argument);
 void OnGetClipboard(UIManager* ui, const char* argument);
 
 // =============================================================================
-// LLM CALLBACKS (LLMBridge.cpp)
+// LLM CALLBACKS (OpenRouter integration)
 // =============================================================================
 
-void OnCheckSkyrimNet(UIManager* ui, const char* argument);
-void OnSkyrimNetGenerate(UIManager* ui, const char* argument);
-void OnPollSkyrimNetResponse(UIManager* ui, const char* argument);
+void OnCheckLLM(UIManager* ui, const char* argument);
+void OnLLMGenerate(UIManager* ui, const char* argument);
+void OnPollLLMResponse(UIManager* ui, const char* argument);
 void OnLoadLLMConfig(UIManager* ui, const char* argument);
 void OnSaveLLMConfig(UIManager* ui, const char* argument);
 

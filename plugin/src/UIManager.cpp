@@ -124,9 +124,9 @@ bool UIManager::Initialize()
     m_prismaUI->RegisterJSListener(m_view, "GetClipboard", OnGetClipboard);
 
     // Register JS callbacks - LLM integration (OpenRouter)
-    m_prismaUI->RegisterJSListener(m_view, "CheckSkyrimNet", OnCheckSkyrimNet);
-    m_prismaUI->RegisterJSListener(m_view, "SkyrimNetGenerate", OnSkyrimNetGenerate);
-    m_prismaUI->RegisterJSListener(m_view, "PollSkyrimNetResponse", OnPollSkyrimNetResponse);
+    m_prismaUI->RegisterJSListener(m_view, "CheckLLM", OnCheckLLM);
+    m_prismaUI->RegisterJSListener(m_view, "LLMGenerate", OnLLMGenerate);
+    m_prismaUI->RegisterJSListener(m_view, "PollLLMResponse", OnPollLLMResponse);
     m_prismaUI->RegisterJSListener(m_view, "LoadLLMConfig", OnLoadLLMConfig);
     m_prismaUI->RegisterJSListener(m_view, "SaveLLMConfig", OnSaveLLMConfig);
     m_prismaUI->RegisterJSListener(m_view, "LogMessage", OnLogMessage);
@@ -245,6 +245,10 @@ void UIManager::ShowPanel()
         m_prismaUI->Focus(m_view, pauseGame);
         m_hasFocus = true;
         bool hasFocusNow = m_prismaUI->HasFocus(m_view);
+
+        // Forcefully hide Windows cursor - PrismaUI has its own cursor
+        // Loop until counter goes negative (cursor hidden)
+        while (::ShowCursor(FALSE) >= 0) {};
 
         // Log detailed state including MenuCursor
         auto* menuCursor = RE::MenuCursor::GetSingleton();
@@ -365,6 +369,9 @@ void UIManager::HidePanel()
     // Unfocus and hide immediately - PrismaUI handles the input release
     m_prismaUI->Unfocus(m_view);
     m_prismaUI->Hide(m_view);
+
+    // NOTE: Do NOT restore Windows cursor - Skyrim manages its own cursor during gameplay
+    // The cursor counter stays negative, which is correct for gameplay
 
     // Restore default order so we don't interfere with other PrismaUI mods while hidden
     m_prismaUI->SetOrder(m_view, 0);
@@ -517,6 +524,17 @@ void UIManager::SendSpellInfoBatch(const std::string& jsonData)
 
     logger::info("UIManager: Sending batch spell info to UI ({} bytes)", jsonData.size());
     m_prismaUI->InteropCall(m_view, "updateSpellInfoBatch", jsonData.c_str());
+}
+
+void UIManager::SendValidationResult(const std::string& jsonData)
+{
+    if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
+        logger::error("UIManager: Cannot send validation result - not initialized");
+        return;
+    }
+
+    logger::info("UIManager: Sending tree validation result to UI");
+    m_prismaUI->InteropCall(m_view, "updateValidationResult", jsonData.c_str());
 }
 
 void UIManager::UpdateSpellState(const std::string& formId, const std::string& state)
@@ -798,43 +816,104 @@ void UIManager::OnLoadSpellTree(const char* argument)
             std::stringstream buffer;
             buffer << file.rdbuf();
             file.close();
-            
+
             std::string treeContent = buffer.str();
             logger::info("UIManager: Loaded spell tree from file ({} bytes)", treeContent.size());
-            
-            // Send tree data to viewer
-            instance->SendTreeData(treeContent);
 
-            // Parse tree to get all formIds and fetch spell info
+            // Parse and validate tree
+            json treeData;
             try {
-                json treeData = json::parse(treeContent);
-                std::vector<std::string> formIds;
-                
-                if (treeData.contains("schools")) {
-                    for (auto& [schoolName, schoolData] : treeData["schools"].items()) {
-                        if (schoolData.contains("nodes")) {
-                            for (auto& node : schoolData["nodes"]) {
-                                if (node.contains("formId")) {
-                                    formIds.push_back(node["formId"].get<std::string>());
-                                }
+                treeData = json::parse(treeContent);
+            } catch (const std::exception& e) {
+                logger::error("UIManager: Failed to parse tree JSON: {}", e.what());
+                instance->UpdateTreeStatus("Error: Invalid tree JSON");
+                return;
+            }
+
+            // Validate and fix FormIDs (handles load order changes)
+            auto validationResult = SpellScanner::ValidateAndFixTree(treeData);
+
+            // Log validation results
+            logger::info("UIManager: Tree validation - {}/{} valid, {} resolved, {} invalid",
+                validationResult.validNodes, validationResult.totalNodes,
+                validationResult.resolvedFromPersistent, validationResult.invalidNodes);
+
+            if (!validationResult.missingPlugins.empty()) {
+                logger::warn("UIManager: Missing plugins:");
+                for (const auto& plugin : validationResult.missingPlugins) {
+                    logger::warn("  - {}", plugin);
+                }
+            }
+
+            // Save fixed tree if any changes were made
+            bool treeModified = (validationResult.resolvedFromPersistent > 0 || validationResult.invalidNodes > 0);
+            if (treeModified) {
+                // Update version to 2.0 if not already
+                if (!treeData.contains("version") || treeData["version"] != "2.0") {
+                    treeData["version"] = "2.0";
+                }
+
+                try {
+                    std::ofstream outFile(treePath);
+                    if (outFile.is_open()) {
+                        outFile << treeData.dump(2);
+                        outFile.close();
+                        logger::info("UIManager: Saved fixed tree with {} FormID updates", validationResult.resolvedFromPersistent);
+                    }
+                } catch (const std::exception& e) {
+                    logger::error("UIManager: Failed to save fixed tree: {}", e.what());
+                }
+            }
+
+            // Send validated tree data to viewer
+            instance->SendTreeData(treeData.dump());
+
+            // Build status message
+            std::string statusMsg;
+            if (validationResult.invalidNodes > 0) {
+                statusMsg = std::format("Loaded tree - {} spells ({} removed due to missing plugins)",
+                    validationResult.validNodes, validationResult.invalidNodes);
+            } else if (validationResult.resolvedFromPersistent > 0) {
+                statusMsg = std::format("Loaded tree - {} spells ({} fixed after load order change)",
+                    validationResult.validNodes, validationResult.resolvedFromPersistent);
+            } else {
+                statusMsg = std::format("Loaded tree - {} spells", validationResult.validNodes);
+            }
+            instance->UpdateTreeStatus(statusMsg);
+
+            // Send validation result to UI for potential warning display
+            json validationJson;
+            validationJson["totalNodes"] = validationResult.totalNodes;
+            validationJson["validNodes"] = validationResult.validNodes;
+            validationJson["invalidNodes"] = validationResult.invalidNodes;
+            validationJson["resolvedFromPersistent"] = validationResult.resolvedFromPersistent;
+            validationJson["missingPlugins"] = validationResult.missingPlugins;
+            instance->SendValidationResult(validationJson.dump());
+
+            // Fetch spell info for all valid formIds
+            std::vector<std::string> formIds;
+            if (treeData.contains("schools")) {
+                for (auto& [schoolName, schoolData] : treeData["schools"].items()) {
+                    if (schoolData.contains("nodes")) {
+                        for (auto& node : schoolData["nodes"]) {
+                            if (node.contains("formId")) {
+                                formIds.push_back(node["formId"].get<std::string>());
                             }
                         }
                     }
                 }
+            }
 
-                // Fetch spell info for all formIds and send as batch
-                if (!formIds.empty()) {
-                    json spellInfoArray = json::array();
-                    for (const auto& formIdStr : formIds) {
-                        auto spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
-                        if (!spellInfo.empty()) {
-                            spellInfoArray.push_back(json::parse(spellInfo));
-                        }
+            // Fetch spell info and send as batch
+            if (!formIds.empty()) {
+                json spellInfoArray = json::array();
+                for (const auto& formIdStr : formIds) {
+                    auto spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
+                    if (!spellInfo.empty()) {
+                        spellInfoArray.push_back(json::parse(spellInfo));
                     }
-                    instance->SendSpellInfoBatch(spellInfoArray.dump());
                 }
-            } catch (const std::exception& e) {
-                logger::error("UIManager: Failed to parse tree for spell info: {}", e.what());
+                instance->SendSpellInfoBatch(spellInfoArray.dump());
             }
 
         } else {
@@ -2184,10 +2263,10 @@ void UIManager::OnGetClipboard(const char* argument)
 }
 
 // =============================================================================
-// SKYRIMNET INTEGRATION
+// LLM INTEGRATION (OpenRouter)
 // =============================================================================
 
-void UIManager::OnCheckSkyrimNet(const char* argument)
+void UIManager::OnCheckLLM(const char* argument)
 {
     logger::info("UIManager: CheckLLM callback triggered (OpenRouter mode)");
     
@@ -2207,10 +2286,10 @@ void UIManager::OnCheckSkyrimNet(const char* argument)
     }
     
     // Send result to UI
-    instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetStatus", result.dump().c_str());
+    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMStatus", result.dump().c_str());
 }
 
-void UIManager::OnSkyrimNetGenerate(const char* argument)
+void UIManager::OnLLMGenerate(const char* argument)
 {
     logger::info("UIManager: LLM Generate callback triggered (OpenRouter mode)");
     
@@ -2258,7 +2337,7 @@ void UIManager::OnSkyrimNetGenerate(const char* argument)
             errorResponse["status"] = "error";
             errorResponse["school"] = schoolName;
             errorResponse["message"] = "API key not configured - check Settings";
-            instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetQueued", errorResponse.dump().c_str());
+            instance->m_prismaUI->InteropCall(instance->m_view, "onLLMQueued", errorResponse.dump().c_str());
             return;
         }
         
@@ -2267,7 +2346,7 @@ void UIManager::OnSkyrimNetGenerate(const char* argument)
         queuedResponse["status"] = "queued";
         queuedResponse["school"] = schoolName;
         queuedResponse["message"] = "Sending to OpenRouter...";
-        instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetQueued", queuedResponse.dump().c_str());
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMQueued", queuedResponse.dump().c_str());
         
         // Build prompts
         std::string systemPrompt = R"(You are a Skyrim spell tree architect. Your task is to create a logical spell learning tree for a single magic school. You MUST return ONLY valid JSON - no explanations, no markdown code blocks, just raw JSON.
@@ -2391,7 +2470,7 @@ You have more freedom in tree design:
                     logger::error("UIManager: OpenRouter error for {}: {}", schoolName, response.error);
                 }
                 
-                instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetPollResult", result.dump().c_str());
+                instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", result.dump().c_str());
             });
         
     } catch (const std::exception& e) {
@@ -2401,15 +2480,15 @@ You have more freedom in tree design:
         errorResult["hasResponse"] = true;
         errorResult["success"] = 0;
         errorResult["response"] = std::string("Exception: ") + e.what();
-        instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetPollResult", errorResult.dump().c_str());
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", errorResult.dump().c_str());
     }
 }
 
-void UIManager::OnPollSkyrimNetResponse(const char* argument)
+void UIManager::OnPollLLMResponse(const char* argument)
 {
     auto* instance = GetSingleton();
     
-    std::filesystem::path responsePath = "Data/SKSE/Plugins/SpellLearning/skyrimnet_response.json";
+    std::filesystem::path responsePath = "Data/SKSE/Plugins/SpellLearning/llm_response.json";
     
     json result;
     result["hasResponse"] = false;
@@ -2441,7 +2520,7 @@ void UIManager::OnPollSkyrimNetResponse(const char* argument)
                     result["success"] = success;
                     result["response"] = response;
                     
-                    logger::info("UIManager: Found SkyrimNet response, success={}, length={}", 
+                    logger::info("UIManager: Found LLM response, success={}, length={}", 
                                 success, response.length());
                     
                     // Clear the response file after reading
@@ -2454,11 +2533,11 @@ void UIManager::OnPollSkyrimNetResponse(const char* argument)
                 }
             }
         } catch (const std::exception& e) {
-            logger::warn("UIManager: Failed to read SkyrimNet response: {}", e.what());
+            logger::warn("UIManager: Failed to read LLM response: {}", e.what());
         }
     }
     
-    instance->m_prismaUI->InteropCall(instance->m_view, "onSkyrimNetPollResult", result.dump().c_str());
+    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", result.dump().c_str());
 }
 
 // =============================================================================

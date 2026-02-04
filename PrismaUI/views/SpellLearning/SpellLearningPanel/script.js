@@ -20,7 +20,7 @@
  * 12. progressionUI.js       -  547 lines (progression system)
  * 13. difficultyProfiles.js  -  429 lines (difficulty profiles)
  * 14. cppCallbacks.js        -  438 lines (C++ SKSE callbacks)
- * 15. skyrimNetIntegration.js-  621 lines (LLM integration)
+ * 15. llmIntegration.js      -  621 lines (LLM integration)
  * 16. llmApiSettings.js      -  245 lines (API configuration)
  * 17. buttonHandlers.js      -  277 lines (button events)
  */
@@ -459,14 +459,14 @@ function suggestSchoolColorsWithLLM(onComplete) {
     console.log('[SpellLearning] Sending color suggestion request via C++ bridge');
     
     // Set current school so poll handler knows this is a color suggestion
-    state.skyrimNetCurrentSchool = '_ColorSuggestion';
-    
+    state.llmCurrentSchool = '_ColorSuggestion';
+
     if (window.callCpp) {
-        window.callCpp('SkyrimNetGenerate', JSON.stringify(request));
+        window.callCpp('LLMGenerate', JSON.stringify(request));
     } else {
         console.error('[SpellLearning] C++ bridge not available');
         updateStatus('Error: C++ bridge not available');
-        state.skyrimNetCurrentSchool = null;
+        state.llmCurrentSchool = null;
         if (onComplete) onComplete();
     }
 }
