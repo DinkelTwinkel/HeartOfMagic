@@ -1,0 +1,50 @@
+[ system ]
+You are a Skyrim spell tree architect. Your task is to create a logical spell learning tree for a single magic school. You MUST return ONLY valid JSON - no explanations, no markdown code blocks, just raw JSON.
+[ end system ]
+
+[ user ]
+Create a spell learning tree for the {{ school }} school of magic.
+
+## USER RULES
+{{ promptRules }}
+
+## OUTPUT FORMAT
+
+Return ONLY this JSON structure (no markdown, no explanations):
+
+{
+  "version": "1.0",
+  "schools": {
+    "{{ school }}": {
+      "root": "0xFORMID",
+      "nodes": [
+        {
+          "formId": "0xFORMID",
+          "children": ["0xCHILD1"],
+          "prerequisites": [],
+          "tier": 1
+        }
+      ]
+    }
+  }
+}
+
+## FIELD REQUIREMENTS
+- **formId**: Hex FormID exactly as shown in spell data (e.g., "0x00012FCD")
+- **children**: Array of formIds this spell unlocks (MAX 3). Empty [] for leaf nodes.
+- **prerequisites**: Array of formIds required before learning. Empty [] for root only.
+- **tier**: Integer depth (root=1, children of root=2, etc.)
+- **root**: The formId of the single root spell (lowest tier/novice spell)
+
+## CRITICAL RULES
+1. Use ONLY formIds from the spell data below - copy them EXACTLY
+2. Every spell in the data MUST appear exactly ONCE
+3. Each school has exactly ONE root spell (prerequisites=[])
+4. Maximum 3 children per node
+5. Same-tier branching allowed (Novice can unlock Novice)
+6. Return raw JSON ONLY - no markdown, no code blocks, no explanations
+
+## SPELL DATA FOR {{ school }}
+
+{{ spellData }}
+[ end user ]

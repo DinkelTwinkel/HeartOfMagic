@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spell Tree Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="tree-panel" class="tree-panel">
+        <!-- Header -->
+        <div class="panel-header">
+            <div class="header-left">
+                <span class="panel-title">SPELL TREE</span>
+                <span class="version-tag">v0.2</span>
+            </div>
+            <div class="header-right">
+                <button id="reset-btn" class="header-btn" title="Reset View">↺</button>
+                <button id="minimize-btn" class="header-btn" title="Minimize">−</button>
+                <button id="close-btn" class="header-btn" title="Close">×</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="panel-content">
+            <!-- Tree Canvas -->
+            <div id="tree-container" class="tree-container">
+                <svg id="tree-svg" class="tree-svg">
+                    <defs>
+                        <!-- Arrow markers -->
+                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" 
+                                orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#334155"/>
+                        </marker>
+                        <marker id="arrow-active" markerWidth="6" markerHeight="6" refX="5" refY="3" 
+                                orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#fbbf24"/>
+                        </marker>
+                        
+                        <!-- Glow filter -->
+                        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="6" result="blur"/>
+                            <feMerge>
+                                <feMergeNode in="blur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                        
+                        <!-- School gradients for spokes -->
+                        <linearGradient id="grad-destruction" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stop-color="#ef4444" stop-opacity="0.1"/>
+                            <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="grad-restoration" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stop-color="#facc15" stop-opacity="0.1"/>
+                            <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="grad-alteration" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stop-color="#22c55e" stop-opacity="0.1"/>
+                            <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="grad-conjuration" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stop-color="#a855f7" stop-opacity="0.1"/>
+                            <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="grad-illusion" x1="0%" y1="100%" x2="0%" y2="0%">
+                            <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.1"/>
+                            <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+                        </linearGradient>
+                    </defs>
+                    
+                    <!-- Main rotating group -->
+                    <g id="wheel-group">
+                        <!-- School spoke backgrounds -->
+                        <g id="spokes-layer"></g>
+                        
+                        <!-- Edges rendered behind nodes -->
+                        <g id="edges-layer"></g>
+                        
+                        <!-- Nodes rendered on top -->
+                        <g id="nodes-layer"></g>
+                    </g>
+                    
+                    <!-- Center hub (separate so it doesn't rotate) -->
+                    <g id="center-hub"></g>
+                </svg>
+                
+                <!-- School Labels (fixed, don't rotate) -->
+                <div id="school-labels" class="school-labels"></div>
+                
+                <!-- Zoom Controls -->
+                <div class="zoom-controls">
+                    <button id="zoom-in" class="zoom-btn" title="Zoom In">+</button>
+                    <span id="zoom-level">100%</span>
+                    <button id="zoom-out" class="zoom-btn" title="Zoom Out">−</button>
+                </div>
+                
+                <!-- Instructions -->
+                <div class="instructions">
+                    <span>Drag to pan / Scroll to zoom / Click node to focus school</span>
+                </div>
+                
+                <!-- Empty State -->
+                <div id="empty-state" class="empty-state">
+                    <div class="empty-icon">*</div>
+                    <div class="empty-text">No spell tree loaded</div>
+                    <button id="import-empty-btn" class="btn btn-primary">Import Tree JSON</button>
+                    <button id="load-demo-btn" class="btn btn-secondary">Load Demo</button>
+                </div>
+            </div>
+
+            <!-- Spell Details Sidebar -->
+            <div id="details-panel" class="details-panel hidden">
+                <div class="details-close">
+                    <button id="close-details" class="header-btn">×</button>
+                </div>
+                <div class="details-header">
+                    <h3 id="spell-name">-</h3>
+                    <span id="spell-school" class="school-badge">-</span>
+                </div>
+                
+                <div class="details-body">
+                    <div class="detail-row">
+                        <span class="detail-label">Level</span>
+                        <span id="spell-level" class="detail-value">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Magicka</span>
+                        <span id="spell-cost" class="detail-value">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Type</span>
+                        <span id="spell-type" class="detail-value">-</span>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <span class="detail-label">Effects</span>
+                        <ul id="spell-effects" class="detail-list"></ul>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <span class="detail-label">Description</span>
+                        <p id="spell-description" class="detail-desc">-</p>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <span class="detail-label">Prerequisites</span>
+                        <ul id="spell-prereqs" class="detail-list clickable"></ul>
+                    </div>
+                    
+                    <div class="detail-section">
+                        <span class="detail-label">Unlocks</span>
+                        <ul id="spell-unlocks" class="detail-list clickable"></ul>
+                    </div>
+                </div>
+                
+                <div class="details-footer">
+                    <span id="spell-state" class="state-badge locked">Locked</span>
+                    <button id="unlock-btn" class="btn btn-unlock" disabled>Unlock</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="panel-footer">
+            <div class="footer-left">
+                <button id="import-btn" class="btn btn-secondary">
+                    <span class="btn-icon">[v]</span> Import
+                </button>
+                <span class="spell-count">
+                    <span id="total-count">0</span> spells | 
+                    <span id="unlocked-count">0</span> unlocked
+                </span>
+            </div>
+            <div class="footer-right">
+                <span id="status-text" class="status-text">Ready</span>
+            </div>
+        </div>
+        
+        <!-- Resize Handle -->
+        <div class="resize-handle"></div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Spell Tree</h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <p>Paste the LLM-generated spell tree JSON:</p>
+                <textarea id="import-textarea" placeholder='{"version": "1.0", "schools": {...}}'></textarea>
+                <div id="import-error" class="error-box hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="import-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="import-confirm" class="btn btn-primary">Import</button>
+                <button id="load-demo" class="btn btn-secondary">Load Demo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip hidden">
+        <div class="tooltip-name"></div>
+        <div class="tooltip-info"></div>
+        <div class="tooltip-state"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wheel Renderer Test - Real Data</title>
+    <link rel="stylesheet" href="styles-skyrim.css">
+    <style>
+        /* Test page specific styles */
+        body {
+            margin: 0;
+            padding: 0;
+            background: #0a0a12;
+            color: #c8b88a;
+            font-family: 'Futura Condensed', 'Trebuchet MS', Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        .test-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .control-panel {
+            width: 320px;
+            background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+            border-right: 1px solid #3d3d56;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-panel h2 {
+            color: #7ec8e3;
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            border-bottom: 1px solid #3d3d56;
+            padding-bottom: 8px;
+        }
+
+        .control-panel h3 {
+            color: #c8b88a;
+            margin: 10px 0 5px 0;
+            font-size: 14px;
+        }
+
+        .control-group {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid #3d3d56;
+            border-radius: 4px;
+            padding: 10px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #888;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .control-group input[type="file"] {
+            width: 100%;
+            color: #c8b88a;
+            font-size: 12px;
+        }
+
+        .control-group select, .control-group input[type="number"] {
+            width: 100%;
+            background: #1a1a2e;
+            border: 1px solid #3d3d56;
+            color: #c8b88a;
+            padding: 6px;
+            font-size: 12px;
+        }
+
+        .btn {
+            background: linear-gradient(180deg, #3d3d56 0%, #2a2a40 100%);
+            border: 1px solid #5a5a7a;
+            color: #c8b88a;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        .btn:hover {
+            background: linear-gradient(180deg, #4d4d66 0%, #3a3a50 100%);
+        }
+
+        .btn-primary {
+            background: linear-gradient(180deg, #2a5a7a 0%, #1a3a5a 100%);
+            border-color: #3a7aaa;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(180deg, #3a6a8a 0%, #2a4a6a 100%);
+        }
+
+        .stats-box {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid #3d3d56;
+            border-radius: 4px;
+            padding: 10px;
+            font-size: 11px;
+            font-family: 'Consolas', monospace;
+        }
+
+        .stats-box .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .stats-box .stat-label { color: #888; }
+        .stats-box .stat-value { color: #7ec8e3; }
+        .stats-box .stat-value.good { color: #4caf50; }
+        .stats-box .stat-value.warn { color: #ffc107; }
+        .stats-box .stat-value.bad { color: #f44336; }
+
+        .view-panel {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tree-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .tree-svg {
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a12 100%);
+        }
+
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #3d3d56;
+        }
+
+        .zoom-btn {
+            background: #2a2a40;
+            border: 1px solid #3d3d56;
+            color: #c8b88a;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #zoom-level {
+            color: #7ec8e3;
+            font-size: 12px;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        .log-output {
+            background: #0a0a12;
+            border: 1px solid #3d3d56;
+            border-radius: 4px;
+            padding: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: 'Consolas', monospace;
+            font-size: 10px;
+            color: #888;
+        }
+
+        .log-output .log-info { color: #7ec8e3; }
+        .log-output .log-success { color: #4caf50; }
+        .log-output .log-warn { color: #ffc107; }
+        .log-output .log-error { color: #f44336; }
+
+        .file-list {
+            font-size: 11px;
+            color: #888;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .file-list .file-item {
+            padding: 2px 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .file-list .file-item.loaded {
+            color: #4caf50;
+        }
+
+        /* Hide tooltip for test page */
+        #tooltip { display: none; }
+
+        /* School legend */
+        .school-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            font-size: 10px;
+        }
+
+        .school-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .school-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h2>Wheel Renderer Test</h2>
+
+            <div class="control-group">
+                <label>Load Spell Data (JSON files)</label>
+                <input type="file" id="fileInput" multiple accept=".json">
+                <div class="file-list" id="fileList"></div>
+            </div>
+
+            <div class="control-group">
+                <label>Build Preset</label>
+                <select id="presetSelect">
+                    <option value="balanced">Balanced</option>
+                    <option value="strict">Strict Element Isolation</option>
+                    <option value="relaxed">Relaxed</option>
+                    <option value="chaos">Chaos (no rules)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Max Children Per Node</label>
+                <input type="number" id="maxChildren" value="3" min="1" max="10">
+            </div>
+
+            <div class="control-group">
+                <label>Shape Profile</label>
+                <select id="shapeSelect">
+                    <option value="organic">Organic</option>
+                    <option value="spiky">Spiky</option>
+                    <option value="radial">Radial</option>
+                    <option value="mountain">Mountain</option>
+                    <option value="cloud">Cloud</option>
+                    <option value="cascade">Cascade</option>
+                    <option value="linear">Linear</option>
+                    <option value="grid">Grid</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" onclick="buildAndRender()">Build Tree & Render</button>
+            <button class="btn" onclick="clearTree()">Clear</button>
+
+            <h3>School Colors</h3>
+            <div class="school-legend" id="schoolLegend"></div>
+
+            <h3>Build Statistics</h3>
+            <div class="stats-box" id="statsBox">
+                <div class="stat-row"><span class="stat-label">Status:</span><span class="stat-value">No data loaded</span></div>
+            </div>
+
+            <h3>Validation</h3>
+            <div class="stats-box" id="validationBox">
+                <div class="stat-row"><span class="stat-label">Ready</span></div>
+            </div>
+
+            <h3>Log</h3>
+            <div class="log-output" id="logOutput"></div>
+        </div>
+
+        <!-- View Panel with actual wheel renderer -->
+        <div class="view-panel">
+            <div id="tree-container" class="tree-container">
+                <svg id="tree-svg" class="tree-svg">
+                    <defs>
+                        <!-- Arrow markers -->
+                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3"
+                                orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#334155"/>
+                        </marker>
+                        <marker id="arrow-active" markerWidth="6" markerHeight="6" refX="5" refY="3"
+                                orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L6,3 z" fill="#fbbf24"/>
+                        </marker>
+
+                        <!-- Glow filter -->
+                        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="6" result="blur"/>
+                            <feMerge>
+                                <feMergeNode in="blur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    <!-- Main rotating group -->
+                    <g id="wheel-group">
+                        <!-- School spoke backgrounds -->
+                        <g id="spokes-layer"></g>
+
+                        <!-- Edges rendered behind nodes -->
+                        <g id="edges-layer"></g>
+
+                        <!-- Nodes rendered on top -->
+                        <g id="nodes-layer"></g>
+                    </g>
+
+                    <!-- Center hub (separate so it doesn't rotate) -->
+                    <g id="center-hub"></g>
+                </svg>
+
+                <!-- Zoom Controls -->
+                <div class="zoom-controls">
+                    <button id="zoom-in" class="zoom-btn" title="Zoom In">+</button>
+                    <span id="zoom-level">100%</span>
+                    <button id="zoom-out" class="zoom-btn" title="Zoom Out">-</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden tooltip (required by wheelRenderer but we hide it) -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <!-- Mock globals needed by modules -->
+    <script>
+        // Mock settings object
+        var settings = {
+            schoolColors: {
+                'Destruction': '#ff4444',
+                'Restoration': '#44ff88',
+                'Alteration': '#44aaff',
+                'Conjuration': '#aa44ff',
+                'Illusion': '#ffaa44'
+            },
+            schoolVisibility: {
+                'Destruction': true,
+                'Restoration': true,
+                'Alteration': true,
+                'Conjuration': true,
+                'Illusion': true
+            },
+            schoolConfigs: {},
+            treeGeneration: {
+                llm: { enabled: false }
+            }
+        };
+
+        // Mock callCpp for non-Skyrim environment
+        function callCpp(method, data) {
+            log('[Mock callCpp] ' + method, 'info');
+            return null;
+        }
+
+        // Mock state for modules that need it
+        var state = {
+            spells: [],
+            currentTree: null
+        };
+
+        // Storage for loaded spell data
+        var loadedSpellData = {};
+        var allSpells = [];
+
+        // Logging
+        function log(message, type) {
+            type = type || 'info';
+            var logOutput = document.getElementById('logOutput');
+            var div = document.createElement('div');
+            div.className = 'log-' + type;
+            div.textContent = '[' + new Date().toLocaleTimeString() + '] ' + message;
+            logOutput.appendChild(div);
+            logOutput.scrollTop = logOutput.scrollHeight;
+            console.log('[' + type.toUpperCase() + ']', message);
+        }
+    </script>
+
+    <!-- Load modules in order (same as index.html) -->
+    <script src="modules/constants.js"></script>
+    <script src="modules/state.js"></script>
+    <script src="modules/config.js"></script>
+
+    <!-- Unified modules -->
+    <script src="modules/edgeScoring.js"></script>
+    <script src="modules/shapeProfiles.js"></script>
+    <script src="modules/layoutEngine.js"></script>
+
+    <!-- Dependencies -->
+    <script src="modules/spellCache.js"></script>
+    <script src="modules/colorUtils.js"></script>
+    <script src="modules/uiHelpers.js"></script>
+
+    <!-- Tree building -->
+    <script src="modules/growthDSL.js"></script>
+    <script src="modules/treeParser.js"></script>
+
+    <!-- Renderers -->
+    <script src="modules/wheelRenderer.js"></script>
+    <script src="modules/starfield.js"></script>
+
+    <!-- More tree building modules -->
+    <script src="modules/layoutGenerator.js"></script>
+
+    <script src="modules/growthBehaviors.js"></script>
+    <script src="modules/visualFirstBuilder.js"></script>
+    <script src="modules/settingsAwareTreeBuilder.js"></script>
+
+    <!-- Test page logic -->
+    <script>
+        // Initialize when DOM ready
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Wheel test page loaded', 'success');
+
+            // Check critical modules
+            var criticalModules = [
+                { name: 'TREE_CONFIG', obj: typeof TREE_CONFIG !== 'undefined' },
+                { name: 'EdgeScoring', obj: typeof EdgeScoring !== 'undefined' },
+                { name: 'WheelRenderer', obj: typeof WheelRenderer !== 'undefined' },
+                { name: 'buildAllTreesSettingsAware', obj: typeof buildAllTreesSettingsAware === 'function' }
+            ];
+
+            var allLoaded = true;
+            criticalModules.forEach(function(m) {
+                if (!m.obj) {
+                    log('MISSING: ' + m.name, 'error');
+                    allLoaded = false;
+                }
+            });
+
+            if (!allLoaded) {
+                log('Some critical modules failed to load. Check console for errors.', 'error');
+            }
+
+            // Initialize WheelRenderer
+            var svg = document.getElementById('tree-svg');
+            if (svg && typeof WheelRenderer !== 'undefined') {
+                try {
+                    WheelRenderer.init(svg);
+                    log('WheelRenderer initialized', 'success');
+                } catch (err) {
+                    log('WheelRenderer.init error: ' + err.message, 'error');
+                    console.error(err);
+                }
+            } else {
+                log('WheelRenderer not found or SVG missing!', 'error');
+            }
+
+            // Setup file input handler
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+            // Setup zoom controls
+            document.getElementById('zoom-in').addEventListener('click', function() {
+                if (typeof WheelRenderer !== 'undefined') {
+                    WheelRenderer.zoom = Math.min(5, WheelRenderer.zoom * 1.2);
+                    WheelRenderer.updateTransform();
+                    updateZoomDisplay();
+                }
+            });
+
+            document.getElementById('zoom-out').addEventListener('click', function() {
+                if (typeof WheelRenderer !== 'undefined') {
+                    WheelRenderer.zoom = Math.max(0.2, WheelRenderer.zoom / 1.2);
+                    WheelRenderer.updateTransform();
+                    updateZoomDisplay();
+                }
+            });
+
+            // Update school legend
+            updateSchoolLegend();
+
+            // Log available modules
+            log('Modules loaded:', 'info');
+            log('  - TREE_CONFIG: ' + (typeof TREE_CONFIG !== 'undefined'), 'info');
+            log('  - EdgeScoring: ' + (typeof EdgeScoring !== 'undefined'), 'info');
+            log('  - SHAPE_PROFILES: ' + (typeof SHAPE_PROFILES !== 'undefined'), 'info');
+            log('  - LayoutEngine: ' + (typeof LayoutEngine !== 'undefined'), 'info');
+            log('  - GROWTH_BEHAVIORS: ' + (typeof GROWTH_BEHAVIORS !== 'undefined'), 'info');
+            log('  - buildAllTreesSettingsAware: ' + (typeof buildAllTreesSettingsAware === 'function'), 'info');
+            log('  - WheelRenderer: ' + (typeof WheelRenderer !== 'undefined'), 'info');
+        });
+
+        function updateZoomDisplay() {
+            document.getElementById('zoom-level').textContent = Math.round(WheelRenderer.zoom * 100) + '%';
+        }
+
+        function updateSchoolLegend() {
+            var legend = document.getElementById('schoolLegend');
+            legend.innerHTML = '';
+            var colors = settings.schoolColors;
+            var hasSchools = false;
+            for (var school in colors) {
+                hasSchools = true;
+                var item = document.createElement('div');
+                item.className = 'school-legend-item';
+                item.innerHTML = '<span class="school-legend-dot" style="background:' + colors[school] + '"></span>' + school;
+                legend.appendChild(item);
+            }
+            if (!hasSchools) {
+                legend.innerHTML = '<span style="color:#666;">Load spell data to see schools</span>';
+            }
+        }
+
+        function handleFileSelect(event) {
+            var files = event.target.files;
+            var fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            loadedSpellData = {};
+            allSpells = [];
+
+            var loadPromises = [];
+
+            for (var i = 0; i < files.length; i++) {
+                (function(file) {
+                    var div = document.createElement('div');
+                    div.className = 'file-item';
+                    div.textContent = file.name + ' (loading...)';
+                    div.id = 'file-' + i;
+                    fileList.appendChild(div);
+
+                    var promise = new Promise(function(resolve) {
+                        var reader = new FileReader();
+                        reader.onload = function(e) {
+                            try {
+                                var data = JSON.parse(e.target.result);
+                                var schoolName = file.name.replace('_spells.json', '').replace('.json', '');
+                                loadedSpellData[schoolName] = data;
+
+                                // Add spells to combined list
+                                if (Array.isArray(data)) {
+                                    data.forEach(function(spell) {
+                                        spell.school = spell.school || schoolName;
+                                        allSpells.push(spell);
+                                    });
+                                } else if (data.spells) {
+                                    data.spells.forEach(function(spell) {
+                                        spell.school = spell.school || schoolName;
+                                        allSpells.push(spell);
+                                    });
+                                }
+
+                                div.textContent = file.name + ' (' + (Array.isArray(data) ? data.length : (data.spells ? data.spells.length : 0)) + ' spells)';
+                                div.className = 'file-item loaded';
+                                log('Loaded ' + file.name, 'success');
+                                resolve();
+                            } catch (err) {
+                                div.textContent = file.name + ' (ERROR)';
+                                log('Failed to parse ' + file.name + ': ' + err.message, 'error');
+                                resolve();
+                            }
+                        };
+                        reader.readAsText(file);
+                    });
+                    loadPromises.push(promise);
+                })(files[i]);
+            }
+
+            Promise.all(loadPromises).then(function() {
+                log('Total spells loaded: ' + allSpells.length, 'info');
+                if (allSpells.length > 0) {
+                    var sample = allSpells[0];
+                    log('Sample spell: ' + sample.name + ', school=' + sample.school + ', skillLevel=' + sample.skillLevel, 'info');
+                }
+                updateStats({ totalSpells: allSpells.length, status: 'Ready to build' });
+            });
+        }
+
+        function updateStats(data) {
+            var box = document.getElementById('statsBox');
+            var html = '';
+
+            for (var key in data) {
+                var label = key.replace(/([A-Z])/g, ' $1').replace(/^./, function(s) { return s.toUpperCase(); });
+                var value = data[key];
+                var cls = 'stat-value';
+
+                if (key === 'orphans' || key === 'crossElementViolations') {
+                    cls += value === 0 ? ' good' : (value < 5 ? ' warn' : ' bad');
+                }
+
+                html += '<div class="stat-row"><span class="stat-label">' + label + ':</span><span class="' + cls + '">' + value + '</span></div>';
+            }
+
+            box.innerHTML = html;
+        }
+
+        function updateValidation(results) {
+            var box = document.getElementById('validationBox');
+            var html = '';
+
+            results.forEach(function(r) {
+                var cls = r.pass ? 'good' : 'bad';
+                html += '<div class="stat-row"><span class="stat-label">' + r.name + ':</span><span class="stat-value ' + cls + '">' + (r.pass ? 'PASS' : 'FAIL') + '</span></div>';
+            });
+
+            box.innerHTML = html;
+        }
+
+        function getPresetConfig(preset) {
+            var configs = {
+                balanced: {
+                    maxChildrenPerNode: 3,
+                    strictMode: false,
+                    crossElementPenalty: -500,
+                    sameElementBonus: 100
+                },
+                strict: {
+                    maxChildrenPerNode: 3,
+                    strictMode: true,
+                    crossElementPenalty: -10000,
+                    sameElementBonus: 200
+                },
+                relaxed: {
+                    maxChildrenPerNode: 5,
+                    strictMode: false,
+                    crossElementPenalty: -100,
+                    sameElementBonus: 50
+                },
+                chaos: {
+                    maxChildrenPerNode: 10,
+                    strictMode: false,
+                    crossElementPenalty: 0,
+                    sameElementBonus: 0
+                }
+            };
+            return configs[preset] || configs.balanced;
+        }
+
+        function buildAndRender() {
+            if (allSpells.length === 0) {
+                log('No spell data loaded!', 'error');
+                return;
+            }
+
+            log('Building tree with ' + allSpells.length + ' spells...', 'info');
+
+            var preset = document.getElementById('presetSelect').value;
+            var maxChildren = parseInt(document.getElementById('maxChildren').value) || 3;
+            var shape = document.getElementById('shapeSelect').value;
+
+            var config = getPresetConfig(preset);
+
+            log('Config: ' + preset + ', maxChildren=' + maxChildren + ', shape=' + shape, 'info');
+
+            // Detect schools from loaded data
+            var detectedSchools = {};
+            allSpells.forEach(function(spell) {
+                var school = spell.school || 'Unknown';
+                if (!detectedSchools[school]) {
+                    detectedSchools[school] = true;
+                }
+            });
+
+            // Build school configs with shape
+            var schoolConfigs = {};
+            for (var school in detectedSchools) {
+                schoolConfigs[school] = {
+                    shape: shape,
+                    density: 0.6,
+                    symmetry: 0.3
+                };
+                WheelRenderer.schoolConfigs[school] = schoolConfigs[school];
+
+                // Add school color if missing
+                if (!settings.schoolColors[school]) {
+                    var colorIndex = Object.keys(settings.schoolColors).length;
+                    var colors = ['#ff4444', '#44ff88', '#44aaff', '#aa44ff', '#ffaa44', '#ff44aa', '#44ffaa', '#aaff44'];
+                    settings.schoolColors[school] = colors[colorIndex % colors.length];
+                }
+                // Ensure visibility
+                settings.schoolVisibility[school] = true;
+            }
+
+            // Build treeGeneration settings
+            var treeGeneration = {
+                elementIsolation: config.strictMode || preset === 'strict',
+                elementIsolationStrict: config.strictMode || preset === 'strict',
+                strictTierOrdering: true,
+                linkStrategy: 'tier-then-element',
+                maxChildrenPerNode: maxChildren,
+                crossElementPenalty: config.crossElementPenalty,
+                sameElementBonus: config.sameElementBonus
+            };
+
+            // Build tree using SettingsAwareTreeBuilder
+            var startTime = performance.now();
+            var result;
+
+            log('Calling buildAllTreesSettingsAware with ' + allSpells.length + ' spells...', 'info');
+            log('treeGeneration settings: ' + JSON.stringify(treeGeneration), 'info');
+
+            try {
+                if (typeof buildAllTreesSettingsAware === 'function') {
+                    result = buildAllTreesSettingsAware(allSpells, schoolConfigs, treeGeneration);
+                    log('Build returned: ' + (result ? 'object with schools: ' + Object.keys(result.schools || {}).join(', ') : 'null'), 'info');
+                } else {
+                    log('buildAllTreesSettingsAware not available!', 'error');
+                    return;
+                }
+            } catch (err) {
+                log('Build error: ' + err.message, 'error');
+                log('Stack: ' + err.stack, 'error');
+                console.error(err);
+                return;
+            }
+
+            var buildTime = performance.now() - startTime;
+            log('Tree built in ' + buildTime.toFixed(0) + 'ms', 'success');
+
+            // Convert result to flat nodes/edges arrays
+            var nodes = [];
+            var edges = [];
+            var schoolData = {};
+
+            for (var schoolName in result.schools) {
+                var school = result.schools[schoolName];
+                var maxDepth = 0;
+
+                // Process nodes - ensure they have required properties
+                var processedNodes = (school.nodes || []).map(function(node) {
+                    // CRITICAL: WheelRenderer expects 'id' property
+                    node.id = node.id || node.formId;
+                    node.school = schoolName;
+                    // CRITICAL: WheelRenderer uses 'depth' for layout, not 'tier'
+                    node.depth = node.depth !== undefined ? node.depth : (node.tier || 0);
+                    // Track max depth
+                    if (node.depth > maxDepth) maxDepth = node.depth;
+                    // Add state for rendering (locked/unlocked)
+                    node.state = node.state || 'locked';
+                    return node;
+                });
+
+                schoolData[schoolName] = {
+                    nodes: processedNodes,
+                    links: school.links || [],
+                    maxDepth: maxDepth  // CRITICAL: WheelRenderer needs this for layout
+                };
+
+                // Add to flat array
+                processedNodes.forEach(function(node) {
+                    nodes.push(node);
+                });
+
+                // Convert links to edges format (use formId as id)
+                (school.links || []).forEach(function(link) {
+                    edges.push({
+                        from: link.from || link.source,
+                        to: link.to || link.target
+                    });
+                });
+            }
+
+            log('Schools processed: ' + Object.keys(schoolData).join(', '), 'info');
+            for (var sn in schoolData) {
+                log('  ' + sn + ': ' + schoolData[sn].nodes.length + ' nodes, maxDepth=' + schoolData[sn].maxDepth, 'info');
+            }
+
+            log('Result: ' + nodes.length + ' nodes, ' + edges.length + ' edges', 'info');
+
+            // Count orphans (nodes with no parents except roots)
+            var orphanCount = 0;
+            var rootIds = new Set();
+            nodes.forEach(function(n) { if (n.isRoot) rootIds.add(n.id); });
+            nodes.forEach(function(n) {
+                if (!n.isRoot && !edges.some(function(e) { return e.to === n.id; })) {
+                    orphanCount++;
+                }
+            });
+
+            // Count cross-element violations
+            var crossElementViolations = 0;
+            var nodeMap = {};
+            nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+            edges.forEach(function(e) {
+                var fromNode = nodeMap[e.from];
+                var toNode = nodeMap[e.to];
+                if (fromNode && toNode && fromNode.element && toNode.element) {
+                    if (fromNode.element !== toNode.element &&
+                        fromNode.element !== 'none' && toNode.element !== 'none') {
+                        crossElementViolations++;
+                    }
+                }
+            });
+
+            // Count max children violations
+            var maxChildrenViolations = 0;
+            var childCounts = {};
+            edges.forEach(function(e) {
+                childCounts[e.from] = (childCounts[e.from] || 0) + 1;
+            });
+            for (var nodeId in childCounts) {
+                if (childCounts[nodeId] > maxChildren) {
+                    maxChildrenViolations++;
+                }
+            }
+
+            // Update stats display
+            updateStats({
+                status: 'Built',
+                totalSpells: allSpells.length,
+                nodes: nodes.length,
+                edges: edges.length,
+                roots: rootIds.size,
+                orphans: orphanCount,
+                crossElementViolations: crossElementViolations,
+                maxChildrenViolations: maxChildrenViolations,
+                buildTime: buildTime.toFixed(0) + 'ms'
+            });
+
+            // Update validation
+            updateValidation([
+                { name: 'No orphans', pass: orphanCount === 0 },
+                { name: 'No cross-element', pass: crossElementViolations === 0 },
+                { name: 'Max children respected', pass: maxChildrenViolations === 0 },
+                { name: 'Has edges', pass: edges.length > 0 }
+            ]);
+
+            // Render the tree using WheelRenderer.setData (proper API)
+            log('Rendering with WheelRenderer...', 'info');
+
+            try {
+                // Update school legend with detected schools
+                updateSchoolLegend();
+
+                // Debug: log sample node
+                if (nodes.length > 0) {
+                    var sample = nodes[0];
+                    log('Sample node: id=' + sample.id + ', school=' + sample.school + ', depth=' + sample.depth + ', name=' + (sample.name || 'N/A'), 'info');
+                } else {
+                    log('WARNING: No nodes to render!', 'warn');
+                    return;
+                }
+
+                log('Calling WheelRenderer.setData with ' + nodes.length + ' nodes, ' + edges.length + ' edges', 'info');
+
+                // Use the proper setData API which handles layout and render
+                WheelRenderer.setData(nodes, edges, schoolData);
+
+                // Debug: check if nodes have positions after layout
+                var posCount = nodes.filter(function(n) { return n.x !== undefined; }).length;
+                log('Nodes with positions after layout: ' + posCount + '/' + nodes.length, 'info');
+
+                // Check if WheelRenderer has the nodes
+                log('WheelRenderer.nodes.length = ' + (WheelRenderer.nodes ? WheelRenderer.nodes.length : 'undefined'), 'info');
+                log('WheelRenderer.schools = ' + Object.keys(WheelRenderer.schools || {}).join(', '), 'info');
+
+                log('Render complete!', 'success');
+            } catch (err) {
+                log('Render error: ' + err.message, 'error');
+                log('Stack: ' + err.stack, 'error');
+                console.error(err);
+            }
+        }
+
+        function clearTree() {
+            if (typeof WheelRenderer !== 'undefined') {
+                WheelRenderer.clear();
+            }
+            updateStats({ status: 'Cleared' });
+            updateValidation([]);
+            log('Tree cleared', 'info');
+        }
+    </script>
+</body>
+</html>

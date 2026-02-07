@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tree & Mountain Shape Simulator — Spell Counts from Scan</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1a1a2e;
+      color: #e8e8e8;
+      margin: 0;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.4rem; margin: 0 0 8px; color: #c9a227; }
+    .subtitle { font-size: 0.9rem; color: #888; margin-bottom: 20px; }
+    .schools-data {
+      background: #16213e;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      font-size: 0.85rem;
+    }
+    .schools-data table { border-collapse: collapse; }
+    .schools-data th, .schools-data td { padding: 4px 12px; text-align: left; }
+    .schools-data th { color: #c9a227; }
+    .shapes-row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+    .shape-card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      min-width: 320px;
+      flex: 1 1 400px;
+    }
+    .shape-card h2 { font-size: 1.1rem; margin: 0 0 12px; color: #7eb; }
+    .shape-card .description { font-size: 0.8rem; color: #aaa; margin-bottom: 12px; }
+    .canvas-wrap {
+      background: #0f0f1a;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    .canvas-wrap canvas { display: block; width: 100%; height: auto; }
+    .legend { margin-top: 10px; font-size: 0.75rem; color: #888; }
+    .legend span { margin-right: 12px; }
+    .legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+    .legend .valid { background: #3a7; }
+    .legend .filled { background: #c9a227; }
+    .legend .star { background: #7af; }
+    footer { margin-top: 24px; font-size: 0.8rem; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Tree & Mountain Shape Simulator</h1>
+  <p class="subtitle">Spell counts from MO2/overwrite/SKSE/Plugins/SpellLearning/schools/*.json</p>
+
+  <div class="schools-data">
+    <table>
+      <thead><tr><th>School</th><th>Spell count</th></tr></thead>
+      <tbody id="schools-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="shapes-row">
+    <div class="shape-card">
+      <h2>Tree shape</h2>
+      <p class="description">Thin pillar (few slots in middle tiers) + big mass at top. Valid slots pass mask: low in middle depth, high at top.</p>
+      <div class="canvas-wrap"><canvas id="tree-canvas" width="520" height="520"></canvas></div>
+      <div class="legend" id="tree-legend"></div>
+    </div>
+    <div class="shape-card">
+      <h2>Mountain shape</h2>
+      <p class="description">Wide base, jagged top edge, sparse &quot;stars&quot; band above peak for overflow spells.</p>
+      <div class="canvas-wrap"><canvas id="mountain-canvas" width="520" height="520"></canvas></div>
+      <div class="legend" id="mountain-legend"></div>
+    </div>
+  </div>
+
+  <footer>
+    Shape logic matches SHAPE-AND-GROWTH-ASSESSMENT.md. Grid is fixed (tiers × slots); masks filter which slots are valid. Filled dots = simulated spell placement.
+  </footer>
+
+  <script>
+    // Spell counts from your scan files (school name -> count)
+    var SCHOOL_SPELL_COUNTS = {
+      Alteration: 115,
+      Conjuration: 169,
+      Destruction: 229,
+      Illusion: 103,
+      Restoration: 137
+    };
+
+    var SCHOOL_ORDER = ['Destruction', 'Restoration', 'Alteration', 'Conjuration', 'Illusion'];
+
+    // Render table
+    var tbody = document.getElementById('schools-tbody');
+    var total = 0;
+    SCHOOL_ORDER.forEach(function(school) {
+      var c = SCHOOL_SPELL_COUNTS[school] || 0;
+      total += c;
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + school + '</td><td>' + c + '</td>';
+      tbody.appendChild(tr);
+    });
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><strong>Total</strong></td><td><strong>' + total + '</strong></td>';
+    tbody.appendChild(tr);
+
+    // ---- Grid generation (one sector per school) ----
+    var maxTiers = 20;
+    var baseRadius = 90;
+    var tierSpacing = 22;
+    var arcSpacing = 18;
+
+    function getGridPositions(schoolIndex, totalSchools) {
+      totalSchools = totalSchools || 5;
+      var sliceAngle = 360 / totalSchools;
+      var startAngle = schoolIndex * sliceAngle - 90;
+      var usableAngle = sliceAngle * 0.85;
+      var centerAngle = startAngle + sliceAngle / 2;
+      var halfSpread = usableAngle / 2;
+      var positions = [];
+      for (var tier = 0; tier < maxTiers; tier++) {
+        var radius = baseRadius + tier * tierSpacing;
+        var arcLength = (sliceAngle / 360) * 2 * Math.PI * radius;
+        var candidateCount = Math.max(3, Math.floor(arcLength / arcSpacing));
+        var angleStep = candidateCount > 1 ? usableAngle / (candidateCount - 1) : 0;
+        for (var i = 0; i < candidateCount; i++) {
+          var angle = candidateCount === 1 ? centerAngle : (centerAngle - halfSpread + i * angleStep);
+          var rad = angle * Math.PI / 180;
+          positions.push({
+            x: Math.cos(rad) * radius,
+            y: Math.sin(rad) * radius,
+            tier: tier,
+            slotIndex: i,
+            slotsInTier: candidateCount,
+            angle: angle,
+            radius: radius,
+            depthNorm: maxTiers > 1 ? tier / (maxTiers - 1) : 0,
+            angleNorm: candidateCount > 1 ? i / (candidateCount - 1) : 0.5
+          });
+        }
+      }
+      return positions;
+    }
+
+    // Seeded RNG for reproducible masks
+    function createRng(seed) {
+      var s = seed || 12345;
+      return function() {
+        s = (s * 1103515245 + 12345) & 0x7fffffff;
+        return s / 0x7fffffff;
+      };
+    }
+
+    // ---- Tree mask: thin pillar (low pass middle) + mass at top ----
+    function treeMask(depthNorm, angleNorm, rng) {
+      if (depthNorm < 0.15) return rng() < 0.5;  // root area
+      if (depthNorm < 0.65) return rng() < 0.12; // thin pillar: 12% pass
+      return rng() < 0.75;  // top mass: 75% pass
+    }
+
+    // ---- Mountain mask: wide base, jagged top, stars above ----
+    function mountainMask(depthNorm, angleNorm, rng) {
+      var taperAmount = 0.12;
+      var width = 1 - depthNorm * (1 - taperAmount);
+      var distFromCenter = Math.abs(angleNorm - 0.5) * 2;
+      var inWidth = distFromCenter < width;
+      if (!inWidth) return false;
+      if (depthNorm > 0.88) return rng() < 0.08;  // stars band: sparse
+      var jagged = 0.85 + 0.25 * (Math.sin(angleNorm * 20) * 0.5 + 0.5);
+      var widthJagged = width * jagged;
+      var inJagged = distFromCenter < widthJagged;
+      var densityBoost = Math.max(0.15, 1 - depthNorm * 0.85);
+      return inJagged && rng() < densityBoost * 0.6;
+    }
+
+    function filterPositions(positions, maskFn, seed) {
+      var rng = createRng(seed);
+      return positions.filter(function(p) {
+        return maskFn(p.depthNorm, p.angleNorm, rng);
+      });
+    }
+
+    function assignSpellsToPositions(spellCount, validPositions) {
+      var indices = [];
+      for (var i = 0; i < validPositions.length; i++) indices.push(i);
+      for (var i = indices.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = indices[i]; indices[i] = indices[j]; indices[j] = t;
+      }
+      var filled = {};
+      for (var k = 0; k < Math.min(spellCount, validPositions.length); k++) {
+        filled[validPositions[indices[k]].tier + '_' + validPositions[indices[k]].slotIndex] = true;
+      }
+      return filled;
+    }
+
+    function drawSector(ctx, positions, validSet, filledSet, starSet, centerX, centerY, schoolName, schoolColor) {
+      var scale = 2.2;
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(scale, -scale);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 0.5;
+      positions.forEach(function(p) {
+        var key = p.tier + '_' + p.slotIndex;
+        var valid = validSet[key];
+        var filled = filledSet[key];
+        var star = starSet && starSet[key];
+        if (filled) ctx.fillStyle = '#c9a227';
+        else if (star) ctx.fillStyle = '#7af';
+        else if (valid) ctx.fillStyle = '#2a5';
+        else ctx.fillStyle = 'rgba(80,80,100,0.4)';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, filled || valid ? 2.5 : 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        if (valid && !filled) { ctx.strokeStyle = 'rgba(0,255,0,0.3)'; ctx.stroke(); }
+      });
+
+      ctx.restore();
+      ctx.fillStyle = schoolColor || '#fff';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(schoolName, centerX, centerY + 95);
+    }
+
+    var SCHOOL_COLORS = { Destruction: '#c45', Restoration: '#5a5', Alteration: '#9a9', Conjuration: '#95a', Illusion: '#a7a' };
+
+    function runTreeShape() {
+      var canvas = document.getElementById('tree-canvas');
+      var ctx = canvas.getContext('2d');
+      var w = canvas.width, h = canvas.height;
+      ctx.fillStyle = '#0f0f1a';
+      ctx.fillRect(0, 0, w, h);
+
+      var cx = w / 2, cy = h / 2;
+      var totalSchools = SCHOOL_ORDER.length;
+      var sliceAngle = 360 / totalSchools;
+
+      SCHOOL_ORDER.forEach(function(school, idx) {
+        var positions = getGridPositions(idx, totalSchools);
+        var validPositions = filterPositions(positions, treeMask, 42 + idx * 100);
+        var validSet = {};
+        validPositions.forEach(function(p) { validSet[p.tier + '_' + p.slotIndex] = true; });
+        var spellCount = SCHOOL_SPELL_COUNTS[school] || 0;
+        var filledSet = assignSpellsToPositions(spellCount, validPositions);
+
+        var angle = (idx * sliceAngle - 90 + sliceAngle / 2) * Math.PI / 180;
+        var r = 180;
+        var sx = cx + Math.cos(angle) * r;
+        var sy = cy + Math.sin(angle) * r;
+
+        drawSector(ctx, positions, validSet, filledSet, null, sx, sy, school + ' (' + spellCount + ')', SCHOOL_COLORS[school]);
+      });
+
+      document.getElementById('tree-legend').innerHTML =
+        '<span><span class="dot valid"></span> Valid slot (mask pass)</span>' +
+        '<span><span class="dot filled"></span> Filled (spell)</span>' +
+        '<span><span class="dot" style="background:#444"></span> Filtered out</span>';
+    }
+
+    function runMountainShape() {
+      var canvas = document.getElementById('mountain-canvas');
+      var ctx = canvas.getContext('2d');
+      var w = canvas.width, h = canvas.height;
+      ctx.fillStyle = '#0f0f1a';
+      ctx.fillRect(0, 0, w, h);
+
+      var cx = w / 2, cy = h / 2;
+      var totalSchools = SCHOOL_ORDER.length;
+      var sliceAngle = 360 / totalSchools;
+
+      SCHOOL_ORDER.forEach(function(school, idx) {
+        var positions = getGridPositions(idx, totalSchools);
+        var validPositions = filterPositions(positions, mountainMask, 100 + idx * 100);
+        var validSet = {};
+        validPositions.forEach(function(p) { validSet[p.tier + '_' + p.slotIndex] = true; });
+        var spellCount = SCHOOL_SPELL_COUNTS[school] || 0;
+        var filledSet = assignSpellsToPositions(spellCount, validPositions);
+
+        var starSet = {};
+        validPositions.forEach(function(p) {
+          if (p.depthNorm > 0.88) starSet[p.tier + '_' + p.slotIndex] = true;
+        });
+
+        var angle = (idx * sliceAngle - 90 + sliceAngle / 2) * Math.PI / 180;
+        var r = 180;
+        var sx = cx + Math.cos(angle) * r;
+        var sy = cy + Math.sin(angle) * r;
+
+        drawSector(ctx, positions, validSet, filledSet, starSet, sx, sy, school + ' (' + spellCount + ')', SCHOOL_COLORS[school]);
+      });
+
+      document.getElementById('mountain-legend').innerHTML =
+        '<span><span class="dot valid"></span> Valid (mountain)</span>' +
+        '<span><span class="dot filled"></span> Filled (spell)</span>' +
+        '<span><span class="dot star"></span> Stars band</span>' +
+        '<span><span class="dot" style="background:#444"></span> Filtered out</span>';
+    }
+
+    runTreeShape();
+    runMountainShape();
+  </script>
+</body>
+</html>

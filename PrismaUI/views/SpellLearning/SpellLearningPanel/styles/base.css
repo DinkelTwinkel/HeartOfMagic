@@ -1,0 +1,313 @@
+/**
+ * Heart of Magic - Base Styles
+ * 
+ * CSS Variables, reset, main panel layout, header, tabs, content areas.
+ * ~350 lines
+ */
+
+/* =============================================================================
+   CSS VARIABLES
+   ============================================================================= */
+
+:root {
+    --panel-bg: rgba(15, 23, 42, 0.95);
+    --panel-border: rgba(255, 255, 255, 0.1);
+    --text-primary: #e4e4e7;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --accent-gold: #fbbf24;
+    --accent-gold-hover: #f59e0b;
+    --accent-blue: #60a5fa;
+    --accent-green: #4ade80;
+    --accent-red: #f87171;
+    --accent-purple: #c084fc;
+    --btn-bg: rgba(255, 255, 255, 0.1);
+    --btn-bg-hover: rgba(255, 255, 255, 0.15);
+    --input-bg: rgba(0, 0, 0, 0.4);
+    --canvas-bg: #050810;
+    
+    /* School colors */
+    --destruction: #ef4444;
+    --restoration: #facc15;
+    --alteration: #22c55e;
+    --conjuration: #a855f7;
+    --illusion: #38bdf8;
+    
+    /* Node states */
+    --node-locked-bg: #1a1d24;
+    --node-locked-border: #2a2f3a;
+    --node-locked-text: #4a4a52;
+    --node-available-bg: #1a1d24;
+    --node-available-border: #3a3f4a;
+    --node-learning-bg: rgba(0, 220, 255, 0.15);
+    --node-learning-border: #00dcff;
+    --node-learning-glow: rgba(0, 220, 255, 0.8);
+    
+    /* School fills */
+    --destruction-fill: rgba(180, 50, 50, 0.9);
+    --restoration-fill: rgba(180, 150, 20, 0.9);
+    --alteration-fill: rgba(30, 140, 70, 0.9);
+    --conjuration-fill: rgba(130, 60, 190, 0.9);
+    --illusion-fill: rgba(40, 140, 180, 0.9);
+}
+
+/* =============================================================================
+   RESET
+   ============================================================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: transparent;
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+/* =============================================================================
+   MAIN PANEL
+   ============================================================================= */
+
+.spell-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 900px;
+    min-width: 500px;
+    max-width: 95vw;
+    height: 700px;
+    min-height: 500px;
+    max-height: 90vh;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.spell-panel.minimized .panel-content,
+.spell-panel.minimized .resize-handle {
+    display: none;
+}
+
+/* =============================================================================
+   HEADER
+   ============================================================================= */
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid var(--panel-border);
+    cursor: move;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.panel-title {
+    font-size: 1.15em;
+    font-weight: 700;
+    color: var(--accent-gold);
+    letter-spacing: 2px;
+}
+
+.version-tag {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    background: rgba(251, 191, 36, 0.2);
+    color: var(--accent-gold);
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.header-right {
+    display: flex;
+    gap: 8px;
+}
+
+.header-btn {
+    background: var(--btn-bg);
+    border: none;
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.header-btn:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text-primary);
+}
+
+/* =============================================================================
+   TAB NAVIGATION
+   ============================================================================= */
+
+.tab-nav {
+    display: flex;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid var(--panel-border);
+    flex-shrink: 0;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+    color: var(--accent-gold);
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent-gold);
+}
+
+/* =============================================================================
+   TAB CONTENT
+   ============================================================================= */
+
+.tab-content {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+#contentSettings.tab-content.active {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* =============================================================================
+   CONTENT AREAS
+   ============================================================================= */
+
+.panel-content {
+    flex: 1;
+    padding: 18px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.panel-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+#contentSpellScan,
+#contentTreeRules {
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+#contentSpellTree {
+    overflow: hidden;
+    padding: 0;
+    position: relative;
+}
+
+/* =============================================================================
+   STATUS SECTION
+   ============================================================================= */
+
+.status-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent-gold);
+}
+
+.status-icon {
+    font-size: 1.5em;
+    width: 36px;
+    text-align: center;
+}
+
+.status-text {
+    font-size: 0.95em;
+    color: var(--text-primary);
+}
+
+/* =============================================================================
+   RESIZE HANDLE
+   ============================================================================= */
+
+.resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 20px;
+    height: 20px;
+    cursor: se-resize;
+    background: linear-gradient(135deg, transparent 50%, var(--accent-gold) 50%);
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+    border-bottom-right-radius: 12px;
+    z-index: 100;
+}
+
+.resize-handle:hover {
+    opacity: 1;
+}

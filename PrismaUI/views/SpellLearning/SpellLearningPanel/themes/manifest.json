@@ -1,0 +1,7 @@
+{
+    "_comment": "Add new themes by creating a [themeid].json file and adding the ID to the 'themes' array below",
+    "themes": [
+        "default",
+        "skyrim"
+    ]
+}

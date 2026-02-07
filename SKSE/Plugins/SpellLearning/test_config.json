@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "preset": "strict",
+  "settingsOverrides": {},
+  "useSettingsAwareBuilder": true,
+  "autoGenerate": false,
+  "saveResults": true,
+  "llmEnabled": false
+}

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SpellLearning Unification Tests</title>
+    <style>
+        body {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+            margin: 0;
+        }
+        h1 {
+            color: #7ec8e3;
+            border-bottom: 2px solid #7ec8e3;
+            padding-bottom: 10px;
+        }
+        #output {
+            background: #0f0f1a;
+            border: 1px solid #333;
+            padding: 15px;
+            white-space: pre-wrap;
+            font-size: 13px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .pass { color: #4caf50; }
+        .fail { color: #f44336; }
+        .info { color: #7ec8e3; }
+        button {
+            background: #7ec8e3;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover {
+            background: #5ba8c3;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #252540;
+            border-radius: 5px;
+        }
+        .summary.all-pass { border-left: 4px solid #4caf50; }
+        .summary.has-fail { border-left: 4px solid #f44336; }
+    </style>
+</head>
+<body>
+    <h1>🧪 SpellLearning Unification Tests</h1>
+
+    <button onclick="runTests()">Run All Tests</button>
+    <button onclick="clearOutput()">Clear Output</button>
+
+    <div id="summary" class="summary" style="display:none;"></div>
+
+    <div id="output"></div>
+
+    <!-- Mock globals needed by modules -->
+    <script>
+        // Mock settings object
+        var settings = {
+            schoolColors: {},
+            schoolVisibility: {},
+            schoolConfigs: {},
+            treeGeneration: {
+                llm: { enabled: false }
+            }
+        };
+
+        // Mock callCpp for non-Skyrim environment
+        function callCpp(method, data) {
+            console.log('[Mock callCpp]', method, data);
+            return null;
+        }
+
+        // Mock TREE_CONFIG before config.js loads
+        // (will be overwritten by config.js)
+    </script>
+
+    <!-- Load modules in order -->
+    <script src="modules/constants.js"></script>
+    <script src="modules/state.js"></script>
+    <script src="modules/config.js"></script>
+
+    <!-- Unified modules (the ones being tested) -->
+    <script src="modules/edgeScoring.js"></script>
+    <script src="modules/shapeProfiles.js"></script>
+    <script src="modules/layoutEngine.js"></script>
+
+    <!-- Dependencies -->
+    <script src="modules/growthBehaviors.js"></script>
+    <script src="modules/growthDSL.js"></script>
+    <script src="modules/settingsAwareTreeBuilder.js"></script>
+
+    <!-- Minimal wheelRenderer mock -->
+    <script>
+        // WheelRenderer needs DOM elements, mock minimally
+        if (typeof WheelRenderer === 'undefined') {
+            var WheelRenderer = {
+                schoolConfigs: {},
+                shapeVisualModifiers: {
+                    organic: { radiusJitter: 0.2, angleJitter: 12, tierSpacingMult: 0.9, spreadMult: 0.95 },
+                    spiky: { radiusJitter: 0.35, angleJitter: 20, tierSpacingMult: 1.4, spreadMult: 0.6 }
+                },
+                getSchoolVisualModifier: function(schoolName) {
+                    var cfg = this.schoolConfigs[schoolName];
+                    var shape = cfg ? cfg.shape : 'organic';
+
+                    var modifier;
+                    if (typeof getShapeProfile === 'function') {
+                        modifier = getShapeProfile(shape);
+                    } else {
+                        modifier = this.shapeVisualModifiers[shape] || this.shapeVisualModifiers.organic;
+                    }
+
+                    var density = cfg ? (cfg.density || 0.6) : 0.6;
+                    var symmetry = cfg ? (cfg.symmetry || 0.3) : 0.3;
+                    var densityFactor = 1.5 - density;
+                    var symmetryFactor = 1 - symmetry * 0.8;
+
+                    return {
+                        radiusJitter: modifier.radiusJitter * densityFactor * symmetryFactor,
+                        angleJitter: modifier.angleJitter * densityFactor * symmetryFactor,
+                        tierSpacingMult: modifier.tierSpacingMult * (0.6 + density * 0.8),
+                        spreadMult: modifier.spreadMult * (0.5 + density * 0.7),
+                        curveEdges: modifier.curveEdges,
+                        taperSpread: modifier.taperSpread || false,
+                        shape: shape
+                    };
+                }
+            };
+        }
+    </script>
+
+    <!-- Test module -->
+    <script src="modules/unificationTest.js"></script>
+
+    <!-- Test runner script -->
+    <script>
+        var outputEl = document.getElementById('output');
+        var summaryEl = document.getElementById('summary');
+        var originalLog = console.log;
+
+        // Override console.log to capture output
+        console.log = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var text = args.map(function(a) {
+                if (typeof a === 'object') return JSON.stringify(a, null, 2);
+                return String(a);
+            }).join(' ');
+
+            // Apply colors
+            var className = '';
+            if (text.indexOf('✓') >= 0) className = 'pass';
+            else if (text.indexOf('✗') >= 0) className = 'fail';
+            else if (text.indexOf('===') >= 0 || text.indexOf('info') >= 0) className = 'info';
+
+            var line = document.createElement('div');
+            line.className = className;
+            line.textContent = text;
+            outputEl.appendChild(line);
+            outputEl.scrollTop = outputEl.scrollHeight;
+
+            // Also log to actual console
+            originalLog.apply(console, arguments);
+        };
+
+        function clearOutput() {
+            outputEl.innerHTML = '';
+            summaryEl.style.display = 'none';
+        }
+
+        function runTests() {
+            clearOutput();
+            console.log('Starting unification tests...');
+            console.log('');
+
+            try {
+                var results = UnificationTest.runAll();
+
+                // Show summary
+                summaryEl.style.display = 'block';
+                summaryEl.className = 'summary ' + (results.failed > 0 ? 'has-fail' : 'all-pass');
+                summaryEl.innerHTML =
+                    '<strong>Test Results:</strong><br>' +
+                    '✓ Passed: ' + results.passed + '<br>' +
+                    '✗ Failed: ' + results.failed + '<br>' +
+                    'Total: ' + results.total;
+
+            } catch (e) {
+                console.log('TEST ERROR: ' + e.message);
+                console.log(e.stack);
+            }
+        }
+
+        // Auto-run on load
+        window.onload = function() {
+            console.log('Test runner loaded.');
+            console.log('Modules available:');
+            console.log('  - EdgeScoring: ' + (typeof EdgeScoring !== 'undefined'));
+            console.log('  - SHAPE_PROFILES: ' + (typeof SHAPE_PROFILES !== 'undefined'));
+            console.log('  - LayoutEngine: ' + (typeof LayoutEngine !== 'undefined'));
+            console.log('  - GROWTH_BEHAVIORS: ' + (typeof GROWTH_BEHAVIORS !== 'undefined'));
+            console.log('  - GROWTH_DSL: ' + (typeof GROWTH_DSL !== 'undefined'));
+            console.log('  - SettingsAwareTreeBuilder: ' + (typeof SettingsAwareTreeBuilder !== 'undefined'));
+            console.log('  - WheelRenderer: ' + (typeof WheelRenderer !== 'undefined'));
+            console.log('');
+            console.log('Click "Run All Tests" to start.');
+        };
+    </script>
+</body>
+</html>

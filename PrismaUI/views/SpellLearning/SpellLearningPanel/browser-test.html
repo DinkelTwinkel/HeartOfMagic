@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Shape Test — Heart of Magic</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0d1117; overflow: hidden; font-family: Arial, sans-serif; }
+
+        /* SVG fills entire viewport */
+        #tree-svg {
+            position: fixed; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+        }
+
+        /* Status bar at bottom */
+        #status-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(13, 17, 23, 0.9); border-top: 1px solid #30363d;
+            color: #8b949e; font-size: 12px; padding: 6px 16px;
+            z-index: 100; display: flex; gap: 20px;
+        }
+        #status-bar .school-tag {
+            display: inline-block; padding: 2px 8px; border-radius: 3px;
+            font-weight: bold; font-size: 11px;
+        }
+
+        /* Rebuild button */
+        #rebuild-btn {
+            position: fixed; top: 12px; left: 12px; z-index: 100;
+            background: #238636; color: #fff; border: 1px solid #2ea043;
+            padding: 6px 16px; cursor: pointer; font-size: 13px; border-radius: 4px;
+        }
+        #rebuild-btn:hover { background: #2ea043; }
+        #rebuild-btn:disabled { background: #333; border-color: #444; color: #666; cursor: wait; }
+
+        /* Loading overlay */
+        #loading {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: #0d1117; display: flex; align-items: center; justify-content: center;
+            color: #8b949e; font-size: 18px; z-index: 200;
+        }
+    </style>
+
+    <!-- BROWSER MOCK: Must be BEFORE all module scripts -->
+    <script>
+        window.AUTO_TEST_BUILD = false;
+        window._BROWSER_TEST = true;
+        window._schoolFiles = {};
+        window._allSpells = [];
+
+        // Suppress callCpp - all game calls are no-ops
+        window.callCpp = function(method, data) {
+            if (method === 'LogMessage') {
+                try { var d = JSON.parse(data); console.log('[SKSE]', d.message || data); } catch(e) {}
+            }
+        };
+    </script>
+</head>
+<body>
+    <div id="loading">Loading modules...</div>
+    <button id="rebuild-btn" disabled>Rebuild</button>
+
+    <!-- Full-viewport SVG -->
+    <svg id="tree-svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L6,3 z" fill="#334155"/>
+            </marker>
+        </defs>
+        <g id="wheel-group">
+            <g id="spokes-layer"></g>
+            <g id="edges-layer"></g>
+            <g id="nodes-layer"></g>
+        </g>
+        <g id="center-hub"></g>
+    </svg>
+
+    <div id="status-bar">
+        <span id="status-text">Loading...</span>
+    </div>
+
+    <!-- Hidden stub elements that modules expect -->
+    <div style="display:none">
+        <div id="spellPanel" class="spell-panel"></div>
+        <div id="panelHeader"></div>
+        <div id="panelContent"></div>
+        <div id="focusOverlay"></div>
+        <div id="contentSpellScan"></div>
+        <div id="contentSpellTree"></div>
+        <div id="contentTreeRules"></div>
+        <div id="contentSettings"></div>
+        <div id="tree-container"></div>
+        <button id="scanBtn"></button>
+        <button id="fullAutoBtn"></button>
+        <button id="proceduralBtn"></button>
+        <button id="proceduralPlusBtn"></button>
+        <button id="visualFirstBtn"></button>
+        <button id="saveBtn"></button>
+        <button id="saveBySchoolBtn"></button>
+        <button id="copyBtn"></button>
+        <button id="pasteBtn"></button>
+        <button id="settingsBtn"></button>
+        <button id="blacklistBtn"></button>
+        <button id="whitelistBtn"></button>
+        <button id="closeBtn"></button>
+        <button id="minimizeBtn"></button>
+        <button id="fullscreenBtn"></button>
+        <button id="zoom-in"></button>
+        <button id="zoom-out"></button>
+        <button id="debugGridToggle"></button>
+        <span id="zoom-level"></span>
+        <div id="generationModePanel"></div>
+        <div id="genModeRow"></div>
+        <div id="statusIcon"></div>
+        <span id="statusText"></span>
+        <textarea id="outputArea"></textarea>
+        <div id="charCount"></div>
+        <div id="scanOptions"></div>
+        <div id="schoolControlPanels"></div>
+        <textarea id="treeRulesArea"></textarea>
+        <div id="settingsPanelContainer"></div>
+        <div id="tooltip" class="tooltip hidden"><div class="tooltip-name"></div><div class="tooltip-info"></div><div class="tooltip-state"></div></div>
+        <input type="radio" name="scanMode" id="scanModeAll" value="all" checked>
+        <input type="radio" name="scanMode" id="scanModeTomes" value="tomes">
+        <canvas id="tree-canvas"></canvas>
+        <div class="tab-btn" id="tabSpellScan" data-tab="spellScan"></div>
+        <div class="tab-btn" id="tabTreeRules" data-tab="treeRules"></div>
+        <div class="tab-btn" id="tabSpellTree" data-tab="spellTree"></div>
+        <div class="tab-btn" id="tabSettings" data-tab="settings"></div>
+    </div>
+
+    <!-- Module loading - same order as index.html -->
+    <script src="modules/constants.js"></script>
+    <script src="modules/state.js"></script>
+    <script src="modules/config.js"></script>
+    <script src="modules/edgeScoring.js"></script>
+    <script src="modules/shapeProfiles.js"></script>
+    <script src="modules/layoutEngine.js"></script>
+    <script src="modules/spellCache.js"></script>
+    <script src="modules/colorUtils.js"></script>
+    <script src="modules/uiHelpers.js"></script>
+    <script src="modules/growthDSL.js"></script>
+    <script src="modules/treeParser.js"></script>
+    <script src="modules/wheelRenderer.js"></script>
+    <script src="modules/starfield.js"></script>
+    <script src="modules/globe3D.js"></script>
+    <script src="modules/canvasRenderer.js"></script>
+    <script src="modules/editMode.js"></script>
+    <script src="modules/colorPicker.js"></script>
+    <script src="modules/settingsPanel.js"></script>
+    <script src="modules/treeViewerUI.js"></script>
+    <script src="modules/progressionUI.js"></script>
+    <script src="modules/difficultyProfiles.js"></script>
+    <script src="modules/llmApiSettings.js"></script>
+    <script src="modules/buttonHandlers.js"></script>
+    <script src="modules/cppCallbacks.js"></script>
+    <script src="modules/pythonSetup.js"></script>
+    <script src="modules/llmIntegration.js"></script>
+    <script src="modules/proceduralTreeBuilder.js"></script>
+    <script src="modules/layoutGenerator.js"></script>
+    <script src="modules/growthBehaviors.js"></script>
+    <script src="modules/visualFirstBuilder.js"></script>
+    <script src="modules/llmTreeFeatures.js"></script>
+    <script src="modules/settingsAwareTreeBuilder.js"></script>
+    <script src="modules/generationModeUI.js"></script>
+    <script src="script.js"></script>
+    <script src="modules/autoTest.js"></script>
+    <script src="modules/unificationTest.js"></script>
+    <script src="modules/main.js"></script>
+
+    <!-- Shape Test: Auto-load, build, render with school colors -->
+    <script>
+    (function() {
+        var SCHOOL_COLORS = {
+            'Destruction': '#ff5555',
+            'Restoration': '#55ff99',
+            'Alteration': '#ffbb33',
+            'Conjuration': '#aa66ff',
+            'Illusion': '#55bbff'
+        };
+
+        var SCHOOL_FILES = [
+            'Alteration_spells.json', 'Conjuration_spells.json',
+            'Destruction_spells.json', 'Illusion_spells.json',
+            'Restoration_spells.json'
+        ];
+
+        var statusEl = document.getElementById('status-text');
+        var loadingEl = document.getElementById('loading');
+        var rebuildBtn = document.getElementById('rebuild-btn');
+
+        function setStatus(text) {
+            statusEl.textContent = text;
+            console.log('[ShapeTest] ' + text);
+        }
+
+        function loadSchools(callback) {
+            setStatus('Loading school data...');
+            window._allSpells = [];
+            window._schoolFiles = {};
+            var remaining = SCHOOL_FILES.length;
+
+            SCHOOL_FILES.forEach(function(fileName) {
+                fetch('test-data/' + fileName)
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var schoolName = fileName.replace('_spells.json', '');
+                        window._schoolFiles[schoolName] = data;
+                        var spells = data.spells || (Array.isArray(data) ? data : []);
+                        spells.forEach(function(s) {
+                            s.school = s.school || schoolName;
+                            window._allSpells.push(s);
+                        });
+                        remaining--;
+                        if (remaining === 0) callback();
+                    })
+                    .catch(function(err) {
+                        setStatus('ERROR loading ' + fileName + ': ' + err.message);
+                        remaining--;
+                        if (remaining === 0) callback();
+                    });
+            });
+        }
+
+        function buildAndRender() {
+            rebuildBtn.disabled = true;
+            setStatus('Building trees...');
+
+            setTimeout(function() {
+                try {
+                    var settings = {
+                        rootCount: 3,
+                        elementIsolation: true,
+                        elementIsolationStrict: true,
+                        strictTierOrdering: false,
+                        allowSameTierLinks: true,
+                        convergenceEnabled: true,
+                        convergenceChance: 40,
+                        convergenceMinTier: 3,
+                        maxChildrenPerNode: 5,
+                        linkStrategy: 'thematic'
+                    };
+
+                    var treeData = buildAllTreesSettingsAware(window._allSpells, null, settings);
+                    if (!treeData || !treeData.schools) {
+                        setStatus('ERROR: Build returned no schools');
+                        rebuildBtn.disabled = false;
+                        return;
+                    }
+
+                    var schoolNames = Object.keys(treeData.schools);
+                    var totalNodes = 0;
+                    schoolNames.forEach(function(s) { totalNodes += treeData.schools[s].nodes.length; });
+                    setStatus('Built ' + schoolNames.length + ' schools, ' + totalNodes + ' nodes. Parsing...');
+
+                    var parsed = TreeParser.parse(treeData);
+                    if (!parsed.success) {
+                        setStatus('ERROR: TreeParser failed');
+                        rebuildBtn.disabled = false;
+                        return;
+                    }
+
+                    window._lastTreeData = treeData;
+                    window._lastParsed = parsed;
+
+                    // Build school lookup: node index -> school name
+                    window._nodeSchoolMap = {};
+                    if (treeData.schools) {
+                        Object.keys(treeData.schools).forEach(function(schoolName) {
+                            var school = treeData.schools[schoolName];
+                            if (school.nodes) {
+                                school.nodes.forEach(function(n) {
+                                    window._nodeSchoolMap[n.id || n.name] = schoolName;
+                                });
+                            }
+                        });
+                    }
+
+                    // Init WheelRenderer with our SVG
+                    var svgEl = document.getElementById('tree-svg');
+                    if (!WheelRenderer.svg) {
+                        WheelRenderer.init(svgEl);
+                    }
+
+                    setStatus('Rendering...');
+                    WheelRenderer.setData(parsed.nodes, parsed.edges, parsed.schools);
+                    if (typeof WheelRenderer.layout === 'function') WheelRenderer.layout();
+                    WheelRenderer.render();
+
+                    // Colorize by school and fit to viewport
+                    setTimeout(function() {
+                        colorizeBySchool();
+                        fitToViewport();
+                        updateStatusBar();
+                        loadingEl.style.display = 'none';
+                        rebuildBtn.disabled = false;
+                    }, 300);
+
+                } catch(e) {
+                    setStatus('ERROR: ' + e.message);
+                    console.error(e);
+                    rebuildBtn.disabled = false;
+                }
+            }, 100);
+        }
+
+        function colorizeBySchool() {
+            var nl = document.getElementById('nodes-layer');
+            var el = document.getElementById('edges-layer');
+            var parsed = window._lastParsed;
+            var nodeSchoolMap = window._nodeSchoolMap || {};
+
+            // Color nodes
+            for (var i = 0; i < nl.children.length; i++) {
+                var node = nl.children[i];
+                var school = '';
+
+                // Try node data-id first
+                var nodeId = node.getAttribute('data-id') || node.getAttribute('data-name') || '';
+                if (nodeSchoolMap[nodeId]) {
+                    school = nodeSchoolMap[nodeId];
+                }
+
+                // Fallback: angle from center
+                if (!school) {
+                    var pts = node.getAttribute('points');
+                    if (pts) {
+                        var parts = pts.split(' ');
+                        var cx = 0, cy = 0, count = 0;
+                        parts.forEach(function(p) {
+                            var xy = p.split(',');
+                            if (xy.length === 2) {
+                                cx += parseFloat(xy[0]); cy += parseFloat(xy[1]); count++;
+                            }
+                        });
+                        if (count > 0) {
+                            cx /= count; cy /= count;
+                            var angle = Math.atan2(cy, cx) * 180 / Math.PI;
+                            if (angle < 0) angle += 360;
+
+                            // Match to nearest school sector
+                            if (parsed && parsed.schools) {
+                                var best = '', bestDist = 999;
+                                parsed.schools.forEach(function(s) {
+                                    var sa = s.angle !== undefined ? s.angle : 0;
+                                    var d = Math.abs(angle - sa);
+                                    if (d > 180) d = 360 - d;
+                                    if (d < bestDist) { bestDist = d; best = s.name || ''; }
+                                });
+                                school = best;
+                            }
+                        }
+                    }
+                }
+
+                var color = SCHOOL_COLORS[school] || '#667';
+                node.style.fill = color;
+                node.style.fillOpacity = '0.85';
+                node.style.stroke = 'rgba(255,255,255,0.4)';
+                node.style.strokeWidth = '0.8';
+            }
+
+            // Brighten edges
+            for (var i = 0; i < el.children.length; i++) {
+                var edge = el.children[i];
+                if (edge.tagName === 'path') {
+                    edge.style.stroke = 'rgba(120, 150, 180, 0.35)';
+                    edge.style.strokeWidth = '1.5';
+                } else if (edge.tagName === 'g') {
+                    var paths = edge.querySelectorAll('path');
+                    for (var j = 0; j < paths.length; j++) {
+                        paths[j].style.stroke = 'rgba(120, 150, 180, 0.3)';
+                        paths[j].style.strokeWidth = '1.2';
+                    }
+                }
+            }
+
+            // Dim spokes
+            var sl = document.getElementById('spokes-layer');
+            if (sl) {
+                for (var i = 0; i < sl.children.length; i++) {
+                    sl.children[i].style.stroke = 'rgba(80, 110, 140, 0.2)';
+                }
+            }
+        }
+
+        function fitToViewport() {
+            var svg = document.getElementById('tree-svg');
+            var wg = document.getElementById('wheel-group');
+            var nl = document.getElementById('nodes-layer');
+            if (!nl || nl.children.length === 0) return;
+
+            var bbox = nl.getBBox();
+            var svgW = svg.clientWidth || window.innerWidth;
+            var svgH = svg.clientHeight || window.innerHeight;
+
+            var pad = 50;
+            var scaleX = (svgW - pad * 2) / bbox.width;
+            var scaleY = (svgH - pad * 2) / bbox.height;
+            var scale = Math.min(scaleX, scaleY);
+
+            var tx = svgW / 2 - (bbox.x + bbox.width / 2) * scale;
+            var ty = svgH / 2 - (bbox.y + bbox.height / 2) * scale;
+
+            wg.setAttribute('transform', 'translate(' + tx + ',' + ty + ') scale(' + scale + ')');
+        }
+
+        function updateStatusBar() {
+            var nl = document.getElementById('nodes-layer');
+            var el = document.getElementById('edges-layer');
+            var treeData = window._lastTreeData;
+            var parts = [];
+
+            if (treeData && treeData.schools) {
+                Object.keys(treeData.schools).forEach(function(name) {
+                    var count = treeData.schools[name].nodes.length;
+                    var color = SCHOOL_COLORS[name] || '#888';
+                    parts.push('<span class="school-tag" style="background:' + color + '; color:#000">' + name + ' (' + count + ')</span>');
+                });
+            }
+
+            var nodeCount = nl ? nl.children.length : 0;
+            var edgeCount = el ? el.children.length : 0;
+            parts.push(nodeCount + ' nodes, ' + edgeCount + ' edges rendered');
+
+            statusEl.innerHTML = parts.join(' ');
+        }
+
+        // Rebuild button
+        rebuildBtn.addEventListener('click', function() { buildAndRender(); });
+
+        // Pan & zoom with mouse
+        (function() {
+            var svg = document.getElementById('tree-svg');
+            var wg = document.getElementById('wheel-group');
+            var panX = 0, panY = 0, zoom = 1;
+            var isPanning = false, startX, startY, startPanX, startPanY;
+
+            function applyTransform() {
+                wg.setAttribute('transform', 'translate(' + panX + ',' + panY + ') scale(' + zoom + ')');
+            }
+
+            // Parse initial transform after fit
+            window._parseCurrentTransform = function() {
+                var t = wg.getAttribute('transform') || '';
+                var tm = t.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+                var sm = t.match(/scale\(([-\d.]+)\)/);
+                if (tm) { panX = parseFloat(tm[1]); panY = parseFloat(tm[2]); }
+                if (sm) { zoom = parseFloat(sm[1]); }
+            };
+
+            svg.addEventListener('wheel', function(e) {
+                e.preventDefault();
+                window._parseCurrentTransform();
+                var factor = e.deltaY > 0 ? 0.9 : 1.1;
+                var rect = svg.getBoundingClientRect();
+                var mx = e.clientX - rect.left;
+                var my = e.clientY - rect.top;
+
+                // Zoom towards mouse position
+                panX = mx - (mx - panX) * factor;
+                panY = my - (my - panY) * factor;
+                zoom *= factor;
+                applyTransform();
+            });
+
+            svg.addEventListener('mousedown', function(e) {
+                if (e.button !== 0) return;
+                window._parseCurrentTransform();
+                isPanning = true;
+                startX = e.clientX; startY = e.clientY;
+                startPanX = panX; startPanY = panY;
+                svg.style.cursor = 'grabbing';
+            });
+
+            window.addEventListener('mousemove', function(e) {
+                if (!isPanning) return;
+                panX = startPanX + (e.clientX - startX);
+                panY = startPanY + (e.clientY - startY);
+                applyTransform();
+            });
+
+            window.addEventListener('mouseup', function() {
+                isPanning = false;
+                svg.style.cursor = 'grab';
+            });
+
+            svg.style.cursor = 'grab';
+        })();
+
+        // Auto-load on HTTP
+        if (window.location.protocol !== 'file:') {
+            loadSchools(function() {
+                setStatus('Loaded ' + window._allSpells.length + ' spells. Building...');
+                buildAndRender();
+            });
+        } else {
+            loadingEl.textContent = 'Must be served via HTTP. Run: python -m http.server 8765';
+        }
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SpellLearning Tree Preview</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%);
+            color: #eee;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            max-width: 300px;
+        }
+        #controls h3 {
+            color: #7ec8e3;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 10px;
+        }
+        .control-row label {
+            flex: 1;
+            font-size: 12px;
+            color: #aaa;
+        }
+        select, button, input[type="checkbox"] {
+            background: #252545;
+            color: #eee;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        button {
+            cursor: pointer;
+            background: #7ec8e3;
+            color: #1a1a2e;
+            font-weight: bold;
+        }
+        button:hover { background: #5ba8c3; }
+        #stats {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #333;
+            font-size: 11px;
+            color: #888;
+        }
+        #tree-container {
+            width: 100%;
+            height: 100%;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+        .school-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #fff;
+            text-anchor: middle;
+        }
+        .node {
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .node:hover {
+            transform: scale(1.1);
+        }
+        .node-rect {
+            rx: 5;
+            ry: 5;
+            stroke-width: 2;
+        }
+        .node-text {
+            font-size: 9px;
+            fill: #fff;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            pointer-events: none;
+        }
+        .edge {
+            fill: none;
+            stroke-width: 2;
+            opacity: 0.6;
+        }
+        .spoke {
+            stroke: rgba(255,255,255,0.15);
+            stroke-width: 1;
+        }
+        .tier-ring {
+            fill: none;
+            stroke: rgba(255,255,255,0.08);
+            stroke-width: 1;
+        }
+        #tooltip {
+            position: fixed;
+            background: rgba(0,0,0,0.9);
+            border: 1px solid #7ec8e3;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            z-index: 200;
+            max-width: 250px;
+        }
+        #tooltip .name { color: #7ec8e3; font-weight: bold; }
+        #tooltip .info { color: #aaa; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <h3>🌳 Tree Configuration</h3>
+        <div class="control-row">
+            <label>Preset:</label>
+            <select id="presetSelect">
+                <option value="balanced">Balanced</option>
+                <option value="strict">Strict Elements</option>
+                <option value="dense">Dense Connections</option>
+                <option value="sparse">Sparse Linear</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <label>Spells per School:</label>
+            <select id="spellCount">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <label>Element Isolation:</label>
+            <input type="checkbox" id="elementIsolation" checked>
+        </div>
+        <div class="control-row">
+            <label>Strict Mode:</label>
+            <input type="checkbox" id="strictMode">
+        </div>
+        <div class="control-row">
+            <label>Show Tier Rings:</label>
+            <input type="checkbox" id="showRings" checked>
+        </div>
+        <button onclick="generateTree()" style="width:100%; margin-top:10px;">Generate Tree</button>
+        <div id="stats"></div>
+    </div>
+
+    <div id="tree-container">
+        <svg id="tree-svg" viewBox="-500 -500 1000 1000">
+            <defs>
+                <filter id="glow">
+                    <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                    <feMerge>
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+            <g id="rings-layer"></g>
+            <g id="spokes-layer"></g>
+            <g id="edges-layer"></g>
+            <g id="nodes-layer"></g>
+            <g id="labels-layer"></g>
+        </svg>
+    </div>
+
+    <div id="tooltip">
+        <div class="name"></div>
+        <div class="info"></div>
+    </div>
+
+    <!-- Load modules -->
+    <script>
+        var settings = {
+            schoolColors: {
+                'Destruction': '#e74c3c',
+                'Restoration': '#f1c40f',
+                'Alteration': '#2ecc71',
+                'Conjuration': '#9b59b6',
+                'Illusion': '#3498db'
+            },
+            schoolVisibility: {},
+            treeGeneration: { llm: { enabled: false } }
+        };
+        function callCpp() { return null; }
+    </script>
+    <script src="modules/constants.js"></script>
+    <script src="modules/config.js"></script>
+    <script src="modules/edgeScoring.js"></script>
+    <script src="modules/shapeProfiles.js"></script>
+    <script src="modules/layoutEngine.js"></script>
+    <script src="modules/growthBehaviors.js"></script>
+    <script src="modules/settingsAwareTreeBuilder.js"></script>
+
+    <script>
+        var SCHOOLS = ['Destruction', 'Restoration', 'Alteration', 'Conjuration', 'Illusion'];
+        var SCHOOL_COLORS = {
+            'Destruction': '#e74c3c',
+            'Restoration': '#f1c40f',
+            'Alteration': '#2ecc71',
+            'Conjuration': '#9b59b6',
+            'Illusion': '#3498db'
+        };
+        var ELEMENT_NAMES = {
+            'Destruction': ['Flames', 'Firebolt', 'Fireball', 'Incinerate', 'Fire Storm',
+                           'Frostbite', 'Ice Spike', 'Ice Storm', 'Icy Spear', 'Blizzard',
+                           'Sparks', 'Lightning Bolt', 'Chain Lightning', 'Thunderbolt', 'Lightning Storm'],
+            'Restoration': ['Healing', 'Fast Healing', 'Close Wounds', 'Grand Healing', 'Guardian Circle',
+                           'Lesser Ward', 'Steadfast Ward', 'Greater Ward', 'Turn Lesser Undead', 'Repel Undead'],
+            'Alteration': ['Oakflesh', 'Stoneflesh', 'Ironflesh', 'Ebonyflesh', 'Dragonhide',
+                          'Candlelight', 'Magelight', 'Detect Life', 'Detect Dead', 'Telekinesis'],
+            'Conjuration': ['Conjure Familiar', 'Conjure Flame Atronach', 'Conjure Frost Atronach',
+                           'Conjure Storm Atronach', 'Conjure Dremora Lord', 'Raise Zombie', 'Reanimate Corpse',
+                           'Revenant', 'Dread Zombie', 'Dead Thrall'],
+            'Illusion': ['Clairvoyance', 'Fury', 'Calm', 'Fear', 'Courage',
+                        'Muffle', 'Invisibility', 'Frenzy', 'Pacify', 'Mayhem']
+        };
+        var SKILL_LEVELS = [0, 0, 25, 25, 50, 50, 75, 75, 100, 100]; // For 10 spells
+
+        function generateSpells(school, count) {
+            var spells = [];
+            var names = ELEMENT_NAMES[school] || [];
+            for (var i = 0; i < count; i++) {
+                var name = names[i % names.length] || (school + ' Spell ' + (i+1));
+                spells.push({
+                    formId: school + '_' + i,
+                    name: name,
+                    school: school,
+                    skillLevel: SKILL_LEVELS[i % SKILL_LEVELS.length] || Math.floor(i / count * 100)
+                });
+            }
+            return spells;
+        }
+
+        function generateTree() {
+            var preset = document.getElementById('presetSelect').value;
+            var spellCount = parseInt(document.getElementById('spellCount').value);
+            var elementIsolation = document.getElementById('elementIsolation').checked;
+            var strictMode = document.getElementById('strictMode').checked;
+            var showRings = document.getElementById('showRings').checked;
+
+            // Apply preset
+            var treeSettings = {
+                elementIsolation: elementIsolation,
+                elementIsolationStrict: strictMode,
+                strictTierOrdering: true,
+                maxChildrenPerNode: 4,
+                convergenceEnabled: true,
+                convergenceChance: 30
+            };
+
+            switch(preset) {
+                case 'strict':
+                    treeSettings.elementIsolationStrict = true;
+                    treeSettings.maxChildrenPerNode = 3;
+                    break;
+                case 'dense':
+                    treeSettings.maxChildrenPerNode = 5;
+                    treeSettings.convergenceChance = 60;
+                    break;
+                case 'sparse':
+                    treeSettings.maxChildrenPerNode = 2;
+                    treeSettings.convergenceEnabled = false;
+                    break;
+            }
+
+            // Generate spells for all schools
+            var allSpells = [];
+            SCHOOLS.forEach(function(school) {
+                allSpells = allSpells.concat(generateSpells(school, spellCount));
+            });
+
+            // Build trees using SettingsAwareBuilder
+            var treeData;
+            if (typeof buildAllTreesSettingsAware === 'function') {
+                treeData = buildAllTreesSettingsAware(allSpells, {}, treeSettings);
+            } else {
+                console.error('buildAllTreesSettingsAware not available');
+                return;
+            }
+
+            // Render the tree
+            renderTree(treeData, showRings);
+
+            // Update stats
+            var totalNodes = 0, totalEdges = 0;
+            for (var school in treeData.schools) {
+                totalNodes += treeData.schools[school].nodes.length;
+                totalEdges += treeData.schools[school].links.length;
+            }
+            document.getElementById('stats').innerHTML =
+                'Nodes: ' + totalNodes + '<br>' +
+                'Edges: ' + totalEdges + '<br>' +
+                'Preset: ' + preset;
+        }
+
+        function renderTree(treeData, showRings) {
+            var svg = document.getElementById('tree-svg');
+            var ringsLayer = document.getElementById('rings-layer');
+            var spokesLayer = document.getElementById('spokes-layer');
+            var edgesLayer = document.getElementById('edges-layer');
+            var nodesLayer = document.getElementById('nodes-layer');
+            var labelsLayer = document.getElementById('labels-layer');
+
+            // Clear layers
+            ringsLayer.innerHTML = '';
+            spokesLayer.innerHTML = '';
+            edgesLayer.innerHTML = '';
+            nodesLayer.innerHTML = '';
+            labelsLayer.innerHTML = '';
+
+            var cfg = typeof GRID_CONFIG !== 'undefined' ? GRID_CONFIG.getComputedConfig() : {
+                baseRadius: 90,
+                tierSpacing: 52,
+                nodeSize: 75
+            };
+
+            var schoolNames = Object.keys(treeData.schools);
+            var numSchools = schoolNames.length;
+            var sectorAngle = 360 / numSchools;
+            var padding = 15;
+
+            // Draw tier rings
+            if (showRings) {
+                for (var tier = 0; tier < 6; tier++) {
+                    var radius = cfg.baseRadius + tier * cfg.tierSpacing;
+                    var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    ring.setAttribute('cx', 0);
+                    ring.setAttribute('cy', 0);
+                    ring.setAttribute('r', radius);
+                    ring.setAttribute('class', 'tier-ring');
+                    ringsLayer.appendChild(ring);
+                }
+            }
+
+            // Draw center hub
+            var hub = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            hub.setAttribute('cx', 0);
+            hub.setAttribute('cy', 0);
+            hub.setAttribute('r', 30);
+            hub.setAttribute('fill', 'rgba(126, 200, 227, 0.3)');
+            hub.setAttribute('stroke', '#7ec8e3');
+            hub.setAttribute('stroke-width', 2);
+            ringsLayer.appendChild(hub);
+
+            // Process each school
+            schoolNames.forEach(function(schoolName, schoolIndex) {
+                var school = treeData.schools[schoolName];
+                var spokeAngle = schoolIndex * sectorAngle + sectorAngle / 2 - 90; // Start at top
+                var startAngle = spokeAngle - sectorAngle / 2 + padding / 2;
+                var endAngle = spokeAngle + sectorAngle / 2 - padding / 2;
+                var usableAngle = sectorAngle - padding;
+                var color = SCHOOL_COLORS[schoolName] || '#888';
+
+                // Draw spoke line
+                var spokeRad = spokeAngle * Math.PI / 180;
+                var spokeEnd = cfg.baseRadius + 5 * cfg.tierSpacing;
+                var spoke = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                spoke.setAttribute('x1', 0);
+                spoke.setAttribute('y1', 0);
+                spoke.setAttribute('x2', Math.cos(spokeRad) * spokeEnd);
+                spoke.setAttribute('y2', Math.sin(spokeRad) * spokeEnd);
+                spoke.setAttribute('class', 'spoke');
+                spokesLayer.appendChild(spoke);
+
+                // Draw school label
+                var labelRadius = cfg.baseRadius + 5.5 * cfg.tierSpacing;
+                var label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', Math.cos(spokeRad) * labelRadius);
+                label.setAttribute('y', Math.sin(spokeRad) * labelRadius);
+                label.setAttribute('class', 'school-label');
+                label.setAttribute('fill', color);
+                label.textContent = schoolName;
+                labelsLayer.appendChild(label);
+
+                // Build node lookup
+                var nodeMap = {};
+                school.nodes.forEach(function(node) {
+                    nodeMap[node.formId] = node;
+                });
+
+                // Calculate node positions
+                var nodesByTier = {};
+                school.nodes.forEach(function(node) {
+                    var tier = node.tier || 0;
+                    if (!nodesByTier[tier]) nodesByTier[tier] = [];
+                    nodesByTier[tier].push(node);
+                });
+
+                // Position nodes
+                school.nodes.forEach(function(node) {
+                    var tier = node.tier || 0;
+                    var tierNodes = nodesByTier[tier];
+                    var indexInTier = tierNodes.indexOf(node);
+                    var nodesInTier = tierNodes.length;
+
+                    var radius = cfg.baseRadius + tier * cfg.tierSpacing;
+
+                    // Spread nodes within sector
+                    var angleSpread = nodesInTier > 1 ? usableAngle * 0.8 : 0;
+                    var angleOffset = nodesInTier > 1 ?
+                        (indexInTier - (nodesInTier - 1) / 2) * (angleSpread / (nodesInTier - 1)) : 0;
+
+                    var angle = spokeAngle + angleOffset;
+                    var angleRad = angle * Math.PI / 180;
+
+                    node._x = Math.cos(angleRad) * radius;
+                    node._y = Math.sin(angleRad) * radius;
+                    node._color = color;
+                });
+
+                // Draw edges
+                school.links.forEach(function(link) {
+                    var fromNode = nodeMap[link.from];
+                    var toNode = nodeMap[link.to];
+                    if (!fromNode || !toNode) return;
+
+                    var edge = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+
+                    // Curved edge
+                    var midX = (fromNode._x + toNode._x) / 2;
+                    var midY = (fromNode._y + toNode._y) / 2;
+                    var dist = Math.sqrt(Math.pow(toNode._x - fromNode._x, 2) + Math.pow(toNode._y - fromNode._y, 2));
+                    var curveMag = dist * 0.2;
+
+                    // Curve toward center
+                    var centerDist = Math.sqrt(midX * midX + midY * midY);
+                    if (centerDist > 0) {
+                        midX -= (midX / centerDist) * curveMag;
+                        midY -= (midY / centerDist) * curveMag;
+                    }
+
+                    var d = 'M ' + fromNode._x + ' ' + fromNode._y +
+                            ' Q ' + midX + ' ' + midY + ' ' + toNode._x + ' ' + toNode._y;
+
+                    edge.setAttribute('d', d);
+                    edge.setAttribute('class', 'edge');
+                    edge.setAttribute('stroke', color);
+                    edgesLayer.appendChild(edge);
+                });
+
+                // Draw nodes
+                school.nodes.forEach(function(node) {
+                    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    g.setAttribute('class', 'node');
+                    g.setAttribute('transform', 'translate(' + node._x + ',' + node._y + ')');
+
+                    // Node rectangle
+                    var width = 50 + (node.tier || 0) * 5;
+                    var height = 20;
+                    var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('x', -width / 2);
+                    rect.setAttribute('y', -height / 2);
+                    rect.setAttribute('width', width);
+                    rect.setAttribute('height', height);
+                    rect.setAttribute('class', 'node-rect');
+                    rect.setAttribute('fill', node._color);
+                    rect.setAttribute('stroke', '#fff');
+
+                    // Highlight if root
+                    if (node.isRoot) {
+                        rect.setAttribute('filter', 'url(#glow)');
+                        rect.setAttribute('stroke-width', 3);
+                    }
+
+                    g.appendChild(rect);
+
+                    // Node text (abbreviated name)
+                    var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('class', 'node-text');
+                    var displayName = node.name.length > 8 ? node.name.substring(0, 7) + '…' : node.name;
+                    text.textContent = displayName;
+                    g.appendChild(text);
+
+                    // Tooltip
+                    g.addEventListener('mouseenter', function(e) {
+                        var tooltip = document.getElementById('tooltip');
+                        tooltip.querySelector('.name').textContent = node.name;
+                        var element = typeof detectSpellElement === 'function' ? detectSpellElement(node) : null;
+                        tooltip.querySelector('.info').innerHTML =
+                            'Tier: ' + (node.tier || 0) + '<br>' +
+                            'Element: ' + (element || 'none') + '<br>' +
+                            'Prerequisites: ' + (node.prerequisites ? node.prerequisites.length : 0);
+                        tooltip.style.display = 'block';
+                        tooltip.style.left = (e.clientX + 15) + 'px';
+                        tooltip.style.top = (e.clientY + 15) + 'px';
+                    });
+                    g.addEventListener('mouseleave', function() {
+                        document.getElementById('tooltip').style.display = 'none';
+                    });
+
+                    nodesLayer.appendChild(g);
+                });
+            });
+        }
+
+        // Initialize
+        window.onload = function() {
+            generateTree();
+        };
+    </script>
+</body>
+</html>

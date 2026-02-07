@@ -1,0 +1,8 @@
+{
+    "id": "default",
+    "name": "Default (Modern Dark)",
+    "description": "Modern dark UI with gradients and glow effects",
+    "cssFile": "../styles.css",
+    "author": "Heart of Magic",
+    "version": "1.0"
+}

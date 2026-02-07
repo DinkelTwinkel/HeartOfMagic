@@ -1,0 +1,2534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart of Magic</title>
+    <!-- Use styles-skyrim.css for native Skyrim UI look, or styles.css for modern dark theme -->
+    <link rel="stylesheet" href="styles-skyrim.css">
+    <!-- AUTO-TEST FLAG: Set to true to auto-trigger scan+build on panel load (for debugging) -->
+    <script>window.AUTO_TEST_BUILD = false;</script>
+</head>
+<body>
+    <!-- Full-screen overlay to block clicks on SWF UI when panel has focus -->
+    <div id="focusOverlay" class="focus-overlay"></div>
+    
+    <div id="spellPanel" class="spell-panel">
+        <!-- Draggable Header -->
+        <div class="panel-header" id="panelHeader">
+            <div class="header-left">
+                <span class="panel-title">HEART OF MAGIC</span>
+                <span class="version-tag">v1.0</span>
+            </div>
+            <div class="header-right">
+                <button class="header-btn" id="fullscreenBtn" title="Toggle Fullscreen">[ ]</button>
+                <button class="header-btn" id="minimizeBtn" title="Minimize">-</button>
+                <button class="header-btn" id="closeBtn" title="Close (Esc/Tab)">X</button>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <button class="tab-btn active" id="tabSpellScan" data-tab="spellScan">Spell Scan</button>
+            <button class="tab-btn dev-only" id="tabTreeRules" data-tab="treeRules">Tree Rules</button>
+            <button class="tab-btn" id="tabSpellTree" data-tab="spellTree">Spell Tree</button>
+            <button class="tab-btn" id="tabSettings" data-tab="settings">Settings</button>
+        </div>
+
+        <!-- Main Content -->
+        <div class="panel-content" id="panelContent">
+            
+            <!-- ============================================================ -->
+            <!-- TAB: Spell Scan -->
+            <!-- ============================================================ -->
+            <div class="tab-content active" id="contentSpellScan">
+                <!-- Status Section -->
+                <div class="status-section">
+                    <div class="status-icon" id="statusIcon">*</div>
+                    <span class="status-text" id="statusText">Ready to scan spells...</span>
+                </div>
+
+                <!-- Action Buttons - Scan -->
+                <div class="actions-section">
+                    <button class="btn btn-scan" id="scanBtn">
+                        <span class="btn-icon">[?]</span>
+                        Scan All Spells
+                    </button>
+                    <button class="btn btn-blacklist" id="blacklistBtn" title="Manage spell blacklist - excluded from tree building">
+                        <span class="btn-icon">[X]</span>
+                        Blacklist
+                    </button>
+                    <button class="btn btn-whitelist" id="whitelistBtn" title="Manage plugin whitelist - only scan spells from selected plugins">
+                        <span class="btn-icon">[+]</span>
+                        Whitelist
+                    </button>
+                    <button class="btn btn-secondary" id="saveBtn">
+                        <span class="btn-icon">[S]</span>
+                        Save
+                    </button>
+                    <button class="btn btn-secondary" id="saveBySchoolBtn" title="Save each school to separate file">
+                        <span class="btn-icon">[F]</span>
+                        Save by School
+                    </button>
+                    <button class="btn btn-settings" id="settingsBtn" title="Output Settings">
+                        <span class="btn-icon">[*]</span>
+                    </button>
+                    <button class="btn btn-secondary" id="classifyKeywordsBtn" title="Use LLM to classify spells with weak/missing keywords" style="display: none;">
+                        <span class="btn-icon">[K]</span>
+                        Classify Keywords
+                    </button>
+                </div>
+
+                <!-- Generation Mode Panel (3-row layout) -->
+                <div class="generation-mode-panel" id="generationModePanel">
+                    <div class="section-header">
+                        <span class="section-icon">[>]</span>
+                        <span class="section-title">Tree Generation Mode</span>
+                    </div>
+                    
+                    <!-- Row 1: BUILD TREE (Complex) - Requires Python -->
+                    <div class="gen-mode-row">
+                        <div class="gen-mode-btn-group">
+                            <button class="btn btn-primary gen-mode-btn" id="visualFirstBtn" onclick="startVisualFirstGenerate()" title="Generate spell trees using the grid-based growth system (requires Python)" disabled>
+                                <span class="btn-icon">[T]</span>
+                                BUILD TREE (Complex)
+                            </button>
+                            <button class="btn btn-accent gen-mode-btn-setup hidden" id="setupPythonBtn" onclick="startPythonSetup()" title="Download and install Python automatically">
+                                <span class="btn-icon">[+]</span>
+                                Setup Python
+                            </button>
+                        </div>
+                        <div class="gen-mode-info">
+                            <span class="gen-mode-desc">Grid-based layout. Fuzzy NLP matching. Shape-controlled.</span>
+                            <span class="gen-mode-pros">Recommended - Thematic grouping</span>
+                            <span class="gen-mode-cons">Requires Python</span>
+                        </div>
+                        <div class="gen-mode-options">
+                            <label class="gen-mode-checkbox" title="AI analyzes your spell list and chooses visual settings for each school:&#10;&#10;• Shape (organic, spiky, mountain, etc.)&#10;• Growth style (explosive, gentle, web-like)&#10;• Outward growth, symmetry, density&#10;&#10;The AI sees spell names, effects, and descriptions to match the tree's look to its theme (e.g., Destruction gets aggressive shapes).&#10;&#10;Requires API key in Settings.">
+                                <input type="checkbox" id="visualFirstLLMCheck">
+                                <span>LLM auto-config</span>
+                            </label>
+                            <button class="btn-small btn-settings-inline" id="llmApiSettingsBtn" title="Configure LLM API key and model">
+                                [*] Settings
+                            </button>
+                        </div>
+                        <div class="gen-mode-options">
+                            <select id="visualFirstBranchingMode" class="gen-mode-select" title="Branching mode for tree growth">
+                                <option value="fuzzy_groups" selected>Fuzzy Groups (organic)</option>
+                                <option value="proximity">Proximity (grid)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Row 2: BUILD TREE (Simple) - JS-only, no Python -->
+                    <div class="gen-mode-row">
+                        <button class="btn btn-secondary gen-mode-btn" id="proceduralBtn" title="Generate trees with JavaScript only (no Python required)">
+                            <span class="btn-icon">[J]</span>
+                            BUILD TREE (Simple)
+                        </button>
+                        <div class="gen-mode-info">
+                            <span class="gen-mode-desc">JavaScript only. No Python needed. Basic NLP matching.</span>
+                            <span class="gen-mode-pros">No dependencies required</span>
+                            <span class="gen-mode-cons">Less sophisticated theme grouping</span>
+                        </div>
+                        <div class="gen-mode-options">
+                            <label class="gen-mode-checkbox" title="Use random settings for each school">
+                                <input type="checkbox" id="jsRandomSettingsCheck">
+                                <span>Random</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Row 3: AUTO COMPLEX (Python) - Developer only -->
+                    <div class="gen-mode-row dev-only">
+                        <button class="btn btn-warning gen-mode-btn" id="proceduralPlusBtn" title="Generate trees with Python TF-IDF (better quality, requires Python)">
+                            <span class="btn-icon">[P]</span>
+                            AUTO COMPLEX
+                        </button>
+                        <div class="gen-mode-info">
+                            <span class="gen-mode-desc">Python TF-IDF + fuzzy matching. Best procedural quality.</span>
+                            <span class="gen-mode-pros">Accurate themes - Deterministic</span>
+                            <span class="gen-mode-cons">Requires Python</span>
+                        </div>
+                        <div class="gen-mode-options">
+                            <label class="gen-mode-checkbox" title="LLM picks shape/settings per school">
+                                <input type="checkbox" id="llmAutoConfigCheck">
+                                <span>LLM Config</span>
+                            </label>
+                            <label class="gen-mode-checkbox" title="LLM names groups + custom rules">
+                                <input type="checkbox" id="llmGroupsCheck">
+                                <span>LLM Groups</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Row 4: AUTO AI (LLM) - Developer only -->
+                    <div class="gen-mode-row dev-only">
+                        <button class="btn btn-accent gen-mode-btn" id="fullAutoBtn" title="Scan spells, generate trees with AI, and save">
+                            <span class="btn-icon">[AI]</span>
+                            AUTO AI
+                        </button>
+                        <div class="gen-mode-info">
+                            <span class="gen-mode-desc">LLM generates tree structure. Most creative connections.</span>
+                            <span class="gen-mode-pros">Creative prereqs - Contextual</span>
+                            <span class="gen-mode-cons">Slow - Costs API</span>
+                        </div>
+                        <div class="gen-mode-options">
+                            <span class="gen-mode-note">LLM Config + Groups always enabled</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Seed Control Row -->
+                    <div class="gen-seed-row">
+                        <span class="seed-label">[#] Seed:</span>
+                        <input type="number" id="seedInput" class="seed-input" placeholder="Random seed..."
+                            title="Seed controls randomness. Same seed = same results (with same settings)">
+                        <button class="btn btn-small btn-secondary" id="newSeedBtn" title="Generate new random seed">
+                            New Seed
+                        </button>
+                        <span class="seed-info">Same seed + settings = reproducible trees</span>
+                    </div>
+                </div>
+
+                <!-- Dynamic Tree Building Settings (Collapsible) -->
+                <div class="generation-mode-panel" id="dynamicTreeSettings">
+                    <div class="section-header collapsible" id="dynamicTreeHeader" style="cursor: pointer;">
+                        <span class="section-icon">[*]</span>
+                        <span class="section-title">Tree Building Settings</span>
+                        <span class="section-toggle">▼</span>
+                    </div>
+                    <div class="section-content" id="dynamicTreeContent">
+                        <div class="setting-hint" style="font-size: 0.8em; color: var(--text-muted); margin-bottom: 12px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            Control how spells are grouped and connected in the tree.
+                        </div>
+
+                        <!-- Preset Selection -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Tree Preset</span>
+                                <span class="setting-desc" id="treePresetDescription">Thematic - Keyword matching</span>
+                            </div>
+                            <select id="treePresetSelect" class="setting-select">
+                                <option value="strict">Strict - Clean element chains</option>
+                                <option value="thematic" selected>Thematic - Keyword matching</option>
+                                <option value="organic">Organic - Natural growth</option>
+                                <option value="random">Random - Chaotic</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+
+                        <!-- Theme Discovery -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-purple);">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-purple); margin-bottom: 8px;">THEME DISCOVERY</div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Discovery Mode</span>
+                                </div>
+                                <select id="themeDiscoveryModeSelect" class="setting-select">
+                                    <option value="dynamic" selected>Dynamic (TF-IDF)</option>
+                                    <option value="fixed">Fixed</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Smart Routing</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="enableSmartRoutingToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Auto-Branch (NLP)</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="autoBranchFallbackToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Element Rules -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-red); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-red); margin-bottom: 8px;">ELEMENT RULES</div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Element Isolation</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="elementIsolationToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row" id="elementIsolationStrictRow">
+                                <div class="setting-info"><span class="setting-label">Strict (0 cross-element)</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="elementIsolationStrictToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row" id="rootCountRow">
+                                <div class="setting-info">
+                                    <span class="setting-label">Root Count</span>
+                                    <span class="setting-hint">1 = single root, 3 = per-element roots</span>
+                                </div>
+                                <select id="rootCountSelect" class="setting-select" style="width: 60px;">
+                                    <option value="1">1</option>
+                                    <option value="3">3</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Tier Rules -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-yellow); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-yellow); margin-bottom: 8px;">TIER RULES</div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Strict Tier Ordering</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="strictTierOrderingToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Same-Tier Links</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="allowSameTierLinksToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Tier Mixing</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="tierMixingToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row" id="tierMixingAmountRow" style="display: none;">
+                                <div class="setting-info"><span class="setting-label">Mixing Amount</span></div>
+                                <div class="slider-container">
+                                    <input type="range" id="tierMixingAmountSlider" min="0" max="50" value="20" class="setting-slider">
+                                    <span id="tierMixingAmountValue" class="slider-value">20%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Link Strategy -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-cyan); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-cyan); margin-bottom: 8px;">LINK STRATEGY</div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Strategy</span></div>
+                                <select id="linkStrategySelect" class="setting-select">
+                                    <option value="strict">Strict</option>
+                                    <option value="thematic" selected>Thematic</option>
+                                    <option value="organic">Organic</option>
+                                    <option value="random">Random</option>
+                                </select>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Max Children/Node</span></div>
+                                <div class="slider-container">
+                                    <input type="range" id="maxChildrenSlider" min="1" max="5" value="3" class="setting-slider">
+                                    <span id="maxChildrenValue" class="slider-value">3</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Convergence -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-green); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-green); margin-bottom: 8px;">CONVERGENCE</div>
+                            <div class="setting-row">
+                                <div class="setting-info"><span class="setting-label">Enable Multi-Prereqs</span></div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="convergenceEnabledToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div id="convergenceSettings" style="margin-top: 8px;">
+                                <div class="setting-row">
+                                    <div class="setting-info"><span class="setting-label">Chance</span></div>
+                                    <div class="slider-container">
+                                        <input type="range" id="convergenceChanceSlider" min="0" max="100" value="40" class="setting-slider">
+                                        <span id="convergenceChanceValue" class="slider-value">40%</span>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info"><span class="setting-label">Min Tier</span></div>
+                                    <select id="convergenceMinTierSelect" class="setting-select">
+                                        <option value="2">Adept</option>
+                                        <option value="3" selected>Expert</option>
+                                        <option value="4">Master</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scoring Factors (Collapsible) -->
+                        <div class="settings-subsection" style="margin-top: 12px;">
+                            <div class="section-header collapsible" id="scoringFactorsHeader" style="cursor: pointer; display: flex; align-items: center;">
+                                <span class="collapse-icon" style="margin-right: 8px;">[+]</span>
+                                <span class="subsection-title">Scoring Factors</span>
+                            </div>
+                            <div id="scoringFactorsContent" class="hidden" style="margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.15); border-radius: 4px;">
+                                <div class="scoring-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <label class="scoring-checkbox"><input type="checkbox" id="scoringElementMatching" checked><span>Element (+100)</span></label>
+                                    <label class="scoring-checkbox"><input type="checkbox" id="scoringSpellTypeMatching" checked><span>Spell Type (+40)</span></label>
+                                    <label class="scoring-checkbox"><input type="checkbox" id="scoringTierProgression" checked><span>Tier (+50)</span></label>
+                                    <label class="scoring-checkbox dev-only"><input type="checkbox" id="scoringKeywordMatching" checked><span>Keyword (+20)</span></label>
+                                    <label class="scoring-checkbox"><input type="checkbox" id="scoringThemeCoherence" checked><span>Theme (+70)</span></label>
+                                    <label class="scoring-checkbox"><input type="checkbox" id="scoringEffectNameMatching" checked><span>Effect (+30)</span></label>
+                                    <label class="scoring-checkbox dev-only"><input type="checkbox" id="scoringDescriptionSimilarity" checked><span>TF-IDF (+20)</span></label>
+                                    <label class="scoring-checkbox dev-only"><input type="checkbox" id="scoringMagickaCost"><span>Magicka (+15)</span></label>
+                                    <label class="scoring-checkbox dev-only"><input type="checkbox" id="scoringSameModSource"><span>Same Mod (+10)</span></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LLM Features (Collapsible) -->
+                        <div class="settings-subsection" style="margin-top: 12px;">
+                            <div class="section-header collapsible" id="llmFeaturesHeader" style="cursor: pointer; display: flex; align-items: center;">
+                                <span class="collapse-icon" style="margin-right: 8px;">[+]</span>
+                                <span class="subsection-title" style="color: var(--accent-purple);">LLM Features</span>
+                                <span class="llm-status-indicator" id="llmStatusIndicator" style="margin-left: 8px; font-size: 0.7em; color: var(--text-muted);">(Disabled)</span>
+                            </div>
+                            <div id="llmFeaturesContent" class="hidden" style="margin-top: 8px; padding: 12px; background: rgba(128,0,255,0.05); border-radius: 4px; border: 1px solid rgba(128,0,255,0.2);">
+                                <div class="setting-hint" style="font-size: 0.75em; color: var(--text-muted); margin-bottom: 12px;">
+                                    Toggle LLM for specific tree-building tasks. Requires API key in LLM Settings.
+                                </div>
+
+                                <!-- Master Toggle -->
+                                <div class="setting-row" style="background: rgba(128,0,255,0.1); padding: 8px; border-radius: 4px; margin-bottom: 12px;">
+                                    <div class="setting-info">
+                                        <span class="setting-label" style="font-weight: bold;">Enable LLM Features</span>
+                                        <span class="setting-desc" style="font-size: 0.7em; color: var(--text-muted);">Master toggle for all LLM features below</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="llmMasterToggle">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div id="llmFeatureToggles" style="opacity: 0.5; pointer-events: none;">
+                                    <!-- 1. Theme Discovery (dead - cache populated but never read by builder) -->
+                                    <div class="setting-row dev-only">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Theme Discovery</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM classifies spell themes (vs TF-IDF)</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmThemeDiscoveryToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 2. Element Detection -->
+                                    <div class="setting-row">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Element Detection</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM determines fire/frost/shock (vs keywords)</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmElementDetectionToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 3. Edge Cases (implemented but never called from any builder) -->
+                                    <div class="setting-row dev-only">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Edge Case Resolution</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM breaks ties on close parent scores</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmEdgeCasesToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="setting-row dev-only" id="llmEdgeCaseThresholdRow" style="display: none; margin-left: 20px;">
+                                        <div class="setting-info"><span class="setting-label">Score Threshold</span></div>
+                                        <div class="slider-container">
+                                            <input type="range" id="llmEdgeCaseThresholdSlider" min="5" max="50" value="10" class="setting-slider">
+                                            <span id="llmEdgeCaseThresholdValue" class="slider-value">10</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- 4. Branch Assignment (no implementation) -->
+                                    <div class="setting-row dev-only">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Branch Assignment</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM decides where mod spells belong</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmBranchAssignmentToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 5. Parent Suggestion (no implementation) -->
+                                    <div class="setting-row dev-only">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Parent Suggestion</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM suggests best parent spell</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmParentSuggestionToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 6. Tree Validation (no implementation) -->
+                                    <div class="setting-row dev-only">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Tree Validation</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM reviews tree for logical issues</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmTreeValidationToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 7. Keyword Expansion -->
+                                    <div class="setting-row">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Keyword Expansion</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM discovers new element keywords</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmKeywordExpansionToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <!-- 8. Keyword Classification -->
+                                    <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+                                        <div class="setting-info">
+                                            <span class="setting-label">Keyword Classification</span>
+                                            <span class="setting-desc" style="font-size: 0.65em; color: var(--text-muted);">LLM classifies spells with weak/missing keywords (batched per school)</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="llmKeywordClassificationToggle">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="llm-cost-hint" style="margin-top: 12px; padding: 8px; background: rgba(255,200,0,0.1); border-radius: 4px; font-size: 0.7em; color: var(--accent-yellow);">
+                                    <strong>Cost Note:</strong> Each enabled feature adds API calls. Theme Discovery + Element Detection = highest token usage.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="setting-actions" style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
+                            <button id="resetTreeSettingsBtn" class="btn btn-small btn-secondary">Reset</button>
+                            <button id="applyTreeSettingsBtn" class="btn btn-small btn-primary">Apply & Regenerate</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LLM Settings Panel (collapsible) - Developer only -->
+                <div class="llm-settings-section dev-only" id="llmSettingsSection">
+                    <div class="section-header collapsible" id="llmSettingsHeader">
+                        <span class="section-icon">[~]</span>
+                        <span class="section-title">LLM Settings</span>
+                        <span class="section-toggle">▼</span>
+                    </div>
+                    <div class="section-content hidden" id="llmSettingsContent">
+                        <!-- Auto-Configure Prompt Template -->
+                        <div class="llm-prompt-group">
+                            <div class="llm-prompt-header">
+                                <label>Auto-Configure Prompt Template</label>
+                                <span class="llm-prompt-hint">Template for generating the final LLM prompt</span>
+                                <button class="btn-small" id="resetAutoConfigPromptBtn">Reset</button>
+                            </div>
+                            <textarea id="autoConfigPromptArea" class="llm-prompt-textarea" rows="6" 
+                                placeholder="Prompt template for LLM auto-configure..."></textarea>
+                        </div>
+                        
+                        <div class="llm-prompt-variables">
+                            <span class="variables-label">Available variables:</span>
+                            <code>{{SCHOOL_NAME}}</code> <code>{{SPELL_LIST}}</code> 
+                            <code>{{GROUP_KEYWORDS}}</code> <code>{{AVAILABLE_SHAPES}}</code>
+                        </div>
+                        
+                        <!-- Generate Final Prompt Button -->
+                        <div class="llm-action-row">
+                            <button class="btn btn-secondary" id="generateFinalPromptBtn" title="Generate the final prompt with spell data filled in">
+                                <span class="btn-icon">[>]</span>
+                                Generate Final Prompt
+                            </button>
+                        </div>
+                        
+                        <!-- Final Prompt Output (for manual LLM use) -->
+                        <div class="llm-prompt-group">
+                            <div class="llm-prompt-header">
+                                <label>Final Prompt (for manual LLM)</label>
+                                <span class="llm-prompt-hint">Copy this, paste into an LLM, paste response below</span>
+                                <button class="btn-small" id="copyFinalPromptBtn" title="Copy to clipboard">Copy</button>
+                            </div>
+                            <textarea id="finalPromptArea" class="llm-prompt-textarea" rows="6" readonly
+                                placeholder="Click 'Generate Final Prompt' after scanning spells..."></textarea>
+                        </div>
+                        
+                        <!-- LLM Response Input (for manual workflow) -->
+                        <div class="llm-prompt-group">
+                            <div class="llm-prompt-header">
+                                <label>LLM Response (paste here)</label>
+                                <span class="llm-prompt-hint">Paste LLM's JSON response for manual config</span>
+                                <button class="btn-small" id="pasteLLMResponseBtn" title="Paste from clipboard">Paste</button>
+                                <button class="btn-small" id="clearLLMResponseBtn" title="Clear response">Clear</button>
+                            </div>
+                            <textarea id="llmResponseArea" class="llm-prompt-textarea" rows="6" 
+                                placeholder="Paste LLM JSON response here when using manual workflow..."></textarea>
+                        </div>
+                        
+                        <!-- Default Settings Preview -->
+                        <div class="llm-prompt-group">
+                            <div class="llm-prompt-header">
+                                <label>Current Config (used if LLM auto-config is off)</label>
+                                <span class="llm-prompt-hint">Default settings or paste custom config</span>
+                                <button class="btn-small" id="applyLLMResponseBtn" title="Apply pasted response as config">Apply Response</button>
+                                <button class="btn-small" id="resetToDefaultConfigBtn" title="Reset to defaults">Reset</button>
+                            </div>
+                            <textarea id="currentConfigArea" class="llm-prompt-textarea" rows="6" 
+                                placeholder="Current configuration..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Growth Style Generator (LLM-driven tree visuals) - Developer only -->
+                <div class="growth-style-section dev-only" id="growthStyleSection">
+                    <div class="section-header collapsible" id="growthStyleHeader">
+                        <span class="section-icon">[~]</span>
+                        <span class="section-title">Visual Tree Style (AI)</span>
+                        <span class="section-toggle">▼</span>
+                    </div>
+                    <div class="section-content" id="growthStyleContent">
+                        <div class="growth-info">
+                            Let the AI create unique visual styles for each magic school.
+                        </div>
+                        <div class="growth-actions">
+                            <button class="btn btn-secondary" id="generateStylesBtn" title="Generate visual styles with LLM">
+                                <span class="btn-icon">*</span>
+                                Generate Styles
+                            </button>
+                            <button class="btn btn-primary" id="applyStylesBtn" title="Apply generated styles to tree" disabled>
+                                <span class="btn-icon">▶</span>
+                                Apply to Tree
+                            </button>
+                        </div>
+                        <div class="growth-status" id="growthStatus">Click "Generate Styles" after scanning spells.</div>
+                        
+                        <!-- Per-school style displays -->
+                        <div class="school-styles" id="schoolStylesContainer">
+                            <!-- Dynamically populated -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- LLM API Settings (collapsible - above Tree Management) -->
+                <div class="settings-section hidden" id="settingsPanel">
+                    <!-- LLM API Settings -->
+                    <div class="settings-header" style="margin-bottom: 10px;">
+                        <span class="settings-title">LLM API Settings</span>
+                    </div>
+                    <div class="api-settings" style="margin-bottom: 20px; padding: 12px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px;">
+                        <div style="margin-bottom: 12px;">
+                            <label style="display: block; font-size: 0.85em; color: #94a3b8; margin-bottom: 4px;">OpenRouter API Key</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="password" id="apiKeyInput" placeholder="sk-or-..." 
+                                    style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-family: monospace; font-size: 0.9em;">
+                                <button id="pasteApiKeyBtn" class="btn btn-secondary btn-sm" title="Paste from clipboard" style="padding: 8px 12px;">[C]</button>
+                                <button id="toggleApiKeyBtn" class="btn btn-secondary btn-sm" title="Show/hide key" style="padding: 8px 12px;">[.]</button>
+                                <button id="saveApiKeyBtn" class="btn btn-primary btn-sm" style="padding: 8px 16px;">Save</button>
+                            </div>
+                            <p style="font-size: 0.75em; color: #64748b; margin-top: 6px;">
+                                Get your key at <span style="color: #818cf8;">openrouter.ai/keys</span>
+                            </p>
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.85em; color: #94a3b8; margin-bottom: 4px;">Model</label>
+                            <select id="modelSelect" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-size: 0.9em;">
+                                <option value="anthropic/claude-sonnet-4">Claude Sonnet 4 (Recommended)</option>
+                                <option value="anthropic/claude-opus-4">Claude Opus 4 (Most Capable)</option>
+                                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                                <option value="openai/gpt-4o">GPT-4o</option>
+                                <option value="openai/gpt-4o-mini">GPT-4o Mini (Cheaper)</option>
+                                <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
+                                <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+                            </select>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <label style="display: block; font-size: 0.85em; color: #94a3b8; margin-bottom: 4px;">Custom Model ID <span style="color: #64748b;">(overrides dropdown)</span></label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="customModelInput" placeholder="e.g. anthropic/claude-3-opus" 
+                                    style="flex: 1; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-family: monospace; font-size: 0.85em;">
+                                <button id="pasteModelBtn" class="btn btn-secondary btn-sm" title="Paste from clipboard" style="padding: 8px 12px;">[C]</button>
+                                <button id="clearModelBtn" class="btn btn-secondary btn-sm" title="Clear custom model" style="padding: 8px 12px;">X</button>
+                            </div>
+                            <p style="font-size: 0.75em; color: #64748b; margin-top: 4px;">
+                                Browse models at <span style="color: #818cf8;">openrouter.ai/models</span>
+                            </p>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <label style="display: block; font-size: 0.85em; color: #94a3b8; margin-bottom: 4px;">Max Tokens <span style="color: #64748b;">(increase if responses are cut off)</span></label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="number" id="maxTokensInput" value="4096" min="1000" max="32000" step="1000"
+                                    style="width: 120px; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; font-family: monospace; font-size: 0.9em; text-align: center;">
+                                <span style="font-size: 0.8em; color: #64748b;">tokens (4096-16000 recommended)</span>
+                            </div>
+                        </div>
+                        <div id="apiStatus" style="margin-top: 10px; font-size: 0.8em; color: #64748b;"></div>
+                    </div>
+
+                    <!-- Scan Mode Toggle -->
+                    <div class="settings-header" style="margin-bottom: 10px;">
+                        <span class="settings-title">Scan Mode</span>
+                    </div>
+                    <div class="scan-mode-toggle" style="margin-bottom: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 6px;">
+                        <label class="field-checkbox" style="display: flex; align-items: center; gap: 10px;">
+                            <input type="checkbox" id="scanModeTomes" checked>
+                            <span style="font-weight: 500;">Scan Spell Tomes Only</span>
+                        </label>
+                        <p style="font-size: 0.8em; color: #888; margin: 8px 0 0 24px;">
+                            Recommended: Only includes spells that have learnable tomes (no duplicates, no NPC-only spells)
+                        </p>
+                    </div>
+                    
+                    <div class="settings-header dev-only">
+                        <span class="settings-title">Output Fields</span>
+                        <span class="settings-hint">Uncheck fields to reduce token count for LLM</span>
+                    </div>
+                    <div class="settings-grid dev-only">
+                        <!-- Essential fields (always included) -->
+                        <div class="field-group">
+                            <div class="field-group-title">Essential (always included)</div>
+                            <label class="field-checkbox disabled">
+                                <input type="checkbox" checked disabled>
+                                <span>formId</span>
+                            </label>
+                            <label class="field-checkbox disabled">
+                                <input type="checkbox" checked disabled>
+                                <span>name</span>
+                            </label>
+                            <label class="field-checkbox disabled">
+                                <input type="checkbox" checked disabled>
+                                <span>school</span>
+                            </label>
+                            <label class="field-checkbox disabled">
+                                <input type="checkbox" checked disabled>
+                                <span>skillLevel</span>
+                            </label>
+                        </div>
+                        <!-- Optional fields -->
+                        <div class="field-group">
+                            <div class="field-group-title">Optional Fields</div>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_editorId" checked>
+                                <span>editorId</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_magickaCost" checked>
+                                <span>magickaCost</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_minimumSkill">
+                                <span>minimumSkill (numeric)</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_castingType">
+                                <span>castingType</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_delivery">
+                                <span>delivery</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_chargeTime">
+                                <span>chargeTime</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_plugin">
+                                <span>plugin</span>
+                            </label>
+                        </div>
+                        <div class="field-group">
+                            <div class="field-group-title">Effects & Keywords</div>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_effects">
+                                <span>effects (detailed)</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_effectNames">
+                                <span>effectNames (names only)</span>
+                            </label>
+                            <label class="field-checkbox">
+                                <input type="checkbox" id="field_keywords">
+                                <span>keywords</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-presets dev-only">
+                        <button class="preset-btn" id="presetMinimal">Minimal</button>
+                        <button class="preset-btn" id="presetBalanced">Balanced</button>
+                        <button class="preset-btn" id="presetFull">Full</button>
+                    </div>
+                </div>
+
+                <!-- Tree Management Section -->
+                <div class="tree-import-section">
+                    <div class="section-label">Tree Management</div>
+                    <div class="import-actions">
+                        <button class="btn btn-secondary" id="import-tree-scan-btn" title="Import tree JSON from clipboard or file">
+                            <span class="btn-icon">[I]</span>
+                            Import Tree
+                        </button>
+                        <button class="btn btn-secondary" id="load-saved-scan-btn" title="Load previously saved tree">
+                            <span class="btn-icon">[F]</span>
+                            Load Saved
+                        </button>
+                        <!-- Hidden for now - clear tree functionality needs work
+                        <button class="btn btn-danger" id="clear-tree-scan-btn" title="Clear the current spell tree">
+                            <span class="btn-icon">[X]</span>
+                            Clear Tree
+                        </button>
+                        -->
+                    </div>
+                </div>
+
+                <!-- Output Section -->
+                <div class="output-section">
+                    <div class="output-header">
+                        <label for="outputArea">Output (editable)</label>
+                        <div class="output-header-buttons">
+                            <button class="btn-small" id="copyBtn" title="Copy to Windows clipboard">[C] Copy</button>
+                            <button class="btn-small" id="pasteBtn" title="Paste from Windows clipboard">[V] Paste</button>
+                        </div>
+                        <span class="char-count" id="charCount">0 chars</span>
+                    </div>
+                    <textarea id="outputArea" 
+                              placeholder="Click 'Scan All Spells' to generate spell data and LLM prompt...&#10;&#10;The output will include:&#10;• All player-learnable spells&#10;• Spell properties (school, cost, effects)&#10;• Your custom tree rules prompt&#10;&#10;You can edit this content before saving."
+                              spellcheck="false"></textarea>
+                </div>
+
+                <!-- Per-School Control Panels (shown after scan) -->
+                <div class="school-controls-section hidden" id="schoolControlsSection">
+                    <div class="school-controls-header">
+                        <span class="school-controls-title">Per-School Settings</span>
+                        <button class="btn btn-secondary btn-sm" id="collapseAllSchoolsBtn">Collapse All</button>
+                    </div>
+                    <div id="schoolControlsContainer">
+                        <!-- Dynamically populated with school control panels -->
+                        <div class="school-controls-placeholder">
+                            Scan spells to see per-school controls...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="instructions-section">
+                    <div class="instruction-item">
+                        <span class="instruction-num">1</span>
+                        <span>Click <strong>Scan All Spells</strong> to discover your installed spells</span>
+                    </div>
+                    <div class="instruction-item">
+                        <span class="instruction-num">2</span>
+                        <span>Click <strong>Build Tree</strong> to generate your spell progression tree</span>
+                    </div>
+                    <div class="instruction-item">
+                        <span class="instruction-num">3</span>
+                        <span><strong>Optional:</strong> Tick "LLM auto-config" for AI-designed trees (requires API key in Settings)</span>
+                    </div>
+                    <div class="instruction-note">
+                        <strong>Build Tree</strong> uses Python + NLP for intelligent theme grouping. 
+                        Use <strong>Simple Build</strong> if you don't have Python installed.
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- TAB: Tree Rules -->
+            <!-- ============================================================ -->
+            <div class="tab-content" id="contentTreeRules">
+                <!-- Info Banner -->
+                <div class="info-banner">
+                    <span class="info-icon">(!)</span>
+                    <span>These rules guide how the LLM builds your spell tree. Edit to customize the progression logic.</span>
+                </div>
+
+                <!-- Prompt Editor -->
+                <div class="prompt-editor-section">
+                    <div class="prompt-header">
+                        <label for="promptArea">Tree Creation Rules</label>
+                        <div class="prompt-actions">
+                            <button class="btn-small" id="resetPromptBtn" title="Reset to Default">Reset</button>
+                            <button class="btn-small btn-accent" id="savePromptBtn" title="Save Rules">Save</button>
+                        </div>
+                    </div>
+                    <textarea id="promptArea" 
+                              placeholder="Loading tree rules..."
+                              spellcheck="false"></textarea>
+                    <div class="prompt-footer">
+                        <span class="prompt-hint">Changes are included automatically when you scan spells.</span>
+                        <span class="prompt-status" id="promptStatus">Loaded</span>
+                    </div>
+                </div>
+
+                <!-- Help Section -->
+                <div class="help-section">
+                    <div class="help-title">Tips for Good Rules</div>
+                    <ul class="help-list">
+                        <li><strong>Root spells:</strong> Define which spell starts each school's tree</li>
+                        <li><strong>Progression:</strong> Describe how spells should flow (Novice → Master)</li>
+                        <li><strong>Branching:</strong> Explain how to split paths (by element, effect type, etc.)</li>
+                        <li><strong>Prerequisites:</strong> Rules for what must be learned first</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- TAB: Spell Tree -->
+            <!-- ============================================================ -->
+            <div class="tab-content" id="contentSpellTree">
+                <!-- Tree Container -->
+                <div id="tree-container" class="tree-container">
+                    <svg id="tree-svg" class="tree-svg">
+                        <defs>
+                            <!-- Arrow markers -->
+                            <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" 
+                                    orient="auto" markerUnits="strokeWidth">
+                                <path d="M0,0 L0,6 L6,3 z" fill="#334155"/>
+                            </marker>
+                            <marker id="arrow-active" markerWidth="6" markerHeight="6" refX="5" refY="3" 
+                                    orient="auto" markerUnits="strokeWidth">
+                                <path d="M0,0 L0,6 L6,3 z" fill="#fbbf24"/>
+                            </marker>
+                            
+                            <!-- Glow filter -->
+                            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="6" result="blur"/>
+                                <feMerge>
+                                    <feMergeNode in="blur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        
+                        <!-- Main rotating group -->
+                        <g id="wheel-group">
+                            <!-- School spoke backgrounds -->
+                            <g id="spokes-layer"></g>
+                            
+                            <!-- Edges rendered behind nodes -->
+                            <g id="edges-layer"></g>
+                            
+                            <!-- Nodes rendered on top -->
+                            <g id="nodes-layer"></g>
+                        </g>
+                        
+                        <!-- Center hub (separate so it doesn't rotate) -->
+                        <g id="center-hub"></g>
+                    </svg>
+                    
+                    <!-- Zoom Controls -->
+                    <div class="zoom-controls">
+                        <button id="zoom-in" class="zoom-btn" title="Zoom In">+</button>
+                        <span id="zoom-level">100%</span>
+                        <button id="zoom-out" class="zoom-btn" title="Zoom Out">−</button>
+                        <span id="renderer-badge" class="renderer-badge" title="Active renderer">SVG</span>
+                        <button id="heart-settings-btn" class="zoom-btn" title="Heart Animation Settings">⚙</button>
+                        <button id="edit-tree-btn" class="zoom-btn" title="Edit Tree">✎</button>
+                        <span id="edit-tools" class="edit-tools" style="display: none;">
+                            <button id="edit-tool-move" class="zoom-btn edit-tool active" title="Move Tool">✥</button>
+                            <button id="edit-tool-pen" class="zoom-btn edit-tool" title="Pen Tool - Draw Prerequisites">✒</button>
+                            <button id="edit-tool-eraser" class="zoom-btn edit-tool" title="Eraser Tool - Remove Links">⌫</button>
+                        </span>
+                    </div>
+                    
+                    <!-- Heart Animation Settings Popup -->
+                    <div id="heart-settings-popup" class="heart-settings-popup" style="display: none;">
+                        <div class="popup-header">
+                            <span>Heart Animation</span>
+                            <button id="heart-settings-close" class="popup-close">×</button>
+                        </div>
+                        <div class="popup-content">
+                            <div class="popup-row">
+                                <label>Enable Animation</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="heart-animation-enabled" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="popup-row">
+                                <label>Pulse Speed</label>
+                                <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="0.2">
+                                <span id="heart-pulse-speed-val">0.20</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Pulse Delay</label>
+                                <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="2">
+                                <span id="heart-pulse-delay-val">2.0s</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Background Opacity</label>
+                                <input type="range" id="heart-bg-opacity" min="0" max="1" step="0.05" value="1">
+                                <span id="heart-bg-opacity-val">1.0</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Background Color</label>
+                                <div class="color-swatch" id="heart-bg-color-swatch" data-target="heart-bg-color" style="background: #0a0a14;"></div>
+                                <input type="hidden" id="heart-bg-color" value="#0a0a14">
+                            </div>
+                            <div class="popup-row">
+                                <label>Ring Color</label>
+                                <div class="color-swatch" id="heart-ring-color-swatch" data-target="heart-ring-color" style="background: #b8a878;"></div>
+                                <input type="hidden" id="heart-ring-color" value="#b8a878">
+                            </div>
+                            <div class="popup-row">
+                                <label>Learning Path</label>
+                                <div class="color-swatch" id="learning-path-color-swatch" data-target="learning-path-color" style="background: #00ffff;"></div>
+                                <input type="hidden" id="learning-path-color" value="#00ffff">
+                            </div>
+                            
+                            <!-- Starfield Settings -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Starfield</div>
+                            
+                            <div class="popup-row">
+                                <label>Enable Stars</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="starfield-enabled" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="popup-row">
+                                <label>Fixed to Screen</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="starfield-fixed" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="popup-row">
+                                <label>Star Color</label>
+                                <div class="color-swatch" id="starfield-color-swatch" data-target="starfield-color" style="background: #ffffff;"></div>
+                                <input type="hidden" id="starfield-color" value="#ffffff">
+                            </div>
+                            <div class="popup-row">
+                                <label>Star Density</label>
+                                <input type="range" id="starfield-density" min="50" max="500" step="25" value="200">
+                                <span id="starfield-density-val">200</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Star Size</label>
+                                <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5">
+                                <span id="starfield-size-val">2.5</span>
+                            </div>
+                            
+                            <!-- Divider Settings -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">School Dividers</div>
+                            
+                            <div class="popup-row">
+                                <label>Show Dividers</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="popup-show-dividers" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="popup-row">
+                                <label>Divider Length</label>
+                                <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="800">
+                                <span id="popup-divider-length-val">800</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Line Width</label>
+                                <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3">
+                                <span id="popup-divider-width-val">3px</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Fade Amount</label>
+                                <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50">
+                                <span id="popup-divider-fade-val">50%</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Color Mode</label>
+                                <select id="popup-divider-color-mode" class="popup-select">
+                                    <option value="school">Match School</option>
+                                    <option value="custom">Custom Color</option>
+                                </select>
+                            </div>
+                            <div class="popup-row" id="popup-divider-custom-row" style="display: none;">
+                                <label>Custom Color</label>
+                                <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
+                                <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
+                            </div>
+                            
+                            <!-- Connection Lines Settings -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Connections</div>
+
+                            <div class="popup-row">
+                                <label>Selection Path</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="show-selection-path" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="popup-row">
+                                <label>Base Lines</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="show-base-connections" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <!-- Globe Settings -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Globe</div>
+                            
+                            <div class="popup-row">
+                                <label>Globe Size</label>
+                                <input type="range" id="popup-globe-size" min="15" max="60" step="5" value="30">
+                                <span id="popup-globe-size-val">30</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Particle Count</label>
+                                <input type="range" id="popup-globe-density" min="50" max="500" step="25" value="200">
+                                <span id="popup-globe-density-val">200</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Dot Size Min</label>
+                                <input type="range" id="popup-globe-dot-min" min="0.5" max="3" step="0.5" value="1">
+                                <span id="popup-globe-dot-min-val">1</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Dot Size Max</label>
+                                <input type="range" id="popup-globe-dot-max" min="1" max="6" step="0.5" value="3">
+                                <span id="popup-globe-dot-max-val">3</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Globe Color</label>
+                                <div class="color-swatch" id="globe-color-swatch" data-target="popup-globe-color" style="background: #b8a878;"></div>
+                                <input type="hidden" id="popup-globe-color" value="#b8a878">
+                            </div>
+                            <div class="popup-row">
+                                <label>Text Color</label>
+                                <div class="color-swatch" id="magic-text-color-swatch" data-target="popup-magic-text-color" style="background: #b8a878;"></div>
+                                <input type="hidden" id="popup-magic-text-color" value="#b8a878">
+                            </div>
+                            <div class="popup-row">
+                                <label>Globe Text</label>
+                                <input type="text" id="popup-globe-text" class="popup-input" value="HoM" placeholder="Text (use \n for line breaks)">
+                            </div>
+                            <div class="popup-row">
+                                <label>Text Size</label>
+                                <input type="range" id="popup-globe-text-size" min="8" max="32" step="1" value="16">
+                                <span id="popup-globe-text-size-val">16</span>
+                            </div>
+                            <div class="popup-row">
+                                <label>Particle Trail</label>
+                                <label class="toggle-switch toggle-sm">
+                                    <input type="checkbox" id="popup-particle-trail" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Color Picker Modal -->
+                    <div id="color-picker-modal" class="color-picker-modal" style="display: none;">
+                        <div class="color-picker-content">
+                            <div class="color-picker-header">
+                                <span>Select Color</span>
+                                <button id="color-picker-close" class="popup-close">×</button>
+                            </div>
+                            <div class="color-picker-body">
+                                <div class="color-gradient" id="color-gradient">
+                                    <div class="color-gradient-cursor" id="color-gradient-cursor"></div>
+                                </div>
+                                <div class="color-hue-bar" id="color-hue-bar">
+                                    <div class="color-hue-cursor" id="color-hue-cursor"></div>
+                                </div>
+                                <div class="color-preview-row">
+                                    <div class="color-preview" id="color-preview"></div>
+                                    <input type="text" id="color-hex-input" class="color-hex-input" value="#ffffff" maxlength="7">
+                                </div>
+                                <div class="color-presets">
+                                    <div class="color-preset" style="background: #ff0000;" data-color="#ff0000"></div>
+                                    <div class="color-preset" style="background: #ff8800;" data-color="#ff8800"></div>
+                                    <div class="color-preset" style="background: #ffff00;" data-color="#ffff00"></div>
+                                    <div class="color-preset" style="background: #00ff00;" data-color="#00ff00"></div>
+                                    <div class="color-preset" style="background: #00ffff;" data-color="#00ffff"></div>
+                                    <div class="color-preset" style="background: #0088ff;" data-color="#0088ff"></div>
+                                    <div class="color-preset" style="background: #8800ff;" data-color="#8800ff"></div>
+                                    <div class="color-preset" style="background: #ff00ff;" data-color="#ff00ff"></div>
+                                    <div class="color-preset" style="background: #ffffff;" data-color="#ffffff"></div>
+                                    <div class="color-preset" style="background: #b8a878;" data-color="#b8a878"></div>
+                                    <div class="color-preset" style="background: #1a1a2e;" data-color="#1a1a2e"></div>
+                                    <div class="color-preset" style="background: #0a0a14;" data-color="#0a0a14"></div>
+                                </div>
+                                <button id="color-picker-apply" class="btn btn-primary btn-sm">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tree Instructions -->
+                    <div class="tree-instructions">
+                        <span>Drag to pan / Scroll to zoom / Click node to select</span>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="empty-state" class="empty-state">
+                        <div class="empty-icon">*</div>
+                        <div class="empty-text">No spell tree loaded</div>
+                        <div class="empty-hint">Use "Full Auto" in Spell Scan tab to generate a tree,<br>or load a previously saved tree.</div>
+                        <button id="load-saved-btn" class="btn btn-secondary">Load Saved Tree</button>
+                    </div>
+                    
+                </div>
+
+                <!-- Spell Details Sidebar -->
+                <div id="details-panel" class="details-panel hidden">
+                    <div class="details-close">
+                        <button id="close-details" class="header-btn">×</button>
+                    </div>
+                    <div class="details-header">
+                        <h3 id="spell-name">-</h3>
+                        <span id="spell-school" class="school-badge">-</span>
+                    </div>
+                    
+                    <div class="details-body">
+                        <div class="detail-row">
+                            <span class="detail-label">Level</span>
+                            <span id="spell-level" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Magicka</span>
+                            <span id="spell-cost" class="detail-value">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Type</span>
+                            <span id="spell-type" class="detail-value">-</span>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <span class="detail-label">Effects</span>
+                            <ul id="spell-effects" class="detail-list"></ul>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <span class="detail-label">Description</span>
+                            <p id="spell-description" class="detail-desc">-</p>
+                        </div>
+                        
+                        <div class="detail-section prereq-section">
+                            <span class="detail-label">Prerequisites</span>
+                            <div id="prereq-summary" class="prereq-summary"></div>
+                            <div id="hard-prereqs-section" class="prereq-group hidden">
+                                <span class="prereq-type-label hard">Required (all)</span>
+                                <ul id="hard-prereqs-list" class="detail-list clickable"></ul>
+                            </div>
+                            <div id="soft-prereqs-section" class="prereq-group hidden">
+                                <span class="prereq-type-label soft">Optional <span id="soft-needed-count"></span></span>
+                                <ul id="soft-prereqs-list" class="detail-list clickable"></ul>
+                            </div>
+                            <ul id="spell-prereqs" class="detail-list clickable hidden"></ul>
+                        </div>
+                        
+                        <div class="detail-section">
+                            <span class="detail-label">Unlocks</span>
+                            <ul id="spell-unlocks" class="detail-list clickable"></ul>
+                        </div>
+                    </div>
+                    
+                    <!-- XP Progress Section -->
+                    <div id="progress-section" class="progress-section hidden">
+                        <!-- Learning Status Badge -->
+                        <div id="learning-status-container" class="learning-status-container">
+                            <span id="learning-status-badge" class="learning-status-badge locked">LOCKED</span>
+                            <span id="learning-effectiveness" class="learning-effectiveness"></span>
+                        </div>
+                        <div id="learning-status-hint" class="learning-status-hint"></div>
+                        
+                        <div class="progress-label">
+                            <span>Learning Progress</span>
+                            <span id="progress-text" class="progress-text-normal">0 / 100 XP</span>
+                            <!-- Editable XP inputs for cheat mode -->
+                            <span id="progress-edit" class="progress-edit hidden">
+                                <input type="number" id="xp-current-input" class="xp-input" min="0" value="0">
+                                <span>/</span>
+                                <input type="number" id="xp-required-input" class="xp-input xp-required" min="1" value="100">
+                                <span>XP</span>
+                            </span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="details-footer">
+                        <span id="spell-state" class="state-badge locked">Locked</span>
+                        <button id="learn-btn" class="btn btn-learn hidden">Learn This</button>
+                        <button id="unlock-btn" class="btn btn-unlock hidden" disabled>Unlock Spell</button>
+                    </div>
+                </div>
+
+                <!-- How-to-Learn Info Panel (opposite side) -->
+                <div id="howto-panel" class="howto-panel hidden">
+                    <div class="howto-tab" id="howto-tab">
+                        <span class="howto-tab-icon">?</span>
+                        <span class="howto-tab-text">How to Learn</span>
+                    </div>
+                    <div class="howto-content">
+                        <div class="howto-header">
+                            <h3>How to Learn Spells</h3>
+                            <button id="close-howto" class="header-btn">×</button>
+                        </div>
+                        
+                        <div class="howto-section">
+                            <h4>[i] Current Settings</h4>
+                            <ul id="howto-settings-list" class="howto-list">
+                                <li>Loading...</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="howto-section">
+                            <h4>[^] Gaining XP</h4>
+                            <ul id="howto-xp-list" class="howto-list">
+                                <li>Loading...</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="howto-section">
+                            <h4>(!) Tips</h4>
+                            <ul id="howto-tips-list" class="howto-list">
+                                <li>Set learning targets (one per school)</li>
+                                <li>Combat usage grants more XP than practice</li>
+                                <li>Own spell tomes for passive XP boost</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tree Footer -->
+                <div class="tree-footer">
+                    <div class="footer-left">
+                        <button id="import-btn" class="btn btn-secondary btn-sm">
+                            <span class="btn-icon">[v]</span> Import
+                        </button>
+                        <button id="llm-toolbar-btn" class="btn btn-llm btn-sm hidden" title="Auto-generate trees via LLM">
+                            <span class="btn-icon">[AI]</span> LLM
+                        </button>
+                        <span class="spell-count">
+                            <span id="total-count">0</span> spells | 
+                            <span id="unlocked-count">0</span> unlocked
+                        </span>
+                    </div>
+                    <div class="footer-center">
+                        <div class="state-legend">
+                            <span class="legend-item locked"><span class="legend-dot"></span>Locked</span>
+                            <span class="legend-item available"><span class="legend-dot"></span>Available</span>
+                            <span class="legend-item learning"><span class="legend-dot"></span>Learning</span>
+                            <span class="legend-item unlocked"><span class="legend-dot"></span>Unlocked</span>
+                        </div>
+                    </div>
+                    <div class="footer-right">
+                        <span id="tree-status-text" class="status-text">Ready</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================ -->
+            <!-- TAB: Settings -->
+            <!-- ============================================================ -->
+            <div class="tab-content" id="contentSettings">
+                <!-- Hotkey Settings -->
+                <div class="settings-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[K]</span>
+                        <span class="settings-block-title">Hotkey Configuration</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Panel Toggle Key</span>
+                                <span class="setting-desc">Press any key to set a new hotkey</span>
+                            </div>
+                            <div class="hotkey-input-group">
+                                <input type="text" id="hotkeyInput" class="hotkey-input" value="F8" readonly>
+                                <button id="changeHotkeyBtn" class="btn btn-secondary btn-sm">Change</button>
+                                <button id="resetHotkeyBtn" class="btn btn-secondary btn-sm">Reset</button>
+                            </div>
+                        </div>
+                        <p class="setting-note">Note: Hotkey changes require game restart to take effect.</p>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Pause Game When UI Opens</span>
+                                <span class="setting-desc">If disabled, game continues running and mouse can move freely (allows using with other UIs like ChatBox)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="pauseGameOnFocusToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- UI Display Settings -->
+                <div class="settings-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[~]</span>
+                        <span class="settings-block-title">UI Display</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">UI Theme</span>
+                                <span class="setting-desc" id="themeDescription">Visual style for the entire panel</span>
+                            </div>
+                            <div class="theme-selector-row">
+                                <select id="uiThemeSelect" class="setting-select">
+                                    <!-- Options populated dynamically from themes/ folder -->
+                                </select>
+                                <button id="refreshThemesBtn" class="btn btn-sm btn-icon" title="Rescan themes folder">[R]</button>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Learning Color</span>
+                                <span class="setting-desc">Color for spells currently being learned</span>
+                            </div>
+                            <div class="color-picker-wrapper">
+                                <input type="color" id="learningColorPicker" class="color-picker" value="#7890A8">
+                                <span class="color-value" id="learningColorValue">#7890A8</span>
+                            </div>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Font Size</span>
+                                <span class="setting-desc">Scale UI text size (affects all panels)</span>
+                            </div>
+                            <div class="slider-with-value">
+                                <input type="range" id="fontSizeSlider" class="setting-slider" min="0.7" max="1.5" step="0.1" value="1.0">
+                                <span class="slider-value" id="fontSizeValue">1.0x</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Progression Settings -->
+                <div class="settings-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[^]</span>
+                        <span class="settings-block-title">Progression Settings</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <!-- Difficulty Profile -->
+                        <div class="settings-subsection" style="margin-top: 0; padding-top: 0; border-top: none;">
+                            <span class="subsection-title">Difficulty Profile</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Active Profile</span>
+                                <span class="setting-desc" id="profileDescription">Balanced progression (default)</span>
+                            </div>
+                            <select id="difficultyProfileSelect" class="setting-select profile-select">
+                                <option value="easy">Easy</option>
+                                <option value="normal" selected>Normal</option>
+                                <option value="hard">Hard</option>
+                                <option value="brutal">Brutal</option>
+                                <option value="trueMaster">True Master</option>
+                                <option value="legendary">Legendary</option>
+                            </select>
+                        </div>
+                        
+                        <div class="profile-actions">
+                            <button id="saveCustomProfileBtn" class="btn btn-small btn-secondary" title="Save current settings as a custom profile">
+                                Save as Custom
+                            </button>
+                            <button id="resetToProfileBtn" class="btn btn-small btn-secondary" title="Reset to selected profile defaults">
+                                Reset to Profile
+                            </button>
+                            <span id="profileModifiedBadge" class="profile-modified-badge hidden">(Modified)</span>
+                        </div>
+                        
+                        <div id="customProfilesSection" class="custom-profiles-section hidden">
+                            <span class="custom-profiles-label">Custom Profiles:</span>
+                            <div id="customProfilesList" class="custom-profiles-list"></div>
+                        </div>
+                        
+                        <div class="settings-subsection">
+                            <span class="subsection-title">XP Settings</span>
+                        </div>
+                        
+                        <!-- Learning Mode -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Learning Mode</span>
+                                <span class="setting-desc">How many spells can be learned simultaneously</span>
+                            </div>
+                            <select id="learningModeSelect" class="setting-select">
+                                <option value="perSchool">One spell per school</option>
+                                <option value="single">One spell at a time</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Discovery Mode -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Discovery Mode</span>
+                                <span class="setting-desc">Hide locked nodes - tree reveals as you progress</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="discoveryModeToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" id="showRootNamesRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Show Root Spell Names</span>
+                                <span class="setting-desc">Reveal starting spell names even in discovery mode</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showRootSpellNamesToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <!-- Overall XP Multiplier -->
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Overall XP Multiplier</span>
+                                <span class="setting-desc">Multiply all XP gains (for faster/slower progression)</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpGlobalMultiplierSlider" min="1" max="1000" value="1" class="setting-slider">
+                                <span id="xpGlobalMultiplierValue" class="slider-value">x1</span>
+                            </div>
+                        </div>
+                        
+                        <!-- XP Multipliers -->
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">XP from Direct Prerequisite</span>
+                                <span class="setting-desc">Casting a spell that directly leads to the learning target</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpDirectSlider" min="0" max="100" value="100" class="setting-slider">
+                                <span id="xpDirectValue" class="slider-value">100%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">XP from Same School</span>
+                                <span class="setting-desc">Casting any spell from the same magic school</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpSchoolSlider" min="0" max="100" value="50" class="setting-slider">
+                                <span id="xpSchoolValue" class="slider-value">50%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">XP from Any Spell</span>
+                                <span class="setting-desc">Casting spells from any magic school</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpAnySlider" min="0" max="100" value="10" class="setting-slider">
+                                <span id="xpAnyValue" class="slider-value">10%</span>
+                            </div>
+                        </div>
+                        
+                        <p class="setting-note">Multipliers determine how much XP you gain per cast.</p>
+                        
+                        <!-- XP Caps - Max contribution from each source -->
+                        <div class="settings-subsection">
+                            <span class="subsection-title">XP Caps (Maximum Contribution)</span>
+                        </div>
+                        
+                        <p class="setting-note">Caps limit how much total progress each source can provide. Once a cap is reached, you must use other sources to continue.</p>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Max from Any Spell</span>
+                                <span class="setting-desc">After this %, "any spell" XP stops contributing</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpCapAnySlider" min="0" max="100" value="5" class="setting-slider">
+                                <span id="xpCapAnyValue" class="slider-value">5%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Max from Same School</span>
+                                <span class="setting-desc">After this %, "same school" XP stops contributing</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpCapSchoolSlider" min="0" max="100" value="15" class="setting-slider">
+                                <span id="xpCapSchoolValue" class="slider-value">15%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Max from Direct Prereq</span>
+                                <span class="setting-desc">After this %, prerequisite XP stops contributing</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="xpCapDirectSlider" min="0" max="100" value="50" class="setting-slider">
+                                <span id="xpCapDirectValue" class="slider-value">50%</span>
+                            </div>
+                        </div>
+                        
+                        <p class="setting-note">Example: With caps at 5%/15%/50%, the final 50% must come from casting the spell itself (self-cast with early learning).</p>
+                        
+                        <!-- XP Required per Tier -->
+                        <div class="settings-subsection">
+                            <span class="subsection-title">XP Required by Spell Tier</span>
+                        </div>
+                        
+                        <div class="tier-xp-grid">
+                            <div class="tier-xp-item">
+                                <label for="xpNoviceInput">Novice</label>
+                                <input type="number" id="xpNoviceInput" class="tier-xp-input" value="100" min="1" max="99999">
+                            </div>
+                            <div class="tier-xp-item">
+                                <label for="xpApprenticeInput">Apprentice</label>
+                                <input type="number" id="xpApprenticeInput" class="tier-xp-input" value="200" min="1" max="99999">
+                            </div>
+                            <div class="tier-xp-item">
+                                <label for="xpAdeptInput">Adept</label>
+                                <input type="number" id="xpAdeptInput" class="tier-xp-input" value="400" min="1" max="99999">
+                            </div>
+                            <div class="tier-xp-item">
+                                <label for="xpExpertInput">Expert</label>
+                                <input type="number" id="xpExpertInput" class="tier-xp-input" value="800" min="1" max="99999">
+                            </div>
+                            <div class="tier-xp-item">
+                                <label for="xpMasterInput">Master</label>
+                                <input type="number" id="xpMasterInput" class="tier-xp-input" value="1500" min="1" max="99999">
+                            </div>
+                        </div>
+                        
+                        <!-- Progressive Reveal Thresholds -->
+                        <div class="settings-subsection">
+                            <span class="subsection-title">Detail Reveal Thresholds</span>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Reveal Name</span>
+                                <span class="setting-desc">Progress % to show spell name</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="revealNameSlider" min="0" max="100" value="10" step="5" class="setting-slider">
+                                <span id="revealNameValue" class="slider-value">10%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Reveal Effects</span>
+                                <span class="setting-desc">Progress % to show spell effects</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="revealEffectsSlider" min="0" max="100" value="25" step="5" class="setting-slider">
+                                <span id="revealEffectsValue" class="slider-value">25%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Reveal Description</span>
+                                <span class="setting-desc">Progress % to show description</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="revealDescSlider" min="0" max="100" value="50" step="5" class="setting-slider">
+                                <span id="revealDescValue" class="slider-value">50%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Early Spell Learning (Progressive Effectiveness) -->
+                <div class="settings-block" id="earlyLearningBlock">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">*</span>
+                        <span class="settings-block-title">Early Spell Learning</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="settings-subsection">
+                            <span class="subsection-title">Progressive Effectiveness</span>
+                            <span class="setting-desc" style="display: block; margin-bottom: 8px;">Grant spells early at reduced power. Power increases as you practice.</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Enable Early Learning</span>
+                                <span class="setting-desc">Spells granted early but weakened until mastery</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="earlyLearningEnabledToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row slider-row" id="unlockThresholdRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Unlock Threshold</span>
+                                <span class="setting-desc">Progress % to grant spell (weakened)</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="unlockThresholdSlider" min="10" max="50" value="25" step="5" class="setting-slider">
+                                <span id="unlockThresholdValue" class="slider-value">25%</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Power steps are now configured in the Power Step Configuration section below -->
+                        <!-- Min/Max effectiveness replaced by discrete power steps -->
+                        
+                        <div class="setting-row slider-row" id="selfCastRequiredRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Self-Cast Required At</span>
+                                <span class="setting-desc">Progress % after which you must cast the spell itself</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="selfCastRequiredSlider" min="50" max="90" value="75" step="5" class="setting-slider">
+                                <span id="selfCastRequiredValue" class="slider-value">75%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row" id="selfCastMultiplierRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Self-Cast XP Bonus</span>
+                                <span class="setting-desc">XP multiplier when casting the learning target</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="selfCastMultiplierSlider" min="100" max="300" value="150" step="25" class="setting-slider">
+                                <span id="selfCastMultiplierValue" class="slider-value">150%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row slider-row" id="binaryThresholdRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Binary Effect Threshold</span>
+                                <span class="setting-desc">Progress % for on/off effects (Paralyze, etc.)</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="binaryThresholdSlider" min="60" max="100" value="80" step="5" class="setting-slider">
+                                <span id="binaryThresholdValue" class="slider-value">80%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Modify Game Spell Display</span>
+                                <span class="setting-desc">Show "(Learning - X%)" in game menus, not just this panel</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="modifyGameDisplayToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <!-- Power Steps Configuration -->
+                        <div class="settings-subsection">
+                            <span class="subsection-title">Power Step Configuration</span>
+                        </div>
+                        <p class="setting-note">Configure how spell power increases with XP progress. Each step defines an XP threshold and power level.</p>
+                        
+                        <div id="powerStepsContainer" class="power-steps-container">
+                            <!-- Dynamically populated -->
+                        </div>
+                        
+                        <div class="setting-row power-steps-actions">
+                            <button id="resetPowerStepsBtn" class="btn btn-secondary btn-small">
+                                <span class="btn-icon">[R]</span> Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Spell Tome Learning Settings -->
+                <div class="settings-block" id="spellTomeLearningBlock">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[i]</span>
+                        <span class="settings-block-title">Spell Tome Learning</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="settings-subsection">
+                            <span class="subsection-title">Tome Behavior</span>
+                            <span class="setting-desc" style="display: block; margin-bottom: 8px;">Configure how spell tomes work with the progression system.</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Use Progression System</span>
+                                <span class="setting-desc">XP + weakened spells instead of instant learning</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="useProgressionSystemToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <p id="tomeLearningModeDesc" class="setting-note" style="margin: 8px 0 16px 0;">
+                            Reading tomes grants XP and gives early access to weakened spells. Keep tomes to practice!
+                        </p>
+                        
+                        <div class="setting-row slider-row" id="tomeXpGrantRow">
+                            <div class="setting-info">
+                                <span class="setting-label">XP Grant on Read</span>
+                                <span class="setting-desc">% of required XP granted when reading tome</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="tomeXpGrantSlider" min="10" max="50" value="25" step="5" class="setting-slider">
+                                <span id="tomeXpGrantValue" class="slider-value">25%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-subsection" style="margin-top: 16px;">
+                            <span class="subsection-title">Inventory Boost</span>
+                            <span class="setting-desc" style="display: block; margin-bottom: 8px;">Bonus XP while tome is in your inventory.</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Enable Inventory Boost</span>
+                                <span class="setting-desc">Bonus XP when carrying the spell's tome</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="tomeInventoryBoostToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row slider-row" id="tomeInventoryBoostRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Inventory Boost Amount</span>
+                                <span class="setting-desc">XP bonus % while tome is in inventory</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="tomeInventoryBoostSlider" min="10" max="100" value="25" step="5" class="setting-slider">
+                                <span id="tomeInventoryBoostValue" class="slider-value">+25%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-subsection" style="margin-top: 16px;">
+                            <span class="subsection-title">Learning Requirements</span>
+                            <span class="setting-desc" style="display: block; margin-bottom: 8px;">What's required before a tome can teach you a spell.</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Require Tree Prerequisites</span>
+                                <span class="setting-desc">Must master parent spells in the tree first</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="tomeRequirePrereqsToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row child-setting" id="tomeRequireAllPrereqsRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Require ALL Prerequisites</span>
+                                <span class="setting-desc">All parents must be mastered (vs just one)</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="tomeRequireAllPrereqsToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Require Skill Level</span>
+                                <span class="setting-desc">Must meet spell's minimum skill requirement</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="tomeRequireSkillLevelToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- In-Game Notifications -->
+                <div class="settings-block" id="notificationsBlock">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[!]</span>
+                        <span class="settings-block-title">In-Game Notifications</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Weakened Spell Notifications</span>
+                                <span class="setting-desc">Show power level and XP when casting learning spells</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="weakenedNotificationsToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row" id="notificationIntervalRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Notification Interval</span>
+                                <span class="setting-desc">Seconds between power notifications</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="notificationIntervalSlider" min="5" max="60" value="10" class="setting-slider">
+                                <span class="slider-value" id="notificationIntervalValue">10s</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mod Integrations - Hidden until ISL Papyrus hooks are implemented -->
+                <!--
+                <div class="settings-block" id="modIntegrationsBlock">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[L]</span>
+                        <span class="settings-block-title">Mod Integrations</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="settings-subsection">
+                            <span class="subsection-title">ISL-DESTified (Spell Tome Reading)</span>
+                            <span id="islDetectionStatus" class="detection-badge not-detected">Not Detected</span>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Enable ISL Integration</span>
+                                <span class="setting-desc">Redirect spell tome reading to our XP system</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="islEnabledToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">XP Per Study Hour</span>
+                                <span class="setting-desc">XP gained for each hour of tome study</span>
+                            </div>
+                            <input type="number" id="islXpPerHourInput" class="setting-input-small" value="50" min="10" max="200">
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Tome Inventory Bonus</span>
+                                <span class="setting-desc">Extra XP when learning spell's tome is in inventory</span>
+                            </div>
+                            <div class="slider-container">
+                                <input type="range" id="islTomeBonusSlider" min="0" max="100" value="25" class="setting-slider">
+                                <span id="islTomeBonusValue" class="slider-value">25%</span>
+                            </div>
+                        </div>
+                        
+                        <p class="setting-note">ISL-DESTified makes spell tomes require study time. When detected, our mod intercepts tome reads and grants XP instead.</p>
+                    </div>
+                </div>
+                -->
+
+                <!-- Display Settings -->
+                <div class="settings-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[~]</span>
+                        <span class="settings-block-title">Display Options</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Node Size Scaling</span>
+                                <span class="setting-desc">Higher tier spells appear larger</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="nodeSizeScalingToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Show Node Names</span>
+                                <span class="setting-desc">Display spell names on all nodes</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showNodeNamesToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Show School Dividers</span>
+                                <span class="setting-desc">Display border lines between magic schools</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showSchoolDividersToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Strict Pie Slices</span>
+                                <span class="setting-desc">Keep schools strictly within their pie slice boundaries</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="strictPieSlicesToggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row" id="dividerFadeRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Divider Line Fade</span>
+                                <span class="setting-desc">How much the lines fade out at the end</span>
+                            </div>
+                            <div class="setting-control">
+                                <input type="range" id="dividerFadeSlider" min="0" max="100" value="50" class="setting-slider">
+                                <span id="dividerFadeValue" class="slider-value">50%</span>
+                            </div>
+                        </div>
+                        <div class="setting-row" id="dividerSpacingRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Divider Line Spacing</span>
+                                <span class="setting-desc">Distance between parallel lines (px)</span>
+                            </div>
+                            <div class="setting-control">
+                                <input type="range" id="dividerSpacingSlider" min="1" max="10" value="3" class="setting-slider">
+                                <span id="dividerSpacingValue" class="slider-value">3px</span>
+                            </div>
+                        </div>
+                        <div class="setting-row" id="dividerColorModeRow">
+                            <div class="setting-info">
+                                <span class="setting-label">Divider Line Color</span>
+                                <span class="setting-desc">Match school colors or use custom</span>
+                            </div>
+                            <div class="setting-control">
+                                <select id="dividerColorModeSelect" class="setting-select">
+                                    <option value="school">Match School</option>
+                                    <option value="custom">Custom Color</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="setting-row" id="dividerCustomColorRow" style="display: none;">
+                            <div class="setting-info">
+                                <span class="setting-label">Custom Divider Color</span>
+                                <span class="setting-desc">Color for all divider lines</span>
+                            </div>
+                            <div class="setting-control">
+                                <input type="color" id="dividerCustomColorPicker" value="#ffffff" class="color-picker">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- School Display & Colors -->
+                <div class="settings-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[~]</span>
+                        <span class="settings-block-title">School Display</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-desc">Toggle visibility and customize colors for each magic school. Checkbox shows/hides the school on the tree.</span>
+                            </div>
+                        </div>
+                        <div id="schoolColorsContainer" class="school-colors-container">
+                            <!-- Dynamically populated with visibility toggle + color picker -->
+                            <span class="setting-desc">Scan spells to detect schools</span>
+                        </div>
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Auto LLM Colors</span>
+                                <span class="setting-desc">Automatically ask LLM to suggest colors for new schools</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="autoLLMColorsToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-row school-color-actions">
+                            <button id="showAllSchoolsBtn" class="btn btn-secondary btn-small">
+                                <span class="btn-icon">[+]</span> Show All
+                            </button>
+                            <button id="hideAllSchoolsBtn" class="btn btn-secondary btn-small">
+                                <span class="btn-icon">[-]</span> Hide All
+                            </button>
+                            <button id="suggestColorsBtn" class="btn btn-secondary btn-small">
+                                <span class="btn-icon">[AI]</span> LLM Suggest Colors
+                            </button>
+                            <button id="resetColorsBtn" class="btn btn-secondary btn-small">
+                                <span class="btn-icon">[R]</span> Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tree Generation Settings - Developer only (related to LLM auto features) -->
+                <div class="settings-block dev-only">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[T]</span>
+                        <span class="settings-block-title">Tree Generation</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <div class="setting-hint" style="font-size: 0.8em; color: var(--text-muted); margin-bottom: 12px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 4px;">
+                            These settings control how spell prerequisites are generated and validated.
+                            <br><strong>LLM Prereqs</strong> = AI designs multi-prereq during generation
+                            <br><strong>Procedural Injection</strong> = adds extra prereqs AFTER generation
+                        </div>
+                        
+                        <!-- LLM Generation Settings -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-blue);">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-blue); margin-bottom: 8px;">
+                                DURING LLM GENERATION
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Allow LLM Multiple Prereqs</span>
+                                    <span class="setting-desc">AI can design spells that require 2-3 prerequisites</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="allowLLMMultiplePrereqsToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">LLM Self-Correction</span>
+                                    <span class="setting-desc">AI fixes its own mistakes (uses more tokens but better results)</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="llmSelfCorrectionToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row" id="llmCorrectionLoopsRow">
+                                <div class="setting-info">
+                                    <span class="setting-label">Max Correction Loops</span>
+                                    <span class="setting-desc">How many times AI can retry before auto-fix</span>
+                                </div>
+                                <div class="setting-control">
+                                    <input type="range" id="llmCorrectionLoopsSlider" min="1" max="10" value="5" class="setting-slider">
+                                    <span id="llmCorrectionLoopsValue">5</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Validation Settings -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-orange); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-orange); margin-bottom: 8px;">
+                                VALIDATION & AUTO-FIX
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Aggressive Path Validation</span>
+                                    <span class="setting-desc">When ON: replaces broken prereqs. When OFF: more lenient</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="aggressivePathValidationToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <!-- Retry Specific School -->
+                            <div class="setting-row" id="retrySchoolRow" style="margin-top: 12px; display: none;">
+                                <div class="setting-info">
+                                    <span class="setting-label">Retry Problem School</span>
+                                    <span class="setting-desc">Regenerate tree for schools with unreachable nodes</span>
+                                </div>
+                                <div class="setting-control" style="display: flex; gap: 8px; align-items: center;">
+                                    <select id="retrySchoolSelect" class="setting-select" style="min-width: 120px;">
+                                        <option value="">Select school...</option>
+                                    </select>
+                                    <button id="retrySchoolBtn" class="action-btn" style="padding: 4px 12px; font-size: 0.85em;">
+                                        <span class="btn-icon">[R]</span> Retry
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Post-Generation: Procedural Injection -->
+                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-green); margin-top: 12px;">
+                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-green); margin-bottom: 8px;">
+                                AFTER GENERATION (Procedural)
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Procedural Prereq Injection</span>
+                                    <span class="setting-desc">Randomly add extra safe prereqs after tree loads</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="proceduralPrereqInjectionToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <!-- Procedural Injection Settings (shown when enabled) -->
+                            <div id="proceduralInjectionSettings" class="subsettings-panel" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.15); border-radius: 4px;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Injection Chance</span>
+                                        <span class="setting-desc">% chance per eligible node</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <input type="range" id="injectionChanceSlider" min="0" max="100" value="50" class="setting-slider">
+                                        <span id="injectionChanceValue">50%</span>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Max Prerequisites</span>
+                                        <span class="setting-desc">Cap total prereqs per spell</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <input type="range" id="maxPrereqsSlider" min="2" max="5" value="3" class="setting-slider">
+                                        <span id="maxPrereqsValue">3</span>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Minimum Tier</span>
+                                        <span class="setting-desc">Only at tier N and above</span>
+                                    </div>
+                                    <div class="setting-control">
+                                        <input type="range" id="minTierSlider" min="1" max="5" value="3" class="setting-slider">
+                                        <span id="minTierValue">3</span>
+                                    </div>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Same-Tier Preference</span>
+                                        <span class="setting-desc">Prefer adjacent tier prereqs</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="sameTierPreferenceToggle" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Reroll Injections</span>
+                                        <span class="setting-desc">Re-inject with current settings</span>
+                                    </div>
+                                    <button id="rerollInjectionsBtn" class="btn btn-small">[R] Reroll</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Developer & Debug Settings -->
+                <div class="settings-block dev-debug-block">
+                    <div class="settings-block-header">
+                        <span class="settings-block-icon">[D]</span>
+                        <span class="settings-block-title">Developer & Debug</span>
+                        <span class="cheat-warning">Advanced options</span>
+                    </div>
+                    <div class="settings-block-content">
+                        <!-- Developer Mode -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Developer Mode</span>
+                                <span class="setting-desc">Show advanced generation options and Tree Rules tab</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="developerModeToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        
+                        <!-- Cheat Mode -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Cheat Mode</span>
+                                <span class="setting-desc">Full control over all spells and progression</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="cheatModeToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="cheatModeInfo" class="cheat-info hidden">
+                            <p>(!) <strong>Cheat mode active!</strong></p>
+                            <ul>
+                                <li>See all spell names and details (even locked)</li>
+                                <li>Click any node to unlock instantly</li>
+                                <li>Edit XP progress directly (current/required)</li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Debug Options (shown when developer mode is on) -->
+                        <div id="debugOptionsSection" class="dev-only-settings hidden">
+                            <div class="settings-subsection">
+                                <span class="subsection-title">Debug Options</span>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Verbose Logging</span>
+                                    <span class="setting-desc">Extra console logging for troubleshooting</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="verboseLogToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">Show Debug Grid</span>
+                                    <span class="setting-desc">Show grid candidate positions for debugging spacing</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="debugGridToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Save/Reset - Sticky at bottom of settings panel -->
+                <div class="settings-actions-sticky">
+                    <button id="saveSettingsBtn" class="btn btn-primary">
+                        <span class="btn-icon">[S]</span> Save Settings
+                    </button>
+                    <button id="resetSettingsBtn" class="btn btn-secondary">
+                        <span class="btn-icon">[R]</span> Reset to Defaults
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Resize Handle -->
+        <div class="resize-handle" id="resizeHandle"></div>
+    </div>
+
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Spell Tree</h3>
+                <button class="modal-close" id="modal-close-btn">×</button>
+            </div>
+            <div class="modal-body">
+                <p>Paste the LLM-generated spell tree JSON:</p>
+                <div class="modal-paste-hint">
+                    <span>Ctrl+V doesn't work in-game - use the Paste button below</span>
+                </div>
+                <textarea id="import-textarea" placeholder='{"version": "1.0", "schools": {...}}'></textarea>
+                <div id="import-error" class="error-box hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="paste-tree-btn" class="btn btn-secondary">
+                    <span class="btn-icon">[v]</span> Paste from Clipboard
+                </button>
+                <button id="import-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="import-merge" class="btn btn-secondary" title="Add to existing tree">
+                    <span class="btn-icon">[+]</span> Add/Merge
+                </button>
+                <button id="import-confirm" class="btn btn-primary">Replace All</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spawn Spell Modal (Edit Mode) -->
+    <div id="spawn-spell-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content spawn-modal">
+            <div class="modal-header">
+                <h3>Spawn Spell Node</h3>
+                <button class="modal-close" id="spawn-modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="spawn-search" class="spawn-search" placeholder="Search spells..." autofocus>
+                <div id="spawn-spell-list" class="spawn-spell-list">
+                    <div class="spawn-loading">Loading spells...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="spawn-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Blacklist Spell Modal -->
+    <div id="blacklist-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content blacklist-modal">
+            <div class="modal-header">
+                <h3>Spell Blacklist</h3>
+                <button class="modal-close" id="blacklist-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="blacklist-search-section">
+                    <input type="text" id="blacklist-search" class="spawn-search" placeholder="Search spells to blacklist...">
+                    <div id="blacklist-search-results" class="spawn-spell-list blacklist-dropdown hidden"></div>
+                </div>
+                <div class="blacklist-divider"></div>
+                <div class="blacklist-list-header">
+                    <span>Blacklisted Spells</span>
+                    <span id="blacklist-count" class="blacklist-count">0</span>
+                </div>
+                <div id="blacklist-entries" class="blacklist-entries">
+                    <div class="blacklist-empty">No spells blacklisted</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="blacklist-clear-all" class="btn btn-secondary">Clear All</button>
+                <button id="blacklist-done" class="btn btn-primary">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Whitelist Plugin Modal -->
+    <div id="whitelist-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content whitelist-modal">
+            <div class="modal-header">
+                <h3>Plugin Whitelist</h3>
+                <button class="modal-close" id="whitelist-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="whitelist-info">
+                    <span class="whitelist-info-text">Select plugins to include in spell scanning. If none selected, all plugins are scanned.</span>
+                </div>
+                <div class="whitelist-search-section">
+                    <input type="text" id="whitelist-search" class="spawn-search" placeholder="Filter plugins...">
+                </div>
+                <div class="whitelist-divider"></div>
+                <div class="whitelist-section">
+                    <div class="whitelist-section-header">
+                        <span>Base Game</span>
+                        <span id="whitelist-base-count" class="whitelist-count">0</span>
+                    </div>
+                    <div id="whitelist-base-entries" class="whitelist-entries whitelist-base">
+                        <!-- Base game plugins rendered here -->
+                    </div>
+                </div>
+                <div class="whitelist-divider"></div>
+                <div class="whitelist-section">
+                    <div class="whitelist-section-header">
+                        <span>Mod Plugins</span>
+                        <span id="whitelist-mod-count" class="whitelist-count">0</span>
+                    </div>
+                    <div id="whitelist-mod-entries" class="whitelist-entries whitelist-mods">
+                        <div class="whitelist-empty">Scan spells first to see plugins</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="whitelist-all" class="btn btn-secondary">All</button>
+                <button id="whitelist-none" class="btn btn-secondary">None</button>
+                <button id="whitelist-base-only" class="btn btn-secondary">Base Only</button>
+                <button id="whitelist-done" class="btn btn-primary">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Python Setup Modal -->
+    <div id="python-setup-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content python-setup-modal">
+            <div class="modal-header">
+                <h3>Setting Up Python</h3>
+            </div>
+            <div class="modal-body">
+                <div class="setup-stage-label" id="setup-stage-label">Preparing...</div>
+                <div class="setup-progress-bar">
+                    <div class="setup-progress-fill" id="setup-progress-fill"></div>
+                </div>
+                <div class="setup-detail" id="setup-detail"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="setup-cancel-btn" class="btn btn-secondary" onclick="cancelPythonSetup()">Cancel</button>
+                <button id="setup-done-btn" class="btn btn-primary hidden" onclick="onSetupDone()">Done</button>
+                <button id="setup-retry-btn" class="btn btn-primary hidden" onclick="startPythonSetup()">Retry</button>
+                <button id="setup-manual-btn" class="btn btn-secondary hidden" onclick="showManualPythonInstructions()">Manual Setup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip hidden">
+        <div class="tooltip-name"></div>
+        <div class="tooltip-info"></div>
+        <div class="tooltip-state"></div>
+    </div>
+
+    <!-- 
+    MODULAR JavaScript Loading
+    ==========================
+    Modules are loaded first, then script.js for remaining application logic.
+    All functionality is preserved, just split for LLM maintainability.
+    -->
+    
+    <!-- 1. Constants and Configuration -->
+    <script src="modules/constants.js"></script>
+    <script src="modules/state.js"></script>
+    <script src="modules/config.js"></script>
+
+    <!-- 1.5. Unified Core Modules (new) -->
+    <script src="modules/edgeScoring.js"></script>
+    <script src="modules/shapeProfiles.js"></script>
+    <script src="modules/layoutEngine.js"></script>
+
+    <!-- 2. Core Utilities -->
+    <script src="modules/spellCache.js"></script>
+    <script src="modules/colorUtils.js"></script>
+    <script src="modules/uiHelpers.js"></script>
+    
+    <!-- 3. DSL and Parsers -->
+    <script src="modules/growthDSL.js"></script>
+    <script src="modules/treeParser.js"></script>
+    
+    <!-- 4. Renderer -->
+    <script src="modules/wheelRenderer.js"></script>
+    <script src="modules/starfield.js"></script>
+    <script src="modules/globe3D.js"></script>
+    <script src="modules/canvasRenderer.js"></script>
+    <script src="modules/editMode.js"></script>
+    <!-- Note: WebGL is NOT supported in Ultralight/PrismaUI - Canvas 2D is used for large trees -->
+    
+    <!-- 5. UI Panels and Features -->
+    <script src="modules/colorPicker.js"></script>
+    <script src="modules/settingsPanel.js"></script>
+    <script src="modules/treeViewerUI.js"></script>
+    <script src="modules/progressionUI.js"></script>
+    <script src="modules/difficultyProfiles.js"></script>
+    <script src="modules/llmApiSettings.js"></script>
+    <script src="modules/buttonHandlers.js"></script>
+    
+    <!-- 6. Integrations and Callbacks -->
+    <script src="modules/cppCallbacks.js"></script>
+    <script src="modules/pythonSetup.js"></script>
+    <script src="modules/llmIntegration.js"></script>
+    <script src="modules/proceduralTreeBuilder.js"></script>
+    
+    <!-- 6.5. Visual-First Tree Builder -->
+    <script src="modules/layoutGenerator.js"></script>
+
+    <script src="modules/growthBehaviors.js"></script>
+    <script src="modules/visualFirstBuilder.js"></script>
+    <script src="modules/llmTreeFeatures.js"></script>
+    <script src="modules/settingsAwareTreeBuilder.js"></script>
+
+    <script src="modules/generationModeUI.js"></script>
+    
+    <!-- 7. Main Application (init, tabs, dragging, early learning settings) -->
+    <script src="script.js"></script>
+
+    <!-- 8. Auto-Test Module -->
+    <script src="modules/autoTest.js"></script>
+
+    <!-- 8.5. Unification Test Module -->
+    <script src="modules/unificationTest.js"></script>
+
+    <!-- 9. Main Entry Point (initialization, module verification) -->
+    <script src="modules/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+    "id": "skyrim",
+    "name": "Skyrim Edge",
+    "description": "Native Skyrim-style flat UI with muted tones",
+    "cssFile": "../styles-skyrim.css",
+    "author": "Heart of Magic",
+    "version": "1.0"
+}
