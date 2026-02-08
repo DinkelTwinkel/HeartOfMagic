@@ -120,11 +120,13 @@ var TreeGrowthClassic = {
         // 1. Render the base grid underneath
         baseData.renderGrid(ctx, w, h);
 
-        // 1b. Draw center mask ring (non-root exclusion zone)
+        // 1b. Draw globe mask ring (non-root exclusion zone around globe)
         if (this.settings.centerMask > 0 && baseData.grid) {
             var maskR = this.settings.centerMask * (baseData.grid.tierSpacing || 30);
-            var mcx = w / 2;
-            var mcy = h / 2;
+            var globeOff = (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
+                ? TreeCore.getOutput() : { x: 0, y: 0 };
+            var mcx = w / 2 + globeOff.x;
+            var mcy = h / 2 + globeOff.y;
             ctx.save();
             ctx.beginPath();
             ctx.arc(mcx, mcy, maskR, 0, Math.PI * 2);
@@ -447,7 +449,9 @@ var TreeGrowthClassic = {
             noRotate: (layoutMode === 'flat'),
             layoutMode: layoutMode,
             config: this._treeData.config || {},
-            globe: { x: 0, y: 0, radius: 45 },
+            globe: (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
+                ? TreeCore.getOutput()
+                : { x: 0, y: 0, radius: 45 },
             schools: {}
         };
 

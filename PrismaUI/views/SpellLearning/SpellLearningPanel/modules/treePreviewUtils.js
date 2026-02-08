@@ -117,6 +117,63 @@ var TreePreviewUtils = {
                 field.select();
             }
         });
+    },
+
+    // =========================================================================
+    // SHARED PADDED GRID RENDERER
+    // =========================================================================
+
+    /**
+     * Render a grid function into a padded offscreen canvas (cached).
+     *
+     * All preview modes (SUN, FLAT, future) should use this instead of
+     * managing their own offscreen canvases. The padded area ensures the
+     * grid extends well beyond the visible viewport, so pan/zoom never
+     * reveals blank space.
+     *
+     * @param {CanvasRenderingContext2D} ctx - Target context to blit into
+     * @param {number} cx  - Grid center X in the target coordinate space
+     * @param {number} cy  - Grid center Y in the target coordinate space
+     * @param {number} w   - Logical canvas width
+     * @param {number} h   - Logical canvas height
+     * @param {function} renderFn - function(offCtx, padCx, padCy, opts)
+     * @param {string} cacheKey - Settings-based key (no w/h needed)
+     * @param {object} cacheStore - Object to store _gridCanvas/_gridCacheKey on
+     */
+    renderGridCached: function(ctx, cx, cy, w, h, renderFn, cacheKey, cacheStore) {
+        var pad = 4;
+        var padW = Math.ceil(w * pad);
+        var padH = Math.ceil(h * pad);
+        var offX = Math.floor((padW - w) / 2);
+        var offY = Math.floor((padH - h) / 2);
+        var padCx = cx + offX;
+        var padCy = cy + offY;
+
+        var fullKey = cacheKey + '|' + padW + '|' + padH;
+
+        if (cacheStore._gridCanvas && cacheStore._gridCacheKey === fullKey) {
+            // Cache hit
+            ctx.drawImage(cacheStore._gridCanvas, -offX, -offY);
+            return;
+        }
+
+        // Cache miss — create/resize offscreen canvas
+        if (!cacheStore._gridCanvas ||
+            cacheStore._gridCanvas.width !== padW ||
+            cacheStore._gridCanvas.height !== padH) {
+            cacheStore._gridCanvas = document.createElement('canvas');
+            cacheStore._gridCanvas.width = padW;
+            cacheStore._gridCanvas.height = padH;
+        }
+
+        var offCtx = cacheStore._gridCanvas.getContext('2d');
+        offCtx.clearRect(0, 0, padW, padH);
+
+        // Render grid into the padded canvas (centered at padCx, padCy)
+        renderFn(offCtx, padCx, padCy);
+
+        cacheStore._gridCacheKey = fullKey;
+        ctx.drawImage(cacheStore._gridCanvas, -offX, -offY);
     }
 };
 

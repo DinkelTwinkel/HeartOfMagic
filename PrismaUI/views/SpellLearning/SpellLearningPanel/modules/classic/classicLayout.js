@@ -58,6 +58,12 @@ var ClassicLayout = {
         this._estimatedMaxDepth = estimatedMaxDepth;
         this._centerMask = ls.centerMask !== undefined ? ls.centerMask : 0;
 
+        // Globe offset for mask — read from CORE panel (independent of loaded tree)
+        var globeOff = (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
+            ? TreeCore.getOutput() : { x: 0, y: 0 };
+        this._globeX = globeOff.x;
+        this._globeY = globeOff.y;
+
         console.log('[ClassicLayout] mode=' + mode + ' baseSchools=' + baseSchools.length +
             ' rootNodes=' + rootNodes.length + ' gridPoints=' + allGridPoints.length +
             ' maxOccNeighbors=' + this._maxOccupiedNeighbors + ' radialW=' + this._radialWeight.toFixed(2) +
@@ -876,8 +882,10 @@ var ClassicLayout = {
 
                 var n = points[nIdx];
 
-                // Hard filter: enforce minimum radius (no growth inside root ring)
-                var nR2 = n.x * n.x + n.y * n.y;
+                // Hard filter: enforce minimum radius from globe (no growth inside mask)
+                var gdx = n.x - (this._globeX || 0);
+                var gdy = n.y - (this._globeY || 0);
+                var nR2 = gdx * gdx + gdy * gdy;
                 if (minR2 > 0 && nR2 < minR2) {
                     // Still traverse through for BFS connectivity but don't place here
                     queue.push({ idx: nIdx, depth: curDepth + 1 });

@@ -353,14 +353,17 @@ var TreePreview = {
         // Scale for DPR
         ctx.scale(dpr, dpr);
 
-        // Apply pan and zoom transforms
+        // Compute auto-fit scale from last render's content extent
+        var modeModule = this.modes[this.activeMode];
+        var fitScale = this._computeFitScale(modeModule, w, h);
+
+        // Apply pan and zoom transforms with auto-fit
         ctx.save();
         ctx.translate(w / 2 + this.panX, h / 2 + this.panY);
-        ctx.scale(this.zoom, this.zoom);
+        ctx.scale(this.zoom * fitScale, this.zoom * fitScale);
         ctx.translate(-w / 2, -h / 2);
 
         // Delegate to active mode renderer
-        var modeModule = this.modes[this.activeMode];
         if (modeModule && typeof modeModule.render === 'function') {
             modeModule.render(ctx, w, h, this.schoolData);
         }
@@ -372,6 +375,32 @@ var TreePreview = {
         ctx.fillStyle = 'rgba(184, 168, 120, 0.4)';
         ctx.textAlign = 'right';
         ctx.fillText(Math.round(this.zoom * 100) + '%', w - 8, h - 8);
+    },
+
+    /** Compute a scale factor that fits root content within the canvas. */
+    _computeFitScale: function(modeModule, w, h) {
+        if (!modeModule || !modeModule._lastRenderData) return 1;
+
+        var ld = modeModule._lastRenderData;
+        var contentRadius = 0;
+
+        // Try rootNodes first (most accurate)
+        if (ld.rootNodes && ld.rootNodes.length > 0) {
+            for (var i = 0; i < ld.rootNodes.length; i++) {
+                var n = ld.rootNodes[i];
+                var d = Math.sqrt(n.x * n.x + n.y * n.y);
+                if (d > contentRadius) contentRadius = d;
+            }
+        } else if (ld.ringRadius) {
+            contentRadius = ld.ringRadius;
+        }
+
+        if (contentRadius <= 0) return 1;
+
+        // Add padding for node decorations (arrows, labels, glow)
+        contentRadius += 45;
+        var availableRadius = Math.min(w, h) / 2 - 10;
+        return Math.min(1, availableRadius / contentRadius);
     },
 
     // =========================================================================

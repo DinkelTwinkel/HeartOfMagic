@@ -75,6 +75,7 @@ var CanvasRenderer = {
     _bgColor: '#000000',
     _heartRingColor: '#b8a878',
     _learningPathColor: '#00ffff',
+    _globeBgFill: true,
     
     // Learning path animation (glowing line from center to newly learned spell)
     _learningPath: null,       // { nodeId, path: [{x,y}...], progress: 0-1, startTime, color }
@@ -98,10 +99,11 @@ var CanvasRenderer = {
     
     // Starfield background (uses Starfield module)
     _starfieldEnabled: true,
-    _starfieldFixed: true,  // true = fixed to screen, false = moves with world
+    _starfieldFixed: false,  // true = fixed to screen, false = moves with world
     _starfieldColor: '#ffffff',
     _starfieldDensity: 200,
     _starfieldMaxSize: 2.5,
+    _starfieldSeed: 42,
 
     // =========================================================================
     // SELF-CONTAINED SCHOOL COLORS (no TREE_CONFIG dependency)
@@ -932,28 +934,26 @@ var CanvasRenderer = {
         if (this._starfieldEnabled && typeof Starfield !== 'undefined') {
             // Apply settings
             Starfield.setColor(this._starfieldColor || '#ffffff');
+            Starfield.maxSize = this._starfieldMaxSize || 2.5;
+            if (Starfield.seed !== this._starfieldSeed) {
+                Starfield.seed = this._starfieldSeed || 42;
+                Starfield.stars = null;  // Force reinit with new seed
+            }
             if (Starfield.starCount !== this._starfieldDensity) {
                 Starfield.starCount = this._starfieldDensity || 200;
                 Starfield.stars = null;  // Force reinit
             }
-            Starfield.maxSize = this._starfieldMaxSize || 2.5;
-            
-            // Initialize starfield if needed
-            if (!Starfield.stars || Starfield.width !== this._width || Starfield.height !== this._height) {
-                Starfield.init(this._width, this._height);
-            }
-            
-            // Render - either fixed to screen or moving with world
+
+            // Render - either fixed to screen or world-space (seed-based)
             if (this._starfieldFixed) {
-                // Fixed to screen - render in screen space (already there)
+                // Fixed mode: screen-space stars that drift
+                if (!Starfield.stars || Starfield.width !== this._width || Starfield.height !== this._height) {
+                    Starfield.init(this._width, this._height);
+                }
                 Starfield.render(ctx);
             } else {
-                // Move with world - apply pan/zoom but NOT rotation
-                ctx.save();
-                ctx.translate(this.panX, this.panY);
-                ctx.scale(this.zoom, this.zoom);
-                Starfield.render(ctx);
-                ctx.restore();
+                // World-space: deterministic tile-based stars from seed
+                Starfield.renderWorldSpace(ctx, this.panX, this.panY, this.zoom, this._width, this._height);
             }
             // Keep animation running (throttled)
             this._needsRender = true;
@@ -1063,10 +1063,10 @@ var CanvasRenderer = {
         
         ctx.scale(scale, scale);
         
-        var baseRadius = globeData.radius || 45;
+        // Core Size: use settings.globeSize if available, else fall back to globeData
+        var baseRadius = (typeof settings !== 'undefined' && settings.globeSize) ? settings.globeSize : (globeData.radius || 45);
         var ringColor = this._heartRingColor || '#b8a878';
         var bgColor = this._heartBgColor || '#000000';
-        var bgOpacity = this._heartBgOpacity !== undefined ? this._heartBgOpacity : 1.0;
         
         // Parse ring color for glow
         var ringRgb = this.parseColor(ringColor);
@@ -1079,13 +1079,13 @@ var CanvasRenderer = {
         ctx.fillStyle = glowColor + glowAlpha + ')';
         ctx.fill();
         
-        // OPAQUE background circle (dark center)
-        ctx.beginPath();
-        ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
-        ctx.globalAlpha = bgOpacity;
-        ctx.fillStyle = bgColor;
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
+        // Background circle (dark center) - toggleable on/off
+        if (this._globeBgFill) {
+            ctx.beginPath();
+            ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+        }
         
         // Inner decorative ring
         ctx.beginPath();
@@ -1281,13 +1281,9 @@ var CanvasRenderer = {
                 // Root is on selected path - WHITE highlight (if enabled)
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 3;
-                ctx.globalAlpha = 0.45;  // Half brightness
-            } else if (hasSelectedPath && showSelectionPathRoot) {
-                // Has selection but this root not on path - dim (only if selection path visible)
-                ctx.strokeStyle = '#222';
-                ctx.lineWidth = 1;
-                ctx.globalAlpha = 0.08;
+                ctx.globalAlpha = 0.45;
             } else {
+                // Normal unlocked root line - always visible regardless of selection
                 ctx.strokeStyle = this._getSchoolColor(node.school);
                 ctx.lineWidth = 2;
                 ctx.globalAlpha = 0.4;
@@ -1874,8 +1870,10 @@ var CanvasRenderer = {
      */
     renderLabels: function(ctx, cx, cy, cos, sin) {
         if (this.zoom < 0.6) return;  // Show labels at lower zoom too
-        
-        ctx.font = '10px sans-serif';
+        if (settings.showNodeNames === false) return;
+
+        var fontSize = settings.nodeFontSize || 10;
+        ctx.font = fontSize + 'px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         
@@ -1930,7 +1928,7 @@ var CanvasRenderer = {
             }
 
             // Draw text at screen position (no rotation)
-            ctx.fillText(labelText.substring(0, 12), screenX, screenY + 14 * this.zoom);
+            ctx.fillText(labelText.substring(0, 12), screenX, screenY + (fontSize + 4) * this.zoom);
             labelsDrawn++;
         }
     },

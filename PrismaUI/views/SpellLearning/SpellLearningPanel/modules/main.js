@@ -24,6 +24,9 @@
 document.addEventListener('DOMContentLoaded', function() {
     console.log('[SpellLearning] Panel initializing (modular)...');
     
+    // Apply translations to DOM elements with data-i18n attributes
+    if (typeof applyI18nToDOM === 'function') applyI18nToDOM();
+    
     // Initialize all components
     try {
         // Core UI

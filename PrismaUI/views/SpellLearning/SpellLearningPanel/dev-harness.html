@@ -277,121 +277,159 @@
                             </span>
                         </div>
 
-                        <!-- Heart Animation Settings Popup (minimal stub) -->
+                        <!-- Render Customization Settings Popup -->
                         <div id="heart-settings-popup" class="heart-settings-popup" style="display: none;">
                             <div class="popup-header">
-                                <span>Heart Animation</span>
+                                <span>Render Customizations</span>
                                 <button id="heart-settings-close" class="popup-close">x</button>
                             </div>
                             <div class="popup-content">
-                                <div class="popup-row"><label>Enable Animation</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-section-title">Core</div>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Core Size</label>
+                                        <input type="range" id="popup-core-size" min="20" max="80" step="5" value="50"><span id="popup-core-size-val">50</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Particles</label>
+                                        <input type="range" id="popup-globe-density" min="25" max="500" step="25" value="50"><span id="popup-globe-density-val">50</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Pulse Speed</label>
-                                    <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="0.2"><span id="heart-pulse-speed-val">0.20</span>
+                                <div class="popup-row-3">
+                                    <div class="popup-cell"><label>Animate</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Bg Fill</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-globe-bg-fill" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Trail</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-trail" checked><span class="toggle-slider"></span></label>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Pulse Delay</label>
-                                    <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="2"><span id="heart-pulse-delay-val">2.0s</span>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Speed</label>
+                                        <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="1"><span id="heart-pulse-speed-val">1.00</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Delay</label>
+                                        <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="0.75"><span id="heart-pulse-delay-val">0.75s</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Background Opacity</label>
-                                    <input type="range" id="heart-bg-opacity" min="0" max="1" step="0.05" value="1"><span id="heart-bg-opacity-val">1.0</span>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Dot Min</label>
+                                        <input type="range" id="popup-globe-dot-min" min="0.5" max="3" step="0.5" value="0.5"><span id="popup-globe-dot-min-val">0.5</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Dot Max</label>
+                                        <input type="range" id="popup-globe-dot-max" min="0.5" max="6" step="0.5" value="1"><span id="popup-globe-dot-max-val">1</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Background Color</label>
-                                    <div class="color-swatch" id="heart-bg-color-swatch" data-target="heart-bg-color" style="background: #000000;"></div>
-                                    <input type="hidden" id="heart-bg-color" value="#000000">
+                                <div class="popup-row-3">
+                                    <div class="popup-cell"><label>Bg</label>
+                                        <div class="color-swatch" id="heart-bg-color-swatch" data-target="heart-bg-color" style="background: #000000;"></div>
+                                        <input type="hidden" id="heart-bg-color" value="#000000">
+                                    </div>
+                                    <div class="popup-cell"><label>Ring</label>
+                                        <div class="color-swatch" id="heart-ring-color-swatch" data-target="heart-ring-color" style="background: #b8a878;"></div>
+                                        <input type="hidden" id="heart-ring-color" value="#b8a878">
+                                    </div>
+                                    <div class="popup-cell"><label>Globe</label>
+                                        <div class="color-swatch" id="globe-color-swatch" data-target="popup-globe-color" style="background: #b8a878;"></div>
+                                        <input type="hidden" id="popup-globe-color" value="#b8a878">
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Ring Color</label>
-                                    <div class="color-swatch" id="heart-ring-color-swatch" data-target="heart-ring-color" style="background: #b8a878;"></div>
-                                    <input type="hidden" id="heart-ring-color" value="#b8a878">
+                                <div class="popup-row-3">
+                                    <div class="popup-cell"><label>Path</label>
+                                        <div class="color-swatch" id="learning-path-color-swatch" data-target="learning-path-color" style="background: #00ffff;"></div>
+                                        <input type="hidden" id="learning-path-color" value="#00ffff">
+                                    </div>
+                                    <div class="popup-cell"><label>Txt</label>
+                                        <div class="color-swatch" id="magic-text-color-swatch" data-target="popup-magic-text-color" style="background: #ffecb3;"></div>
+                                        <input type="hidden" id="popup-magic-text-color" value="#ffecb3">
+                                    </div>
+                                    <div class="popup-cell"><label>TxtSz</label>
+                                        <input type="range" id="popup-globe-text-size" min="8" max="32" step="1" value="16"><span id="popup-globe-text-size-val">16</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Learning Path</label>
-                                    <div class="color-swatch" id="learning-path-color-swatch" data-target="learning-path-color" style="background: #00ffff;"></div>
-                                    <input type="hidden" id="learning-path-color" value="#00ffff">
+                                <div class="popup-row"><label>Globe Text</label>
+                                    <input type="text" id="popup-globe-text" class="popup-input" value="HEART" placeholder="Text">
                                 </div>
                                 <div class="popup-divider"></div>
                                 <div class="popup-section-title">Starfield</div>
-                                <div class="popup-row"><label>Enable Stars</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-enabled" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-row-3">
+                                    <div class="popup-cell"><label>Enable</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-enabled" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Fixed</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-fixed"><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Color</label>
+                                        <div class="color-swatch" id="starfield-color-swatch" data-target="starfield-color" style="background: #ffffff;"></div>
+                                        <input type="hidden" id="starfield-color" value="#ffffff">
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Fixed to Screen</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-fixed" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Density</label>
+                                        <input type="range" id="starfield-density" min="50" max="500" step="25" value="200"><span id="starfield-density-val">200</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Size</label>
+                                        <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5"><span id="starfield-size-val">2.5</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Star Color</label>
-                                    <div class="color-swatch" id="starfield-color-swatch" data-target="starfield-color" style="background: #ffffff;"></div>
-                                    <input type="hidden" id="starfield-color" value="#ffffff">
-                                </div>
-                                <div class="popup-row"><label>Star Density</label>
-                                    <input type="range" id="starfield-density" min="50" max="500" step="25" value="200"><span id="starfield-density-val">200</span>
-                                </div>
-                                <div class="popup-row"><label>Star Size</label>
-                                    <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5"><span id="starfield-size-val">2.5</span>
-                                </div>
-                                <div class="popup-row"><label>Background Color</label>
-                                    <div class="color-swatch" id="starfield-bg-color-swatch" data-target="starfield-bg-color" style="background: #000000;"></div>
-                                    <input type="hidden" id="starfield-bg-color" value="#000000">
-                                    <button class="popup-apply-btn" id="starfield-bg-apply" title="Apply">Apply</button>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Seed</label>
+                                        <input type="range" id="starfield-seed" min="1" max="999" step="1" value="42"><span id="starfield-seed-val">42</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Bg</label>
+                                        <div class="color-swatch" id="starfield-bg-color-swatch" data-target="starfield-bg-color" style="background: #000000;"></div>
+                                        <input type="hidden" id="starfield-bg-color" value="#000000">
+                                        <button class="popup-apply-btn" id="starfield-bg-apply" title="Apply">Apply</button>
+                                    </div>
                                 </div>
                                 <div class="popup-divider"></div>
-                                <div class="popup-section-title">School Dividers</div>
-                                <div class="popup-row"><label>Show Dividers</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-show-dividers" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-section-title">Dividers</div>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Show</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-show-dividers" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Mode</label>
+                                        <select id="popup-divider-color-mode" class="popup-select">
+                                            <option value="school">School</option><option value="custom">Custom</option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Divider Length</label>
-                                    <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="800"><span id="popup-divider-length-val">800</span>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Length</label>
+                                        <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="1450"><span id="popup-divider-length-val">1450</span>
+                                    </div>
+                                    <div class="popup-cell"><label>Width</label>
+                                        <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3"><span id="popup-divider-width-val">3px</span>
+                                    </div>
                                 </div>
-                                <div class="popup-row"><label>Line Width</label>
-                                    <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3"><span id="popup-divider-width-val">3px</span>
-                                </div>
-                                <div class="popup-row"><label>Fade Amount</label>
-                                    <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50"><span id="popup-divider-fade-val">50%</span>
-                                </div>
-                                <div class="popup-row"><label>Color Mode</label>
-                                    <select id="popup-divider-color-mode" class="popup-select">
-                                        <option value="school">Match School</option><option value="custom">Custom Color</option>
-                                    </select>
-                                </div>
-                                <div class="popup-row" id="popup-divider-custom-row" style="display: none;"><label>Custom Color</label>
-                                    <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
-                                    <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Fade</label>
+                                        <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50"><span id="popup-divider-fade-val">50%</span>
+                                    </div>
+                                    <div class="popup-cell" id="popup-divider-custom-row" style="display: none;"><label>Color</label>
+                                        <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
+                                        <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
+                                    </div>
                                 </div>
                                 <div class="popup-divider"></div>
                                 <div class="popup-section-title">Connections</div>
-                                <div class="popup-row"><label>Selection Path</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="show-selection-path" checked><span class="toggle-slider"></span></label>
-                                </div>
-                                <div class="popup-row"><label>Base Lines</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="show-base-connections" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Sel. Path</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="show-selection-path" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Base Lines</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="show-base-connections" checked><span class="toggle-slider"></span></label>
+                                    </div>
                                 </div>
                                 <div class="popup-divider"></div>
-                                <div class="popup-section-title">Globe</div>
-                                <div class="popup-row"><label>Globe Size</label>
-                                    <input type="range" id="popup-globe-size" min="15" max="60" step="5" value="30"><span id="popup-globe-size-val">30</span>
-                                </div>
-                                <div class="popup-row"><label>Particle Count</label>
-                                    <input type="range" id="popup-globe-density" min="50" max="500" step="25" value="200"><span id="popup-globe-density-val">200</span>
-                                </div>
-                                <div class="popup-row"><label>Dot Size Min</label>
-                                    <input type="range" id="popup-globe-dot-min" min="0.5" max="3" step="0.5" value="1"><span id="popup-globe-dot-min-val">1</span>
-                                </div>
-                                <div class="popup-row"><label>Dot Size Max</label>
-                                    <input type="range" id="popup-globe-dot-max" min="1" max="6" step="0.5" value="3"><span id="popup-globe-dot-max-val">3</span>
-                                </div>
-                                <div class="popup-row"><label>Globe Color</label>
-                                    <div class="color-swatch" id="globe-color-swatch" data-target="popup-globe-color" style="background: #b8a878;"></div>
-                                    <input type="hidden" id="popup-globe-color" value="#b8a878">
-                                </div>
-                                <div class="popup-row"><label>Text Color</label>
-                                    <div class="color-swatch" id="magic-text-color-swatch" data-target="popup-magic-text-color" style="background: #b8a878;"></div>
-                                    <input type="hidden" id="popup-magic-text-color" value="#b8a878">
-                                </div>
-                                <div class="popup-row"><label>Globe Text</label>
-                                    <input type="text" id="popup-globe-text" class="popup-input" value="HoM" placeholder="Text">
-                                </div>
-                                <div class="popup-row"><label>Text Size</label>
-                                    <input type="range" id="popup-globe-text-size" min="8" max="32" step="1" value="16"><span id="popup-globe-text-size-val">16</span>
-                                </div>
-                                <div class="popup-row"><label>Particle Trail</label>
-                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-trail" checked><span class="toggle-slider"></span></label>
+                                <div class="popup-section-title">Nodes</div>
+                                <div class="popup-row-2">
+                                    <div class="popup-cell"><label>Names</label>
+                                        <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-show-node-names" checked><span class="toggle-slider"></span></label>
+                                    </div>
+                                    <div class="popup-cell"><label>Font</label>
+                                        <input type="range" id="popup-node-font-size" min="6" max="18" step="1" value="13"><span id="popup-node-font-size-val">13</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

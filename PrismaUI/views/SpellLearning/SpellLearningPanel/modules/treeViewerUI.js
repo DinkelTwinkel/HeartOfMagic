@@ -1392,14 +1392,14 @@ function updateDetailsProgression(node) {
         var cheatPercent = requiredXP > 0 ? (progress.xp / requiredXP) * 100 : 0;
         progressBar.style.width = Math.min(cheatPercent, 100) + '%';
         
-        if (node.state === 'unlocked' || progress.unlocked) {
-            // Already unlocked - show relock option
+        if (node.state === 'unlocked') {
+            // Actually unlocked (node state is the source of truth) - show relock option
             unlockBtn.textContent = 'Relock Spell';
             unlockBtn.style.background = '#ef4444';  // Red for relock
             progressBar.classList.add('ready');
             learnBtn.classList.add('hidden');
         } else {
-            // Not unlocked - show both learn and cheat unlock options
+            // Not unlocked - show cheat unlock button (even if progress.unlocked is stale)
             unlockBtn.textContent = 'Unlock (Cheat)';
             unlockBtn.style.background = '';  // Default color
             progressBar.classList.toggle('ready', progress.xp >= requiredXP);
@@ -1426,8 +1426,8 @@ function updateDetailsProgression(node) {
         return;
     }
     
-    if (node.state === 'unlocked' || progress.unlocked) {
-        // Already unlocked - nothing to show
+    if (node.state === 'unlocked') {
+        // Actually unlocked - nothing to show
         return;
     }
     

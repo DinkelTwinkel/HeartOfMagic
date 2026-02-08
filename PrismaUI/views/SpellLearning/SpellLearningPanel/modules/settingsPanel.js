@@ -1219,6 +1219,7 @@ function saveUnifiedConfig() {
         // Starfield settings
         starfieldEnabled: settings.starfieldEnabled,
         starfieldFixed: settings.starfieldFixed,
+        starfieldSeed: settings.starfieldSeed,
         starfieldColor: settings.starfieldColor,
         starfieldBgColor: settings.starfieldBgColor,
         starfieldDensity: settings.starfieldDensity,
@@ -1233,6 +1234,8 @@ function saveUnifiedConfig() {
         globeText: settings.globeText,
         globeTextSize: settings.globeTextSize,
         particleTrailEnabled: settings.particleTrailEnabled,
+        globeBgFill: settings.globeBgFill,
+        nodeFontSize: settings.nodeFontSize,
 
         // Spell blacklist & plugin whitelist
         spellBlacklist: settings.spellBlacklist || [],
@@ -1958,8 +1961,8 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         
         // === Heart Animation Settings ===
         settings.heartAnimationEnabled = data.heartAnimationEnabled !== false;
-        settings.heartPulseSpeed = data.heartPulseSpeed !== undefined ? data.heartPulseSpeed : 0.2;
-        settings.heartPulseDelay = data.heartPulseDelay !== undefined ? data.heartPulseDelay : 5.0;
+        settings.heartPulseSpeed = data.heartPulseSpeed !== undefined ? data.heartPulseSpeed : 1;
+        settings.heartPulseDelay = data.heartPulseDelay !== undefined ? data.heartPulseDelay : 0.75;
         settings.heartBgOpacity = data.heartBgOpacity !== undefined ? data.heartBgOpacity : 1.0;
         settings.heartBgColor = data.heartBgColor || '#000000';
         settings.heartRingColor = data.heartRingColor || '#b8a878';
@@ -1967,21 +1970,24 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         // === Starfield Settings ===
         settings.starfieldEnabled = data.starfieldEnabled !== false;
         settings.starfieldFixed = data.starfieldFixed !== false;
+        settings.starfieldSeed = data.starfieldSeed !== undefined ? data.starfieldSeed : 42;
         settings.starfieldColor = data.starfieldColor || '#ffffff';
         settings.starfieldBgColor = data.starfieldBgColor || '#000000';
         settings.starfieldDensity = data.starfieldDensity !== undefined ? data.starfieldDensity : 100;
         settings.starfieldMaxSize = data.starfieldMaxSize !== undefined ? data.starfieldMaxSize : 2;
         
         // === Globe Settings ===
-        settings.globeSize = data.globeSize !== undefined ? data.globeSize : 30;
-        settings.globeDensity = data.globeDensity !== undefined ? data.globeDensity : 200;
-        settings.globeDotMin = data.globeDotMin !== undefined ? data.globeDotMin : 1;
-        settings.globeDotMax = data.globeDotMax !== undefined ? data.globeDotMax : 3;
+        settings.globeSize = data.globeSize !== undefined ? data.globeSize : 50;
+        settings.globeDensity = data.globeDensity !== undefined ? data.globeDensity : 50;
+        settings.globeDotMin = data.globeDotMin !== undefined ? data.globeDotMin : 0.5;
+        settings.globeDotMax = data.globeDotMax !== undefined ? data.globeDotMax : 1;
         settings.globeColor = data.globeColor || '#b8a878';
-        settings.magicTextColor = data.magicTextColor || '#b8a878';
-        settings.globeText = data.globeText || 'HoM';
+        settings.magicTextColor = data.magicTextColor || '#ffecb3';
+        settings.globeText = data.globeText || 'HEART';
         settings.globeTextSize = data.globeTextSize !== undefined ? data.globeTextSize : 16;
         settings.particleTrailEnabled = data.particleTrailEnabled !== false;
+        settings.globeBgFill = data.globeBgFill !== false;
+        settings.nodeFontSize = data.nodeFontSize !== undefined ? data.nodeFontSize : 10;
 
         // Spell blacklist
         if (data.spellBlacklist && Array.isArray(data.spellBlacklist)) {
@@ -2644,7 +2650,7 @@ function initializeHeartSettings() {
     var pulseSpeed = document.getElementById('heart-pulse-speed');
     var pulseSpeedVal = document.getElementById('heart-pulse-speed-val');
     if (pulseSpeed) {
-        pulseSpeed.value = settings.heartPulseSpeed !== undefined ? settings.heartPulseSpeed : 0.2;
+        pulseSpeed.value = settings.heartPulseSpeed !== undefined ? settings.heartPulseSpeed : 1;
         if (pulseSpeedVal) pulseSpeedVal.textContent = parseFloat(pulseSpeed.value).toFixed(2);
         pulseSpeed.addEventListener('input', function() {
             settings.heartPulseSpeed = parseFloat(this.value);
@@ -2658,7 +2664,7 @@ function initializeHeartSettings() {
     var pulseDelay = document.getElementById('heart-pulse-delay');
     var pulseDelayVal = document.getElementById('heart-pulse-delay-val');
     if (pulseDelay) {
-        var delayValue = settings.heartPulseDelay !== undefined ? settings.heartPulseDelay : 5.0;
+        var delayValue = settings.heartPulseDelay !== undefined ? settings.heartPulseDelay : 0.75;
         pulseDelay.value = delayValue;
         if (pulseDelayVal) pulseDelayVal.textContent = parseFloat(delayValue).toFixed(1) + 's';
         pulseDelay.addEventListener('input', function() {
@@ -2669,20 +2675,8 @@ function initializeHeartSettings() {
         });
     }
     
-    // Background opacity slider
-    var bgOpacity = document.getElementById('heart-bg-opacity');
-    var bgOpacityVal = document.getElementById('heart-bg-opacity-val');
-    if (bgOpacity) {
-        var opacityValue = settings.heartBgOpacity !== undefined ? settings.heartBgOpacity : 1.0;
-        bgOpacity.value = opacityValue;
-        if (bgOpacityVal) bgOpacityVal.textContent = parseFloat(opacityValue).toFixed(1);
-        bgOpacity.addEventListener('input', function() {
-            settings.heartBgOpacity = parseFloat(this.value);
-            if (bgOpacityVal) bgOpacityVal.textContent = parseFloat(this.value).toFixed(1);
-            applyHeartSettingsToRenderer();
-            autoSaveSettings();
-        });
-    }
+    // Background opacity - no longer a slider, controlled by globeBgFill toggle
+    // heartBgOpacity is kept as a fixed value (1.0) for renderer compatibility
     
     // Helper to setup color swatch with ColorPicker
     function setupColorSwatch(swatchId, hiddenInputId, settingKey, defaultColor) {
@@ -2803,7 +2797,28 @@ function initializeHeartSettings() {
             autoSaveSettings();
         });
     }
-    
+
+    // Starfield seed
+    var starfieldSeed = document.getElementById('starfield-seed');
+    var starfieldSeedVal = document.getElementById('starfield-seed-val');
+    if (starfieldSeed) {
+        starfieldSeed.value = settings.starfieldSeed || 42;
+        if (starfieldSeedVal) starfieldSeedVal.textContent = settings.starfieldSeed || 42;
+        starfieldSeed.addEventListener('input', function() {
+            settings.starfieldSeed = parseInt(this.value);
+            if (starfieldSeedVal) starfieldSeedVal.textContent = this.value;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._starfieldSeed = settings.starfieldSeed;
+                CanvasRenderer._needsRender = true;
+            }
+            if (typeof Starfield !== 'undefined') {
+                Starfield.seed = settings.starfieldSeed;
+                Starfield.stars = null;  // Force reinit with new seed
+            }
+            autoSaveSettings();
+        });
+    }
+
     // === Divider Settings (in popup) ===
     
     // Show dividers toggle
@@ -2962,15 +2977,15 @@ function initializeHeartSettings() {
 
     // === Globe Settings ===
 
-    // Globe size slider
-    var globeSize = document.getElementById('popup-globe-size');
-    var globeSizeVal = document.getElementById('popup-globe-size-val');
-    if (globeSize) {
-        globeSize.value = settings.globeSize || 30;
-        if (globeSizeVal) globeSizeVal.textContent = settings.globeSize || 30;
-        globeSize.addEventListener('input', function() {
+    // Core Size slider (controls both globe and heart ring)
+    var coreSize = document.getElementById('popup-core-size');
+    var coreSizeVal = document.getElementById('popup-core-size-val');
+    if (coreSize) {
+        coreSize.value = settings.globeSize || 50;
+        if (coreSizeVal) coreSizeVal.textContent = settings.globeSize || 50;
+        coreSize.addEventListener('input', function() {
             settings.globeSize = parseInt(this.value);
-            if (globeSizeVal) globeSizeVal.textContent = this.value;
+            if (coreSizeVal) coreSizeVal.textContent = this.value;
             applyGlobeSettings();
             autoSaveSettings();
         });
@@ -2980,8 +2995,8 @@ function initializeHeartSettings() {
     var globeDensity = document.getElementById('popup-globe-density');
     var globeDensityVal = document.getElementById('popup-globe-density-val');
     if (globeDensity) {
-        globeDensity.value = settings.globeDensity || 200;
-        if (globeDensityVal) globeDensityVal.textContent = settings.globeDensity || 200;
+        globeDensity.value = settings.globeDensity || 50;
+        if (globeDensityVal) globeDensityVal.textContent = settings.globeDensity || 50;
         globeDensity.addEventListener('input', function() {
             settings.globeDensity = parseInt(this.value);
             if (globeDensityVal) globeDensityVal.textContent = this.value;
@@ -2994,8 +3009,8 @@ function initializeHeartSettings() {
     var globeDotMin = document.getElementById('popup-globe-dot-min');
     var globeDotMinVal = document.getElementById('popup-globe-dot-min-val');
     if (globeDotMin) {
-        globeDotMin.value = settings.globeDotMin || 1;
-        if (globeDotMinVal) globeDotMinVal.textContent = settings.globeDotMin || 1;
+        globeDotMin.value = settings.globeDotMin || 0.5;
+        if (globeDotMinVal) globeDotMinVal.textContent = settings.globeDotMin || 0.5;
         globeDotMin.addEventListener('input', function() {
             settings.globeDotMin = parseFloat(this.value);
             if (globeDotMinVal) globeDotMinVal.textContent = this.value;
@@ -3008,8 +3023,8 @@ function initializeHeartSettings() {
     var globeDotMax = document.getElementById('popup-globe-dot-max');
     var globeDotMaxVal = document.getElementById('popup-globe-dot-max-val');
     if (globeDotMax) {
-        globeDotMax.value = settings.globeDotMax || 3;
-        if (globeDotMaxVal) globeDotMaxVal.textContent = settings.globeDotMax || 3;
+        globeDotMax.value = settings.globeDotMax || 1;
+        if (globeDotMaxVal) globeDotMaxVal.textContent = settings.globeDotMax || 1;
         globeDotMax.addEventListener('input', function() {
             settings.globeDotMax = parseFloat(this.value);
             if (globeDotMaxVal) globeDotMaxVal.textContent = this.value;
@@ -3041,7 +3056,7 @@ function initializeHeartSettings() {
     // Globe text input
     var globeTextInput = document.getElementById('popup-globe-text');
     if (globeTextInput) {
-        globeTextInput.value = settings.globeText || 'HoM';
+        globeTextInput.value = settings.globeText || 'HEART';
         globeTextInput.addEventListener('input', function() {
             settings.globeText = this.value;
             applyHeartSettingsToRenderer();
@@ -3073,10 +3088,57 @@ function initializeHeartSettings() {
             autoSaveSettings();
         });
     }
-    
+
+    // Globe background fill toggle
+    var globeBgFillToggle = document.getElementById('popup-globe-bg-fill');
+    if (globeBgFillToggle) {
+        globeBgFillToggle.checked = settings.globeBgFill !== false;
+        globeBgFillToggle.addEventListener('change', function() {
+            settings.globeBgFill = this.checked;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._globeBgFill = this.checked;
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
+    // Show node names toggle
+    var showNodeNamesPopup = document.getElementById('popup-show-node-names');
+    if (showNodeNamesPopup) {
+        showNodeNamesPopup.checked = settings.showNodeNames !== false;
+        showNodeNamesPopup.addEventListener('change', function() {
+            settings.showNodeNames = this.checked;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
+    // Node font size slider
+    var nodeFontSize = document.getElementById('popup-node-font-size');
+    var nodeFontSizeVal = document.getElementById('popup-node-font-size-val');
+    if (nodeFontSize) {
+        nodeFontSize.value = settings.nodeFontSize || 10;
+        if (nodeFontSizeVal) nodeFontSizeVal.textContent = settings.nodeFontSize || 10;
+        nodeFontSize.addEventListener('input', function() {
+            settings.nodeFontSize = parseInt(this.value);
+            if (nodeFontSizeVal) nodeFontSizeVal.textContent = this.value;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
     // Apply initial settings to renderer
     applyHeartSettingsToRenderer();
     applyGlobeSettings();
+    // Apply globe bg fill
+    if (typeof CanvasRenderer !== 'undefined') {
+        CanvasRenderer._globeBgFill = settings.globeBgFill !== false;
+    }
     console.log('[HeartSettings] Initialized successfully');
 
 }
@@ -3974,25 +4036,27 @@ window.TREE_GENERATION_PRESETS = TREE_GENERATION_PRESETS;
  */
 function applyGlobeSettings() {
     if (typeof Globe3D !== 'undefined') {
-        var sizeChanged = Globe3D.radius !== (settings.globeSize || 30);
-        var countChanged = Globe3D.particleCount !== (settings.globeDensity || 200);
-        
-        Globe3D.radius = settings.globeSize || 30;
-        Globe3D.globeCenterZ = -(settings.globeSize || 30);
-        Globe3D.particleCount = settings.globeDensity || 200;
-        
+        var sizeChanged = Globe3D.radius !== (settings.globeSize || 50);
+        var countChanged = Globe3D.particleCount !== (settings.globeDensity || 50);
+        var dotMinChanged = Globe3D.dotSizeMin !== (settings.globeDotMin || 0.5);
+        var dotMaxChanged = Globe3D.dotSizeMax !== (settings.globeDotMax || 1);
+
+        Globe3D.radius = settings.globeSize || 50;
+        Globe3D.globeCenterZ = -(settings.globeSize || 50);
+        Globe3D.particleCount = settings.globeDensity || 50;
+
         // Store size range for particle initialization
-        Globe3D.dotSizeMin = settings.globeDotMin || 1;
-        Globe3D.dotSizeMax = settings.globeDotMax || 3;
-        
+        Globe3D.dotSizeMin = settings.globeDotMin || 0.5;
+        Globe3D.dotSizeMax = settings.globeDotMax || 1;
+
         // Particle trail enabled
         Globe3D.trailEnabled = settings.particleTrailEnabled !== false;
-        
-        // Reinitialize if particle count changed
-        if (countChanged || sizeChanged) {
+
+        // Reinitialize if particle count, size, or dot sizes changed
+        if (countChanged || sizeChanged || dotMinChanged || dotMaxChanged) {
             Globe3D.init();
         }
-        
+
         if (typeof CanvasRenderer !== 'undefined') {
             CanvasRenderer._needsRender = true;
         }
@@ -4005,18 +4069,18 @@ function applyGlobeSettings() {
 function applyHeartSettingsToRenderer() {
     if (typeof CanvasRenderer !== 'undefined') {
         // Heart settings
-        CanvasRenderer._heartbeatSpeed = settings.heartPulseSpeed !== undefined ? settings.heartPulseSpeed : 0.2;
-        CanvasRenderer._heartPulseDelay = settings.heartPulseDelay !== undefined ? settings.heartPulseDelay : 5.0;
+        CanvasRenderer._heartbeatSpeed = settings.heartPulseSpeed !== undefined ? settings.heartPulseSpeed : 1;
+        CanvasRenderer._heartPulseDelay = settings.heartPulseDelay !== undefined ? settings.heartPulseDelay : 0.75;
         CanvasRenderer._heartAnimationEnabled = settings.heartAnimationEnabled !== false;
-        CanvasRenderer._heartBgOpacity = settings.heartBgOpacity !== undefined ? settings.heartBgOpacity : 1.0;
+        CanvasRenderer._heartBgOpacity = 1.0;
         CanvasRenderer._heartBgColor = settings.heartBgColor || '#000000';
         CanvasRenderer._heartRingColor = settings.heartRingColor || '#b8a878';
         CanvasRenderer._learningPathColor = settings.learningPathColor || '#00ffff';
         
         // Globe colors and text
         CanvasRenderer._globeColor = settings.globeColor || settings.heartRingColor || '#b8a878';
-        CanvasRenderer._magicTextColor = settings.magicTextColor || settings.heartRingColor || '#b8a878';
-        CanvasRenderer._globeText = settings.globeText || 'HoM';
+        CanvasRenderer._magicTextColor = settings.magicTextColor || settings.heartRingColor || '#ffecb3';
+        CanvasRenderer._globeText = settings.globeText || 'HEART';
         CanvasRenderer._globeTextSize = settings.globeTextSize || 16;
         
         // Starfield settings

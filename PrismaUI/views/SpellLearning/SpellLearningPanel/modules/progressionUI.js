@@ -413,7 +413,7 @@ function onUnlockClick() {
 
     // CHEAT MODE: Allow unlocking/relocking any node
     if (settings.cheatMode) {
-        if (node.state === 'unlocked' || progress.unlocked) {
+        if (node.state === 'unlocked') {
             // Relock the spell (remove from player) - send canonical formId to C++
             if (window.callCpp) {
                 window.callCpp('RelockSpell', JSON.stringify({ formId: canonId }));

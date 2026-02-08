@@ -247,7 +247,9 @@ var TreeGrowthTree = {
                 layoutMode: baseData ? baseData.mode : 'sun',
                 ringRadius: baseData && baseData.grid ? baseData.grid.ringRadius : 120
             },
-            globe: { x: 0, y: 0, radius: 45 },
+            globe: (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
+                ? TreeCore.getOutput()
+                : { x: 0, y: 0, radius: 45 },
             schools: {}
         };
 

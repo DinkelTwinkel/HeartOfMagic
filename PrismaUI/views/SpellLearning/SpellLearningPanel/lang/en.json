@@ -1,0 +1,24 @@
+{
+    "_meta": {
+        "language": "English",
+        "locale": "en",
+        "author": "Heart of Magic Team",
+        "version": "1.0.0"
+    },
+
+    "settings.devDebug.title": "Developer & Debug",
+    "settings.devDebug.advancedOptions": "Advanced options",
+    "settings.devDebug.developerMode": "Developer Mode",
+    "settings.devDebug.developerModeDesc": "Show advanced generation options",
+    "settings.devDebug.cheatMode": "Cheat Mode",
+    "settings.devDebug.cheatModeDesc": "Full control over all spells and progression",
+    "settings.devDebug.cheatModeActive": "(!) <strong>Cheat mode active!</strong>",
+    "settings.devDebug.cheatInfo.seeAll": "See all spell names and details (even locked)",
+    "settings.devDebug.cheatInfo.clickUnlock": "Click any node to unlock instantly",
+    "settings.devDebug.cheatInfo.editXp": "Edit XP progress directly (current/required)",
+    "settings.devDebug.debugOptions": "Debug Options",
+    "settings.devDebug.verboseLogging": "Verbose Logging",
+    "settings.devDebug.verboseLoggingDesc": "Extra console logging for troubleshooting",
+    "settings.devDebug.showDebugGrid": "Show Debug Grid",
+    "settings.devDebug.showDebugGridDesc": "Show grid candidate positions for debugging spacing"
+}

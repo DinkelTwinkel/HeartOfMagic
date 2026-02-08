@@ -100,13 +100,9 @@ var TreeCore = {
         console.log('[TreeCore] show() called');
         this.init();
 
-        // Read current globe values from state if available
-        if (state.treeData && state.treeData.globe) {
-            this.globeX = state.treeData.globe.x || 0;
-            this.globeY = state.treeData.globe.y || 0;
-            this.globeRadius = state.treeData.globe.radius || 45;
-            this._updateSliders();
-        }
+        // CORE panel keeps its own values — does NOT read from the loaded tree.
+        // Values only flow to state.treeData when "Apply Tree" is clicked.
+        this._updateSliders();
 
         var container = document.getElementById('treeCoreSection');
         if (container) container.style.display = '';
@@ -134,19 +130,16 @@ var TreeCore = {
 
         TreePreviewUtils.bindInput('tcGlobeHOffset', function(v) {
             self.globeX = v;
-            self._syncToState();
             self._markDirty();
         });
 
         TreePreviewUtils.bindInput('tcGlobeVOffset', function(v) {
             self.globeY = v;
-            self._syncToState();
             self._markDirty();
         });
 
         TreePreviewUtils.bindInput('tcGlobeRadius', function(v) {
             self.globeRadius = v;
-            self._syncToState();
             self._markDirty();
         });
     },
@@ -161,31 +154,9 @@ var TreeCore = {
         if (rField) rField.value = this.globeRadius;
     },
 
-    /** Push local globe values into state.treeData.globe and rawData. */
-    _syncToState: function() {
-        if (!state.treeData) return;
-
-        if (!state.treeData.globe) {
-            state.treeData.globe = { x: 0, y: 0, radius: 45 };
-        }
-
-        state.treeData.globe.x = this.globeX;
-        state.treeData.globe.y = this.globeY;
-        state.treeData.globe.radius = this.globeRadius;
-
-        // Also update rawData so saveTreeToFile() persists it
-        if (state.treeData.rawData) {
-            state.treeData.rawData.globe = {
-                x: this.globeX,
-                y: this.globeY,
-                radius: this.globeRadius
-            };
-        }
-
-        // Update main viewer if it exists
-        if (typeof CanvasRenderer !== 'undefined') {
-            CanvasRenderer._needsRender = true;
-        }
+    /** Return current globe settings for downstream consumers (applyTree). */
+    getOutput: function() {
+        return { x: this.globeX, y: this.globeY, radius: this.globeRadius };
     },
 
     // =========================================================================
@@ -352,17 +323,22 @@ var TreeCore = {
         // Scale for DPR
         ctx.scale(dpr, dpr);
 
-        // Apply pan and zoom transforms
-        ctx.save();
-        ctx.translate(w / 2 + this.panX, h / 2 + this.panY);
-        ctx.scale(this.zoom, this.zoom);
-        ctx.translate(-w / 2, -h / 2);
-
-        // Draw Root Base grid underneath
+        // Get Root Base output
         var baseData = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             baseData = TreePreview.getOutput();
         }
+
+        // Compute auto-fit scale from Root Base content extent
+        var fitScale = this._computeFitScale(baseData, w, h);
+
+        // Apply pan and zoom transforms with auto-fit
+        ctx.save();
+        ctx.translate(w / 2 + this.panX, h / 2 + this.panY);
+        ctx.scale(this.zoom * fitScale, this.zoom * fitScale);
+        ctx.translate(-w / 2, -h / 2);
+
+        // Draw Root Base grid underneath
         if (baseData && baseData.renderGrid) {
             ctx.globalAlpha = 0.5;
             baseData.renderGrid(ctx, w, h);
@@ -379,6 +355,25 @@ var TreeCore = {
         ctx.fillStyle = 'rgba(184, 168, 120, 0.4)';
         ctx.textAlign = 'right';
         ctx.fillText(Math.round(this.zoom * 100) + '%', w - 8, h - 8);
+    },
+
+    /** Compute a scale factor that fits root content within the canvas. */
+    _computeFitScale: function(baseData, w, h) {
+        if (!baseData || !baseData.rootNodes || baseData.rootNodes.length === 0) return 1;
+
+        var contentRadius = 0;
+        for (var i = 0; i < baseData.rootNodes.length; i++) {
+            var n = baseData.rootNodes[i];
+            var d = Math.sqrt(n.x * n.x + n.y * n.y);
+            if (d > contentRadius) contentRadius = d;
+        }
+
+        if (contentRadius <= 0) return 1;
+
+        // Add padding for node decorations (arrows, labels, glow)
+        contentRadius += 45;
+        var availableRadius = Math.min(w, h) / 2 - 10;
+        return Math.min(1, availableRadius / contentRadius);
     },
 
     /** Draw the globe preview circle at the configured offset. */

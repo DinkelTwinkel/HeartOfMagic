@@ -191,198 +191,186 @@
                         </span>
                     </div>
                     
-                    <!-- Heart Animation Settings Popup -->
+                    <!-- Render Customization Settings Popup -->
                     <div id="heart-settings-popup" class="heart-settings-popup" style="display: none;">
                         <div class="popup-header">
-                            <span>Heart Animation</span>
+                            <span>Render Customizations</span>
                             <button id="heart-settings-close" class="popup-close">×</button>
                         </div>
                         <div class="popup-content">
-                            <div class="popup-row">
-                                <label>Enable Animation</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="heart-animation-enabled" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
+                            <!-- Core (Heart + Globe unified) -->
+                            <div class="popup-section-title">Core</div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell"><label>Core Size</label>
+                                    <input type="range" id="popup-core-size" min="20" max="80" step="5" value="50">
+                                    <span id="popup-core-size-val">50</span></div>
+                                <div class="popup-cell"><label>Particles</label>
+                                    <input type="range" id="popup-globe-density" min="25" max="500" step="25" value="50">
+                                    <span id="popup-globe-density-val">50</span></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Pulse Speed</label>
-                                <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="0.2">
-                                <span id="heart-pulse-speed-val">0.20</span>
+                            <div class="popup-row-3">
+                                <div class="popup-cell"><label>Animate</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Bg Fill</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-globe-bg-fill" checked><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Trail</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-trail" checked><span class="toggle-slider"></span></label></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Pulse Delay</label>
-                                <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="2">
-                                <span id="heart-pulse-delay-val">2.0s</span>
+                            <div class="popup-row-2">
+                                <div class="popup-cell"><label>Speed</label>
+                                    <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="1">
+                                    <span id="heart-pulse-speed-val">1.00</span></div>
+                                <div class="popup-cell"><label>Delay</label>
+                                    <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="0.75">
+                                    <span id="heart-pulse-delay-val">0.75s</span></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Background Opacity</label>
-                                <input type="range" id="heart-bg-opacity" min="0" max="1" step="0.05" value="1">
-                                <span id="heart-bg-opacity-val">1.0</span>
+                            <div class="popup-row-2">
+                                <div class="popup-cell"><label>Dot Min</label>
+                                    <input type="range" id="popup-globe-dot-min" min="0.5" max="3" step="0.5" value="0.5">
+                                    <span id="popup-globe-dot-min-val">0.5</span></div>
+                                <div class="popup-cell"><label>Dot Max</label>
+                                    <input type="range" id="popup-globe-dot-max" min="0.5" max="6" step="0.5" value="1">
+                                    <span id="popup-globe-dot-max-val">1</span></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Background Color</label>
-                                <div class="color-swatch" id="heart-bg-color-swatch" data-target="heart-bg-color" style="background: #000000;"></div>
-                                <input type="hidden" id="heart-bg-color" value="#000000">
+                            <div class="popup-row-3">
+                                <div class="popup-cell"><label>Bg</label>
+                                    <div class="color-swatch" id="heart-bg-color-swatch" data-target="heart-bg-color" style="background: #000000;"></div>
+                                    <input type="hidden" id="heart-bg-color" value="#000000"></div>
+                                <div class="popup-cell"><label>Ring</label>
+                                    <div class="color-swatch" id="heart-ring-color-swatch" data-target="heart-ring-color" style="background: #b8a878;"></div>
+                                    <input type="hidden" id="heart-ring-color" value="#b8a878"></div>
+                                <div class="popup-cell"><label>Globe</label>
+                                    <div class="color-swatch" id="globe-color-swatch" data-target="popup-globe-color" style="background: #b8a878;"></div>
+                                    <input type="hidden" id="popup-globe-color" value="#b8a878"></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Ring Color</label>
-                                <div class="color-swatch" id="heart-ring-color-swatch" data-target="heart-ring-color" style="background: #b8a878;"></div>
-                                <input type="hidden" id="heart-ring-color" value="#b8a878">
-                            </div>
-                            <div class="popup-row">
-                                <label>Learning Path</label>
-                                <div class="color-swatch" id="learning-path-color-swatch" data-target="learning-path-color" style="background: #00ffff;"></div>
-                                <input type="hidden" id="learning-path-color" value="#00ffff">
-                            </div>
-                            
-                            <!-- Starfield Settings -->
-                            <div class="popup-divider"></div>
-                            <div class="popup-section-title">Starfield</div>
-                            
-                            <div class="popup-row">
-                                <label>Background Color</label>
-                                <div class="color-swatch" id="starfield-bg-color-swatch" data-target="starfield-bg-color" style="background: #000000;"></div>
-                                <input type="hidden" id="starfield-bg-color" value="#000000">
-                                <button class="popup-apply-btn" id="starfield-bg-apply" title="Apply background color">Apply</button>
-                            </div>
-                            <div class="popup-row">
-                                <label>Enable Stars</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="starfield-enabled" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="popup-row">
-                                <label>Fixed to Screen</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="starfield-fixed" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="popup-row">
-                                <label>Star Color</label>
-                                <div class="color-swatch" id="starfield-color-swatch" data-target="starfield-color" style="background: #ffffff;"></div>
-                                <input type="hidden" id="starfield-color" value="#ffffff">
-                            </div>
-                            <div class="popup-row">
-                                <label>Star Density</label>
-                                <input type="range" id="starfield-density" min="50" max="500" step="25" value="200">
-                                <span id="starfield-density-val">200</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Star Size</label>
-                                <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5">
-                                <span id="starfield-size-val">2.5</span>
-                            </div>
-                            
-                            <!-- Divider Settings -->
-                            <div class="popup-divider"></div>
-                            <div class="popup-section-title">School Dividers</div>
-                            
-                            <div class="popup-row">
-                                <label>Show Dividers</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="popup-show-dividers" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="popup-row">
-                                <label>Divider Length</label>
-                                <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="800">
-                                <span id="popup-divider-length-val">800</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Line Width</label>
-                                <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3">
-                                <span id="popup-divider-width-val">3px</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Fade Amount</label>
-                                <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50">
-                                <span id="popup-divider-fade-val">50%</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Color Mode</label>
-                                <select id="popup-divider-color-mode" class="popup-select">
-                                    <option value="school">Match School</option>
-                                    <option value="custom">Custom Color</option>
-                                </select>
-                            </div>
-                            <div class="popup-row" id="popup-divider-custom-row" style="display: none;">
-                                <label>Custom Color</label>
-                                <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
-                                <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
-                            </div>
-                            
-                            <!-- Connection Lines Settings -->
-                            <div class="popup-divider"></div>
-                            <div class="popup-section-title">Connections</div>
-
-                            <div class="popup-row">
-                                <label>Selection Path</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="show-selection-path" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="popup-row">
-                                <label>Base Lines</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="show-base-connections" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
-                            <!-- Globe Settings -->
-                            <div class="popup-divider"></div>
-                            <div class="popup-section-title">Globe</div>
-                            
-                            <div class="popup-row">
-                                <label>Globe Size</label>
-                                <input type="range" id="popup-globe-size" min="15" max="60" step="5" value="30">
-                                <span id="popup-globe-size-val">30</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Particle Count</label>
-                                <input type="range" id="popup-globe-density" min="50" max="500" step="25" value="200">
-                                <span id="popup-globe-density-val">200</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Dot Size Min</label>
-                                <input type="range" id="popup-globe-dot-min" min="0.5" max="3" step="0.5" value="1">
-                                <span id="popup-globe-dot-min-val">1</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Dot Size Max</label>
-                                <input type="range" id="popup-globe-dot-max" min="1" max="6" step="0.5" value="3">
-                                <span id="popup-globe-dot-max-val">3</span>
-                            </div>
-                            <div class="popup-row">
-                                <label>Globe Color</label>
-                                <div class="color-swatch" id="globe-color-swatch" data-target="popup-globe-color" style="background: #b8a878;"></div>
-                                <input type="hidden" id="popup-globe-color" value="#b8a878">
-                            </div>
-                            <div class="popup-row">
-                                <label>Text Color</label>
-                                <div class="color-swatch" id="magic-text-color-swatch" data-target="popup-magic-text-color" style="background: #b8a878;"></div>
-                                <input type="hidden" id="popup-magic-text-color" value="#b8a878">
+                            <div class="popup-row-3">
+                                <div class="popup-cell"><label>Path</label>
+                                    <div class="color-swatch" id="learning-path-color-swatch" data-target="learning-path-color" style="background: #00ffff;"></div>
+                                    <input type="hidden" id="learning-path-color" value="#00ffff"></div>
+                                <div class="popup-cell"><label>Txt</label>
+                                    <div class="color-swatch" id="magic-text-color-swatch" data-target="popup-magic-text-color" style="background: #ffecb3;"></div>
+                                    <input type="hidden" id="popup-magic-text-color" value="#ffecb3"></div>
+                                <div class="popup-cell"><label>TxtSz</label>
+                                    <input type="range" id="popup-globe-text-size" min="8" max="32" step="1" value="16">
+                                    <span id="popup-globe-text-size-val">16</span></div>
                             </div>
                             <div class="popup-row">
                                 <label>Globe Text</label>
-                                <input type="text" id="popup-globe-text" class="popup-input" value="HoM" placeholder="Text (use \n for line breaks)">
+                                <input type="text" id="popup-globe-text" class="popup-input" value="HEART" placeholder="Text (use \n for line breaks)">
                             </div>
-                            <div class="popup-row">
-                                <label>Text Size</label>
-                                <input type="range" id="popup-globe-text-size" min="8" max="32" step="1" value="16">
-                                <span id="popup-globe-text-size-val">16</span>
+                            <!-- Starfield -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Starfield</div>
+                            <div class="popup-row-3">
+                                <div class="popup-cell"><label>Enable</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-enabled" checked><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Fixed</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="starfield-fixed"><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Color</label>
+                                    <div class="color-swatch" id="starfield-color-swatch" data-target="starfield-color" style="background: #ffffff;"></div>
+                                    <input type="hidden" id="starfield-color" value="#ffffff"></div>
                             </div>
-                            <div class="popup-row">
-                                <label>Particle Trail</label>
-                                <label class="toggle-switch toggle-sm">
-                                    <input type="checkbox" id="popup-particle-trail" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
+                            <div class="popup-row-2">
+                                <div class="popup-cell"><label>Density</label>
+                                    <input type="range" id="starfield-density" min="50" max="500" step="25" value="200">
+                                    <span id="starfield-density-val">200</span></div>
+                                <div class="popup-cell"><label>Size</label>
+                                    <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5">
+                                    <span id="starfield-size-val">2.5</span></div>
+                            </div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell"><label>Seed</label>
+                                    <input type="range" id="starfield-seed" min="1" max="999" step="1" value="42">
+                                    <span id="starfield-seed-val">42</span></div>
+                                <div class="popup-cell"><label>Bg</label>
+                                    <div class="color-swatch" id="starfield-bg-color-swatch" data-target="starfield-bg-color" style="background: #000000;"></div>
+                                    <input type="hidden" id="starfield-bg-color" value="#000000">
+                                    <button class="popup-apply-btn" id="starfield-bg-apply" title="Apply">Apply</button></div>
+                            </div>
+
+                            <!-- Dividers -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Dividers</div>
+
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Show</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="popup-show-dividers" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="popup-cell">
+                                    <label>Mode</label>
+                                    <select id="popup-divider-color-mode" class="popup-select">
+                                        <option value="school">School</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Length</label>
+                                    <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="1450">
+                                    <span id="popup-divider-length-val">1450</span>
+                                </div>
+                                <div class="popup-cell">
+                                    <label>Width</label>
+                                    <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3">
+                                    <span id="popup-divider-width-val">3px</span>
+                                </div>
+                            </div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Fade</label>
+                                    <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50">
+                                    <span id="popup-divider-fade-val">50%</span>
+                                </div>
+                                <div class="popup-cell" id="popup-divider-custom-row" style="display: none;">
+                                    <label>Color</label>
+                                    <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
+                                    <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
+                                </div>
+                            </div>
+
+                            <!-- Connections -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Connections</div>
+
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Sel. Path</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="show-selection-path" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="popup-cell">
+                                    <label>Base Lines</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="show-base-connections" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Nodes -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title">Nodes</div>
+
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Names</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="popup-show-node-names" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="popup-cell">
+                                    <label>Font</label>
+                                    <input type="range" id="popup-node-font-size" min="6" max="18" step="1" value="13">
+                                    <span id="popup-node-font-size-val">13</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -846,6 +834,69 @@
                             </div>
                         </div>
                         
+                        <!-- Passive Learning (coming soon - grayed out) -->
+                        <div class="settings-subsection passive-learning-section disabled-feature">
+                            <span class="subsection-title">Passive Learning</span>
+                            <span class="coming-soon-badge">Coming Soon</span>
+                        </div>
+                        
+                        <div class="passive-learning-controls disabled-feature">
+                            <div class="setting-row-inline">
+                                <div class="setting-info">
+                                    <span class="setting-label">Enable Passive Learning</span>
+                                    <span class="setting-desc">Gain XP over time for your active spell</span>
+                                </div>
+                                <div class="inline-controls">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="passiveLearningToggle" disabled>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="setting-row slider-row">
+                                <div class="setting-info">
+                                    <span class="setting-label">XP per Game Hour</span>
+                                    <span class="setting-desc">Passive XP gained each in-game hour</span>
+                                </div>
+                                <div class="slider-container">
+                                    <input type="range" id="passiveXpPerHourSlider" min="1" max="50" value="5" step="1" class="setting-slider" disabled>
+                                    <span id="passiveXpPerHourValue" class="slider-value">5</span>
+                                </div>
+                            </div>
+                            
+                            <div class="settings-subsection" style="margin-top: 8px;">
+                                <span class="subsection-title" style="font-size: 0.7em;">Max Passive XP % by Tier</span>
+                            </div>
+                            <div class="tier-xp-grid passive-tier-grid">
+                                <div class="tier-xp-item">
+                                    <label for="passiveMaxNovice">Novice</label>
+                                    <input type="number" id="passiveMaxNovice" class="tier-xp-input" value="100" min="0" max="100" disabled>
+                                    <span class="tier-xp-unit">%</span>
+                                </div>
+                                <div class="tier-xp-item">
+                                    <label for="passiveMaxApprentice">Apprentice</label>
+                                    <input type="number" id="passiveMaxApprentice" class="tier-xp-input" value="75" min="0" max="100" disabled>
+                                    <span class="tier-xp-unit">%</span>
+                                </div>
+                                <div class="tier-xp-item">
+                                    <label for="passiveMaxAdept">Adept</label>
+                                    <input type="number" id="passiveMaxAdept" class="tier-xp-input" value="50" min="0" max="100" disabled>
+                                    <span class="tier-xp-unit">%</span>
+                                </div>
+                                <div class="tier-xp-item">
+                                    <label for="passiveMaxExpert">Expert</label>
+                                    <input type="number" id="passiveMaxExpert" class="tier-xp-input" value="25" min="0" max="100" disabled>
+                                    <span class="tier-xp-unit">%</span>
+                                </div>
+                                <div class="tier-xp-item">
+                                    <label for="passiveMaxMaster">Master</label>
+                                    <input type="number" id="passiveMaxMaster" class="tier-xp-input" value="5" min="0" max="100" disabled>
+                                    <span class="tier-xp-unit">%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- Progressive Reveal Thresholds -->
                         <div class="settings-subsection">
                             <span class="subsection-title">Detail Reveal Thresholds</span>
@@ -950,6 +1001,24 @@
                             </div>
                         </div>
                         
+                        <!-- Weakened Spell Notifications (inline) -->
+                        <div class="setting-row-inline">
+                            <div class="setting-info">
+                                <span class="setting-label">Weakened Spell Alerts</span>
+                            </div>
+                            <div class="inline-controls">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="weakenedNotificationsToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <div class="inline-slider-group" id="notificationIntervalRow">
+                                    <span class="inline-slider-label">Every</span>
+                                    <input type="range" id="notificationIntervalSlider" min="5" max="60" value="10" class="setting-slider">
+                                    <span class="slider-value" id="notificationIntervalValue">10s</span>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- Power Steps Configuration -->
                         <div class="settings-subsection">
                             <span class="subsection-title">Power Step Configuration</span>
@@ -969,9 +1038,8 @@
                 </div>
                 </div><!-- /settings-split ROW 2 -->
 
-                <!-- ===== ROW 3: Spell Tome + (Notifications + Display) ===== -->
+                <!-- ===== ROW 3: Spell Tome + Developer & Debug ===== -->
                 <div class="settings-split">
-                <!-- Spell Tome Learning Settings -->
                 <div class="settings-block" id="spellTomeLearningBlock">
                     <div class="settings-block-header">
                         <span class="settings-block-icon">[i]</span>
@@ -998,31 +1066,32 @@
                             Reading tomes grants XP and gives early access to weakened spells. Keep tomes to practice!
                         </p>
                         
-                        <div class="setting-row slider-row" id="tomeXpGrantRow">
-                            <div class="setting-info">
-                                <span class="setting-label">XP Grant on Read</span>
-                                <span class="setting-desc">% of required XP granted when reading tome</span>
+                        <!-- XP Grant + Inventory Boost side by side -->
+                        <div class="setting-pair">
+                            <div class="setting-row slider-row" id="tomeXpGrantRow">
+                                <div class="setting-info">
+                                    <span class="setting-label">XP Grant on Read</span>
+                                    <span class="setting-desc">% of required XP from reading tome</span>
+                                </div>
+                                <div class="slider-container">
+                                    <input type="range" id="tomeXpGrantSlider" min="10" max="50" value="25" step="5" class="setting-slider">
+                                    <span id="tomeXpGrantValue" class="slider-value">25%</span>
+                                </div>
                             </div>
-                            <div class="slider-container">
-                                <input type="range" id="tomeXpGrantSlider" min="10" max="50" value="25" step="5" class="setting-slider">
-                                <span id="tomeXpGrantValue" class="slider-value">25%</span>
-                            </div>
-                        </div>
-                        
-                        <!-- Inventory Boost (inline toggle + slider) -->
-                        <div class="setting-row-inline">
-                            <div class="setting-info">
-                                <span class="setting-label">Inventory Boost</span>
-                                <span class="setting-desc">Bonus XP while carrying the tome</span>
-                            </div>
-                            <div class="inline-controls">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="tomeInventoryBoostToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                                <div class="inline-slider-group" id="tomeInventoryBoostRow">
-                                    <input type="range" id="tomeInventoryBoostSlider" min="10" max="100" value="25" step="5" class="setting-slider">
-                                    <span id="tomeInventoryBoostValue" class="slider-value">+25%</span>
+                            <div class="setting-row-inline">
+                                <div class="setting-info">
+                                    <span class="setting-label">Inventory Boost</span>
+                                    <span class="setting-desc">Bonus XP while carrying tome</span>
+                                </div>
+                                <div class="inline-controls">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="tomeInventoryBoostToggle" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="inline-slider-group" id="tomeInventoryBoostRow">
+                                        <input type="range" id="tomeInventoryBoostSlider" min="10" max="100" value="25" step="5" class="setting-slider">
+                                        <span id="tomeInventoryBoostValue" class="slider-value">+25%</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1067,174 +1136,75 @@
                     </div>
                 </div>
 
-                <!-- Right column: Notifications + Display Options stacked -->
-                <div class="settings-split-column">
-                <div class="settings-block" id="notificationsBlock">
+                <!-- Developer & Debug Settings (right column of split) -->
+                <div class="settings-block dev-debug-block">
                     <div class="settings-block-header">
-                        <span class="settings-block-icon">[!]</span>
-                        <span class="settings-block-title">Notifications</span>
+                        <span class="settings-block-icon">[D]</span>
+                        <span class="settings-block-title" data-i18n="settings.devDebug.title">Developer & Debug</span>
+                        <span class="cheat-warning" data-i18n="settings.devDebug.advancedOptions">Advanced options</span>
                     </div>
                     <div class="settings-block-content">
-                        <div class="setting-row-inline">
-                            <div class="setting-info">
-                                <span class="setting-label">Weakened Spell Alerts</span>
-                            </div>
-                            <div class="inline-controls">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="weakenedNotificationsToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                                <div class="inline-slider-group" id="notificationIntervalRow">
-                                    <span class="inline-slider-label">Every</span>
-                                    <input type="range" id="notificationIntervalSlider" min="5" max="60" value="10" class="setting-slider">
-                                    <span class="slider-value" id="notificationIntervalValue">10s</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Display Settings -->
-                <div class="settings-block">
-                    <div class="settings-block-header">
-                        <span class="settings-block-icon">[~]</span>
-                        <span class="settings-block-title">Display Options</span>
-                    </div>
-                    <div class="settings-block-content">
-                        <!-- Tree display toggles (2x2 grid) -->
-                        <div class="setting-pair">
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Node Size Scaling</span>
-                                    <span class="setting-desc">Higher tiers appear larger</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="nodeSizeScalingToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Show Node Names</span>
-                                    <span class="setting-desc">Display spell names on nodes</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="showNodeNamesToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="setting-pair">
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Show School Dividers</span>
-                                    <span class="setting-desc">Border lines between schools</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="showSchoolDividersToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Strict Pie Slices</span>
-                                    <span class="setting-desc">Schools stay in their slice</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="strictPieSlicesToggle" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <!-- Divider sliders (compact 2-column) -->
-                        <div class="slider-grid slider-grid-2">
-                            <div class="slider-compact" id="dividerFadeRow" title="How much the lines fade out at the end">
-                                <span class="slider-compact-label">Divider Fade</span>
-                                <div class="slider-compact-control">
-                                    <input type="range" id="dividerFadeSlider" min="0" max="100" value="50" class="setting-slider">
-                                    <span id="dividerFadeValue" class="slider-value">50%</span>
-                                </div>
-                            </div>
-                            <div class="slider-compact" id="dividerSpacingRow" title="Distance between parallel divider lines (px)">
-                                <span class="slider-compact-label">Divider Spacing</span>
-                                <div class="slider-compact-control">
-                                    <input type="range" id="dividerSpacingSlider" min="1" max="10" value="3" class="setting-slider">
-                                    <span id="dividerSpacingValue" class="slider-value">3px</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Divider color (paired: select + conditional color picker) -->
-                        <div class="setting-pair">
-                            <div class="setting-row" id="dividerColorModeRow">
-                                <div class="setting-info">
-                                    <span class="setting-label">Divider Color</span>
-                                    <span class="setting-desc">Match school or custom</span>
-                                </div>
-                                <div class="setting-control">
-                                    <select id="dividerColorModeSelect" class="setting-select">
-                                        <option value="school">Match School</option>
-                                        <option value="custom">Custom Color</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="setting-row" id="dividerCustomColorRow" style="display: none;">
-                                <div class="setting-info">
-                                    <span class="setting-label">Custom Color</span>
-                                </div>
-                                <div class="setting-control">
-                                    <input type="color" id="dividerCustomColorPicker" value="#ffffff" class="color-picker">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                </div><!-- /settings-split-column -->
-                </div><!-- /settings-split ROW 3 -->
-
-                <!-- ===== FULL WIDTH: School Display & Colors ===== -->
-                <div class="settings-block">
-                    <div class="settings-block-header">
-                        <span class="settings-block-icon">[~]</span>
-                        <span class="settings-block-title">School Display</span>
-                    </div>
-                    <div class="settings-block-content">
+                        <!-- Developer Mode -->
                         <div class="setting-row">
                             <div class="setting-info">
-                                <span class="setting-desc">Toggle visibility and customize colors for each magic school. Checkbox shows/hides the school on the tree.</span>
-                            </div>
-                        </div>
-                        <div id="schoolColorsContainer" class="school-colors-container">
-                            <!-- Dynamically populated with visibility toggle + color picker -->
-                            <span class="setting-desc">Scan spells to detect schools</span>
-                        </div>
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <span class="setting-label">Auto LLM Colors</span>
-                                <span class="setting-desc">Automatically ask LLM to suggest colors for new schools</span>
+                                <span class="setting-label" data-i18n="settings.devDebug.developerMode">Developer Mode</span>
+                                <span class="setting-desc" data-i18n="settings.devDebug.developerModeDesc">Show advanced generation options</span>
                             </div>
                             <label class="toggle-switch">
-                                <input type="checkbox" id="autoLLMColorsToggle">
+                                <input type="checkbox" id="developerModeToggle">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        <div class="setting-row school-color-actions">
-                            <button id="showAllSchoolsBtn" class="btn btn-secondary btn-small">
-                                <span class="btn-icon">[+]</span> Show All
-                            </button>
-                            <button id="hideAllSchoolsBtn" class="btn btn-secondary btn-small">
-                                <span class="btn-icon">[-]</span> Hide All
-                            </button>
-                            <button id="suggestColorsBtn" class="btn btn-secondary btn-small">
-                                <span class="btn-icon">[AI]</span> LLM Suggest Colors
-                            </button>
-                            <button id="resetColorsBtn" class="btn btn-secondary btn-small">
-                                <span class="btn-icon">[R]</span> Reset to Defaults
-                            </button>
+                        
+                        <!-- Cheat Mode -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label" data-i18n="settings.devDebug.cheatMode">Cheat Mode</span>
+                                <span class="setting-desc" data-i18n="settings.devDebug.cheatModeDesc">Full control over all spells and progression</span>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="cheatModeToggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div id="cheatModeInfo" class="cheat-info hidden">
+                            <p data-i18n-html="settings.devDebug.cheatModeActive">(!) <strong>Cheat mode active!</strong></p>
+                            <ul>
+                                <li data-i18n="settings.devDebug.cheatInfo.seeAll">See all spell names and details (even locked)</li>
+                                <li data-i18n="settings.devDebug.cheatInfo.clickUnlock">Click any node to unlock instantly</li>
+                                <li data-i18n="settings.devDebug.cheatInfo.editXp">Edit XP progress directly (current/required)</li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Debug Options (shown when developer mode is on) -->
+                        <div id="debugOptionsSection" class="dev-only-settings hidden">
+                            <div class="settings-subsection">
+                                <span class="subsection-title" data-i18n="settings.devDebug.debugOptions">Debug Options</span>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label" data-i18n="settings.devDebug.verboseLogging">Verbose Logging</span>
+                                    <span class="setting-desc" data-i18n="settings.devDebug.verboseLoggingDesc">Extra console logging for troubleshooting</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="verboseLogToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <span class="setting-label" data-i18n="settings.devDebug.showDebugGrid">Show Debug Grid</span>
+                                    <span class="setting-desc" data-i18n="settings.devDebug.showDebugGridDesc">Show grid candidate positions for debugging spacing</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="debugGridToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                 </div>
+                </div><!-- /settings-split ROW 3: Spell Tome + Developer -->
 
                 <!-- Tree Generation Settings - Developer only (related to LLM auto features) -->
                 <div class="settings-block dev-only">
@@ -1384,75 +1354,6 @@
                                     </div>
                                     <button id="rerollInjectionsBtn" class="btn btn-small">[R] Reroll</button>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Developer & Debug Settings -->
-                <div class="settings-block dev-debug-block">
-                    <div class="settings-block-header">
-                        <span class="settings-block-icon">[D]</span>
-                        <span class="settings-block-title">Developer & Debug</span>
-                        <span class="cheat-warning">Advanced options</span>
-                    </div>
-                    <div class="settings-block-content">
-                        <!-- Developer Mode -->
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <span class="setting-label">Developer Mode</span>
-                                <span class="setting-desc">Show advanced generation options</span>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="developerModeToggle">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        
-                        <!-- Cheat Mode -->
-                        <div class="setting-row">
-                            <div class="setting-info">
-                                <span class="setting-label">Cheat Mode</span>
-                                <span class="setting-desc">Full control over all spells and progression</span>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="cheatModeToggle">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div id="cheatModeInfo" class="cheat-info hidden">
-                            <p>(!) <strong>Cheat mode active!</strong></p>
-                            <ul>
-                                <li>See all spell names and details (even locked)</li>
-                                <li>Click any node to unlock instantly</li>
-                                <li>Edit XP progress directly (current/required)</li>
-                            </ul>
-                        </div>
-                        
-                        <!-- Debug Options (shown when developer mode is on) -->
-                        <div id="debugOptionsSection" class="dev-only-settings hidden">
-                            <div class="settings-subsection">
-                                <span class="subsection-title">Debug Options</span>
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Verbose Logging</span>
-                                    <span class="setting-desc">Extra console logging for troubleshooting</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="verboseLogToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label">Show Debug Grid</span>
-                                    <span class="setting-desc">Show grid candidate positions for debugging spacing</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="debugGridToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
                             </div>
                         </div>
                     </div>
@@ -1624,6 +1525,10 @@
     All functionality is preserved, just split for LLM maintainability.
     -->
     
+    <!-- 0. i18n Translation Engine (must load first) -->
+    <script src="modules/i18n.js"></script>
+    <script>initI18n('en');</script>
+
     <!-- 1. Constants and Configuration -->
     <script src="modules/constants.js"></script>
     <script src="modules/state.js"></script>

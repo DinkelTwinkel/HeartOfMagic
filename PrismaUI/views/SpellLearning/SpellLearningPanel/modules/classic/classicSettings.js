@@ -72,7 +72,7 @@ var ClassicSettings = {
                 H('Node Size', 'tgClassicNodeSize', 1, 20, 1, nodeSize) +
                 H('Spread', 'tgClassicSpread', 0, 100, 5, spread) +
                 H('Radial Bias', 'tgClassicRadialBias', 0, 100, 5, radialBias) +
-                H('Center Mask', 'tgClassicCenterMask', 0, 10, 1, centerMask, ' tiers') +
+                H('Globe Mask', 'tgClassicCenterMask', 0, 10, 1, centerMask, ' tiers') +
             '</div>' +
 
             // --- Tier zone bar chart ---

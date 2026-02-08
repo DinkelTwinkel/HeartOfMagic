@@ -277,35 +277,18 @@ var TreePreviewSun = {
             maxDots: isExpensiveGrid ? 5000 : 20000
         };
 
-        // Use offscreen canvas cache for grid rendering (avoids 10K+ fillRect per frame)
+        // Use shared padded grid renderer (covers pan/zoom without clipping)
         var gcKey = s.gridType + '|' + spokes + '|' + tiers + '|' + tierSpacing + '|' +
-            w + '|' + h + '|' + schoolCount + '|' + (s.proportional ? 1 : 0);
-        if (this._gridCanvas && this._gridCanvasKey === gcKey &&
-            this._gridCanvasW === w && this._gridCanvasH === h) {
-            // Cache hit — blit offscreen canvas
-            ctx.drawImage(this._gridCanvas, 0, 0);
-        } else {
-            // Cache miss — render to offscreen canvas
-            if (!this._gridCanvas || this._gridCanvasW !== w || this._gridCanvasH !== h) {
-                this._gridCanvas = document.createElement('canvas');
-                this._gridCanvas.width = w;
-                this._gridCanvas.height = h;
-                this._gridCanvasW = w;
-                this._gridCanvasH = h;
-            }
-            var offCtx = this._gridCanvas.getContext('2d');
-            offCtx.clearRect(0, 0, w, h);
-
-            var gridModule = this._grids[s.gridType];
+            schoolCount + '|' + (s.proportional ? 1 : 0);
+        var self = this;
+        TreePreviewUtils.renderGridCached(ctx, cx, cy, w, h, function(offCtx, padCx, padCy) {
+            var gridModule = self._grids[s.gridType];
             if (gridModule && typeof gridModule.renderGrid === 'function') {
-                gridModule.renderGrid(offCtx, cx, cy, gridOpts);
+                gridModule.renderGrid(offCtx, padCx, padCy, gridOpts);
             } else {
-                this._renderNaiveGrid(offCtx, cx, cy, gridOpts);
+                self._renderNaiveGrid(offCtx, padCx, padCy, gridOpts);
             }
-            this._gridCanvasKey = gcKey;
-
-            ctx.drawImage(this._gridCanvas, 0, 0);
-        }
+        }, gcKey, this);
 
         // Collect grid point positions for downstream modules (cached)
         var gpCacheKey = s.gridType + '|' + spokes + '|' + tiers + '|' + tierSpacing + '|' +
