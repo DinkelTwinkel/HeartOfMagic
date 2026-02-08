@@ -393,7 +393,20 @@ var TreeGrowthClassic = {
         if (!this._treeData) return;
 
         window.callCpp('SaveSpellTree', JSON.stringify(this._treeData));
-        ClassicSettings.setStatusText('Tree saved', '#22c55e');
+
+        // Load into the spell tree viewer so it displays immediately
+        if (typeof loadTreeData === 'function') {
+            loadTreeData(this._treeData);
+        }
+
+        ClassicSettings.setStatusText('Tree applied', '#22c55e');
+
+        // Switch to the Spell Tree tab after a brief delay
+        if (typeof switchTab === 'function') {
+            setTimeout(function() {
+                switchTab('spellTree');
+            }, 300);
+        }
     },
 
     /**
