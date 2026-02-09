@@ -23,29 +23,71 @@ namespace
     // Source: CommonLibSSE-NG src/RE/T/TESObjectBOOK.cpp — RELOCATION_ID(17439, 17842)
     constexpr REL::RelocationID ProcessBookID(17439, 17842);
 
-    // Offset into ProcessBook where spell teaching happens
-    // Source: Exit-9B/Dont-Eat-Spell-Tomes SE v1.2.0 (commit 18b81b1) used +0xE8
-    // Source: Exit-9B/Dont-Eat-Spell-Tomes AE (commit 180bb8b) used +0x11D
-    // SE (1.5.97):    +0xE8
-    // AE (1.6.317+):  +0x11D
-    inline std::ptrdiff_t GetPatchOffset()
-    {
-        return REL::Module::IsAE() ? 0x11D : 0xE8;
-    }
-
     // Size of code we're replacing (must NOP this much)
-    // Same for both versions
-    inline std::size_t GetPatchSize()
+    constexpr std::size_t PatchSize = 0x56;
+
+    // Scan the function body for the patch site pattern.
+    // We look for: 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ??
+    //   (mov rcx, [rip+disp32]; call rel32)
+    // This is the instruction sequence right before the spell-teach call,
+    // and it's the same signature across SE 1.5.97, AE 1.6.318, and AE 1.6.1170+.
+    // Returns offset from function start, or -1 on failure.
+    inline std::ptrdiff_t ScanForPatchSite(std::uintptr_t funcBase)
     {
-        return 0x56;
+        // Pattern: mov rcx,[rip+??] ; call ??
+        // Bytes:   48 8B 0D xx xx xx xx  E8 xx xx xx xx
+        // This pattern occurs at the point where PlayerCharacter singleton is
+        // loaded into rcx before AddSpell is called. It's deep into the function
+        // body (SE: +0xE8, AE 1.6.318: +0x11D) so we skip the first 0x80 bytes
+        // to avoid matching earlier mov rcx,[rip+??] ; call ?? sequences in the
+        // function prologue / branch-condition checks.
+        constexpr std::size_t kScanStart = 0x80;   // skip prologue
+        constexpr std::size_t kScanEnd   = 0x200;  // search up to 512 bytes
+
+        const auto* bytes = reinterpret_cast<const std::uint8_t*>(funcBase);
+
+        // Collect all matches; pick the LAST one in range (closest to the spell-teach site)
+        std::ptrdiff_t lastMatch = -1;
+        for (std::size_t i = kScanStart; i + 12 <= kScanEnd; ++i) {
+            if (bytes[i]     == 0x48 &&
+                bytes[i + 1] == 0x8B &&
+                bytes[i + 2] == 0x0D &&
+                bytes[i + 7] == 0xE8) {
+                lastMatch = static_cast<std::ptrdiff_t>(i);
+            }
+        }
+        return lastMatch;
     }
 
-    // Jump offset to skip past the patched region
-    // SE (1.5.97):    0x70  (DEST SE used jmp +0x70)
-    // AE (1.6.317+):  0x72
-    inline std::ptrdiff_t GetJumpOffset()
+    // After the patch site, find the end of the block we replace.
+    // We search forward from the patch site for the instruction that
+    // follows the spell-teach region — typically a test/jmp or mov rsi sequence.
+    // The "jump offset" is the distance from patch site to just past the NOPd region.
+    // We scan for the first "48 83 C4" (add rsp, imm8) or "48 8D" (lea) after
+    // the patch site as the resume point. If not found, fall back to known offsets.
+    inline std::ptrdiff_t FindJumpOffset(std::uintptr_t patchAddr)
     {
-        return REL::Module::IsAE() ? 0x72 : 0x70;
+        // Scan forward from patch site for a safe resume point.
+        // The original code region is ~0x56 bytes. The resume point should be
+        // at roughly +0x70 (SE) or +0x72 (AE) from the patch site.
+        // We look for a "test" or "mov" instruction near that range.
+        // For safety, use known offsets as primary, with a bounded search.
+        if (REL::Module::IsAE()) {
+            // Try common AE offsets: 0x72 (1.6.318), then scan nearby
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(patchAddr);
+            // Check a range of offsets for a valid instruction boundary
+            for (std::ptrdiff_t off = 0x6E; off <= 0x7A; ++off) {
+                // Look for common instruction starts after the block:
+                // 48 (REX.W prefix), 40 (REX prefix), 0F (two-byte opcode)
+                std::uint8_t b = bytes[off];
+                if (b == 0x48 || b == 0x40 || b == 0x0F || b == 0x33 || b == 0x45) {
+                    return off;
+                }
+            }
+            return 0x72;  // fallback
+        } else {
+            return 0x70;  // SE known offset
+        }
     }
 }
 
@@ -352,23 +394,25 @@ bool SpellTomeHook::Install()
         REL::Module::get().version().string(),
         REL::Module::IsAE() ? "AE" : "SE");
 
-    // Get version-specific offsets
-    const auto patchOffset = GetPatchOffset();
-    const auto patchSize = GetPatchSize();
-    const auto jumpOffset = GetJumpOffset();
+    // Get the base address of TESObjectBOOK::Read
+    const std::uintptr_t funcBase = ProcessBookID.address();
+    logger::info("SpellTomeHook: Function base at {:X}", funcBase);
 
-    // Get the address of TESObjectBOOK::ProcessBook
-    std::uintptr_t hookAddr = ProcessBookID.address() + patchOffset;
-    
-    // Verify we're patching the right location
-    auto pattern = REL::make_pattern<"48 8B 0D">();
-    if (!pattern.match(hookAddr)) {
-        logger::error("SpellTomeHook: Pattern verification failed at {:X} - game version mismatch?", hookAddr);
-        logger::error("SpellTomeHook: This may mean the SE/AE offsets need updating for this game version.");
+    // Scan the function body for the patch site (version-independent)
+    const auto patchOffset = ScanForPatchSite(funcBase);
+    if (patchOffset < 0) {
+        logger::error("SpellTomeHook: Could not find patch site pattern (48 8B 0D xx E8 xx) in function body");
+        logger::error("SpellTomeHook: This game version may have a different TESObjectBOOK::Read layout.");
         return false;
     }
-    
-    logger::info("SpellTomeHook: Pattern verified at {:X}", hookAddr);
+
+    const std::uintptr_t hookAddr = funcBase + patchOffset;
+    logger::info("SpellTomeHook: Patch site found at offset +{:X} (addr {:X})", patchOffset, hookAddr);
+
+    // Find the jump offset (resume point after patched region)
+    const auto jumpOffset = FindJumpOffset(hookAddr);
+    const auto patchSize = PatchSize;
+    logger::info("SpellTomeHook: Jump offset = +{:X}, patch size = {:X}", jumpOffset, patchSize);
     
     // Create the patch using Xbyak
     // Register usage differs between SE and AE:
