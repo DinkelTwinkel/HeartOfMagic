@@ -2,7 +2,7 @@
 
 **Purpose:** Concise reference for LLMs to understand system structure and implementation status.
 
-**Version:** 1.9 (Updated February 7, 2026 - Per-school shapes, LLM keyword classification, plugin whitelist, module inventory)
+**Version:** 2.0 (Updated February 9, 2026 - PythonBridge persistent subprocess, async Python calls, TF-IDF caching)
 
 ---
 
@@ -330,7 +330,60 @@ the mod - always available. SpellTomeHook handles the core tome interception in 
 - `Cancel()` - Abort installation
 - `IsInstalling()` - Status check
 
-### 9. **PapyrusAPI** (`plugin/src/PapyrusAPI.cpp/h`)
+### 9. **PythonBridge** (`plugin/src/PythonBridge.cpp/h`)
+**Status:** ✅ Implemented
+
+**Responsibilities:**
+- Manage a persistent Python subprocess via Win32 `CreateProcess` + anonymous pipes
+- Eliminate ~1.5s Python startup overhead on every call after the first
+- Non-blocking async command execution (UI stays responsive during Python work)
+- JSON-line stdin/stdout protocol for C++ ↔ Python IPC
+- Auto-restart on crash (up to 3 times per session)
+- MO2/USVFS path resolution for all manager layouts (Standard, Nolvus, Wabbajack)
+
+**Architecture:**
+```
+C++ (UIManager)                    PythonBridge                     Python (server.py)
+    │                                   │                                │
+    ├─SendCommand("build_tree",...)────►│                                │
+    │                                   ├─EnsureProcess()               │
+    │                                   │  └─SpawnProcess() [first use] │
+    │                                   │     ├─CreateProcess(pipes)────►│ (imports sklearn etc)
+    │                                   │     └─Wait for __ready__◄─────┤ {"id":"__ready__"}
+    │                                   │                                │
+    │                                   ├─WriteFile(stdin pipe)─────────►│ {"id":"req_1",...}
+    │                                   │                                ├─process command
+    │                                   │  ReaderThread◄────────────────┤ {"id":"req_1",...}
+    │                                   │  └─Match id → callback         │
+    │◄─callback(success, result)────────┤  └─SKSE TaskInterface          │
+```
+
+**Protocol (JSON-line over stdin/stdout):**
+```
+C++ → Python:  {"id":"req_1","command":"build_tree","data":{...}}\n
+Python → C++:  {"id":"req_1","success":true,"result":{...}}\n
+Ready signal:  {"id":"__ready__","success":true,"result":{"pid":1234}}\n
+```
+
+**Commands:** `build_tree`, `prm_score`, `ping`, `shutdown`
+
+**Key Functions:**
+- `SendCommand(command, payload, callback)` — Async, callback fires on SKSE main thread
+- `EnsureProcess()` — Lazy-spawns Python on first use, waits for ready signal (15s timeout)
+- `SpawnProcess()` — `CreateProcess` with `STARTF_USESTDHANDLES`, custom env block (PYTHONHOME)
+- `ReaderThread()` — Background thread parsing JSON responses, matching to pending requests
+- `ResolvePythonPaths()` — Searches overwrite, mods, Data, CWD for python.exe + server.py
+- `ResolvePhysicalPath()` — Win32 `GetFinalPathNameByHandleW` to resolve USVFS virtual paths
+- `FixEmbeddedPythonPthFile()` — Rewrites `._pth` relative paths as absolute (USVFS fix)
+- `Shutdown()` — Sends shutdown command, waits 3s, then `TerminateProcess`. Called on DLL unload.
+
+**Path Search Order:**
+1. MO2 overwrite folders (Standard, Nolvus `MODS/overwrite`, `mods/overwrite`)
+2. MO2 mods folders (all subdirectories containing SpellTreeBuilder)
+3. Real Data folder (Vortex / manual install)
+4. CWD-relative (some setups run from Data/)
+
+### 10. **PapyrusAPI** (`plugin/src/PapyrusAPI.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -466,13 +519,24 @@ SpellLearning.GetVersion()    ; Version string
 
 ## Python Tree Builder (`SKSE/Plugins/SpellLearning/SpellTreeBuilder/`)
 
-**Purpose:** NLP-based spell tree generation using TF-IDF theme discovery, fuzzy matching, optional LLM auto-configuration, and optional LLM keyword classification. Called from C++ via embedded Python 3.12.
+**Purpose:** NLP-based spell tree generation using TF-IDF theme discovery, fuzzy matching, optional LLM auto-configuration, and optional LLM keyword classification. Runs as a persistent subprocess managed by PythonBridge (C++), communicating via stdin/stdout JSON-line protocol.
+
+### Server Architecture
+
+`server.py` is the persistent entry point spawned by PythonBridge. It:
+1. Pre-imports all heavy modules once at startup (sklearn, numpy, tree_builder, etc.)
+2. Sends `__ready__` signal to C++ via stdout
+3. Reads JSON-line commands from stdin, routes to appropriate handler
+4. Returns JSON-line responses via stdout. Debug/logging goes to `server.log` (never stdout).
+
+`build_tree.py` exposes `build_tree_from_data(spells, config_dict)` — the core tree-building function used by both `server.py` (persistent mode) and the CLI (`_main_impl()` wrapper).
 
 ### Core Modules
 
 | Module | Purpose |
 |--------|---------|
-| `build_tree.py` | Main entry point. Orchestrates config, LLM features, theme discovery, tree building. Called by C++ `ProceduralPythonGenerate` |
+| `server.py` | Persistent stdin/stdout REPL. Routes `build_tree`, `prm_score`, `ping`, `shutdown` commands. Pre-imports heavy modules once |
+| `build_tree.py` | `build_tree_from_data()` core function + CLI wrapper. Orchestrates config, LLM features, theme discovery, tree building |
 | `tree_builder.py` | `SpellTreeBuilder` class. Per-school tree construction, theme assignment, node linking. Defines `SCHOOL_DEFAULT_SHAPES` |
 | `spell_grouper.py` | `group_spells_best_fit()` — Groups spells into themes using fuzzy score. Honors `llm_keyword` for reclassification |
 | `theme_discovery.py` | TF-IDF theme discovery per school. Extracts keyword themes from spell names/descriptions/effects |
@@ -563,10 +627,11 @@ User clicks "Scan" → SpellScanner::ScanAllSpells()
 ### Tree Generation Flow (user-facing modes, outside developer mode)
 
 **BUILD TREE (Complex)** — `visualFirstBtn` → `startVisualFirstGenerate()`:
-1. `startVisualFirstPythonConfig()`: build config (fuzzy + optional LLM), call C++ `ProceduralPythonGenerate` (runs Python `build_tree.py` with `run_fuzzy_analysis`, `return_fuzzy_data`).
-2. Python returns: school configs + fuzzy data (themes, groups, relationships).
-3. `onProceduralPythonComplete` → `doVisualFirstGenerate(schoolConfigs, fuzzyData)`.
-4. `doVisualFirstGenerate` calls **`buildAllTreesSettingsAware(spells, finalConfigs, settings.treeGeneration, fuzzy)`** (settingsAwareTreeBuilder.js); applies LayoutEngine for positions; then TreeParser → render.
+1. `startVisualFirstPythonConfig()`: build config (fuzzy + optional LLM), call C++ `ProceduralPythonGenerate`.
+2. C++ sends `build_tree` command to PythonBridge (persistent subprocess via stdin/stdout pipes). First call lazy-spawns `server.py`, subsequent calls reuse the running process (no ~1.5s startup).
+3. `server.py` calls `build_tree_from_data(spells, config)` → returns tree data + school configs + fuzzy data.
+4. PythonBridge reader thread matches response, fires callback on SKSE main thread → `onProceduralPythonComplete`.
+5. `doVisualFirstGenerate(schoolConfigs, fuzzyData)` → **`buildAllTreesSettingsAware()`** → LayoutEngine → TreeParser → render.
 
 **BUILD TREE (Simple)** — `proceduralBtn` (click bound in script.js) → `onProceduralClick()` → `startProceduralGenerate()`:
 1. **`buildProceduralTrees(state.lastSpellData.spells)`** (proceduralTreeBuilder.js): JS-only; keyword theme discovery, tier-based links, convergence, orphans. No Python.
@@ -765,6 +830,7 @@ HeartOfMagic/
 │   ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
 │   ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
 │   ├── PythonInstaller.cpp/h        ✅ Embedded Python auto-installer
+│   ├── PythonBridge.cpp/h           ✅ Persistent Python subprocess (stdin/stdout pipes)
 │   ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
 │   ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
 │   ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
@@ -788,7 +854,9 @@ HeartOfMagic/
 ├── SKSE/Plugins/SpellLearning/
 │   ├── custom_prompts/              ✅ LLM prompt templates
 │   └── SpellTreeBuilder/            ✅ Python tree generation tools
-│       ├── build_tree.py            ✅ Main build script (orchestrator)
+│       ├── server.py                ✅ Persistent REPL (stdin/stdout, spawned by PythonBridge)
+│       ├── build_tree.py            ✅ build_tree_from_data() + CLI wrapper
+│       ├── prereq_master_scorer.py  ✅ TF-IDF NLP scoring (pre-computed norms)
 │       ├── tree_builder.py          ✅ SpellTreeBuilder class, SCHOOL_DEFAULT_SHAPES
 │       ├── spell_grouper.py         ✅ Theme-based spell grouping
 │       ├── theme_discovery.py       ✅ TF-IDF theme extraction
@@ -835,8 +903,10 @@ MO2/mods/HeartOfMagic_RELEASE/
 │       ├── SpellLearning.dll
 │       └── SpellLearning/
 │           ├── custom_prompts/
-│           └── SpellTreeBuilder/       # Python tree builder (optional)
-│               ├── build_tree.py
+│           └── SpellTreeBuilder/       # Python tree builder
+│               ├── server.py          # Persistent REPL (PythonBridge)
+│               ├── build_tree.py      # Core builder + CLI
+│               ├── prereq_master_scorer.py
 │               ├── shapes/
 │               ├── growth/
 │               └── core/
@@ -875,6 +945,7 @@ MO2/mods/HeartOfMagic_RELEASE/
 - Visual-First Builder (drag-drop tree creation)
 - Edit Mode (add/remove nodes, modify links)
 - Complex Build (Python-based tree generation)
+- PythonBridge persistent subprocess (eliminates per-call startup, async, auto-restart)
 - Embedded Python auto-installer
 - FormID persistence (survives load order changes)
 - Performance optimizations (shared_mutex, cached player pointer)
@@ -894,7 +965,20 @@ MO2/mods/HeartOfMagic_RELEASE/
 - Level-of-detail rendering
 - Additional XP sources
 
-### ✅ Recently Completed (Feb 7, 2026)
+### ✅ Recently Completed (Feb 9, 2026)
+
+#### PythonBridge Persistent Subprocess
+- **`PythonBridge.cpp/h`** — Singleton managing persistent Python process via Win32 `CreateProcess` + anonymous pipes
+- **`server.py`** — stdin/stdout JSON-line REPL. Pre-imports sklearn/numpy once. Routes `build_tree`, `prm_score`, `ping`, `shutdown`
+- **`build_tree_from_data()`** — Extracted core tree-building function from `_main_impl()`, reusable by server and CLI
+- **UIManager.cpp refactored** — Removed ~470 lines of duplicated subprocess/path code, replaced with ~75 lines using `PythonBridge::SendCommand()`
+- **Async, non-blocking** — `SendCommand` returns immediately, callback fires on SKSE main thread via `TaskInterface`
+- **Auto-restart** — Up to 3 restarts if Python crashes mid-session
+- **No temp files** — All IPC via stdin/stdout pipes (eliminates the `procedural_stderr` file lock bug)
+- **TF-IDF optimization** — Pre-computed vector norms in `prereq_master_scorer.py`, iterate smaller vector first in cosine similarity
+- **Path resolution consolidated** — `ResolvePhysicalPath()`, `GetMO2ModsFolders()`, `GetMO2OverwriteFolders()`, `FixEmbeddedPythonPthFile()` moved from UIManager.cpp static functions to PythonBridge class methods
+
+### ✅ Previously Completed (Feb 7, 2026)
 
 #### Per-School Default Shapes
 - **`SCHOOL_DEFAULT_SHAPES`** in both Python (`tree_builder.py`) and JS (`shapeProfiles.js`)

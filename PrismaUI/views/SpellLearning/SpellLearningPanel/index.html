@@ -21,6 +21,7 @@
                 <span class="version-tag">v2.0.0</span>
             </div>
             <div class="header-right">
+                <button class="header-btn header-btn-wide" id="returnToTreeBtn" style="display:none;" title="Return to Spell Tree" data-i18n="tabs.return" data-i18n-title="tabs.returnTitle">Return</button>
                 <button class="header-btn header-btn-wide" id="tabSpellScan" data-tab="spellScan" title="Spell Scanner" data-i18n="tabs.scan" data-i18n-title="tabs.scanTitle">Scan</button>
                 <button class="header-btn header-btn-wide" id="tabSettings" data-tab="settings" title="Settings" data-i18n="tabs.settings" data-i18n-title="tabs.settingsTitle">Settings</button>
                 <button class="header-btn" id="fullscreenBtn" title="Toggle Fullscreen" data-i18n-title="buttons.toggleFullscreen">[ ]</button>
@@ -170,28 +171,22 @@
                     <div class="settings-block prm-block">
                         <div class="settings-block-header prm-header" id="prmToggleHeader">
                             <span class="settings-block-icon">[+]</span>
-                            <span class="settings-block-title" data-i18n="prm.extraSettings">Extra Settings</span>
+                            <span class="settings-block-title" data-i18n="prm.extraSettings">Pre Req Master</span>
                             <span class="prm-collapse-icon">[-]</span>
                         </div>
                         <div class="settings-block-content prm-content" id="prmContent">
 
-                            <!-- Master Enable Toggle -->
-                            <div class="setting-row prm-enable-row">
-                                <div class="setting-info">
-                                    <span class="setting-label" data-i18n="prm.enableLockPrereqs">Enable Lock Prerequisites</span>
-                                    <span class="setting-desc" data-i18n="prm.enableLockPrereqsDesc">Auto-generates lock prereqs when building tree</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="prmEnabled" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-
                             <!-- Tab Bar (outside scroll zone) -->
                             <div class="prm-tabs">
-                                <button class="prm-tab active" data-prm-tab="locks" data-i18n="prm.tabLocks">Pre Req Master</button>
+                                <span class="prm-tab active" data-prm-tab="locks">
+                                    <span data-i18n="prm.tabLocks">Pre Req Master</span>
+                                    <label class="toggle-switch toggle-sm prm-enable-toggle" title="Enable/Disable Lock Prerequisites">
+                                        <input type="checkbox" id="prmEnabled" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </span>
                                 <button class="prm-tab" data-prm-tab="core" data-i18n="prm.tabCore">Core</button>
-                                <button class="prm-tab" data-prm-tab="altpaths" data-i18n="prm.tabAltPaths">Alternate Pathways</button>
+                                <button class="prm-tab not-implemented" data-prm-tab="altpaths" data-i18n="prm.tabAltPaths" title="Not yet implemented">Alternate Pathways</button>
                             </div>
 
                             <!-- Split: Settings left, Preview right -->
@@ -201,6 +196,17 @@
 
                                     <!-- TAB: Pre Req Master (Locks) -->
                                     <div class="prm-tab-content" id="prmTabLocks">
+
+                                        <!-- Action Buttons (at top for easy access) -->
+                                        <div class="prm-actions">
+                                            <button id="prmApplyBtn" class="btn btn-primary" disabled data-i18n-html="prm.applyLocks">
+                                                <span class="btn-icon">[L]</span> Apply Locks
+                                            </button>
+                                            <button id="prmClearBtn" class="btn btn-secondary" disabled data-i18n-html="prm.clearLocks">
+                                                <span class="btn-icon">[X]</span> Clear
+                                            </button>
+                                            <span id="prmStatus" class="prm-status" data-i18n="prm.buildTreeFirst">Build a tree first</span>
+                                        </div>
 
                                         <!-- A. Global Lock % -->
                                         <div class="setting-row slider-row">
@@ -317,17 +323,6 @@
                                             </label>
                                         </div>
 
-                                        <!-- F. Action Buttons -->
-                                        <div class="prm-actions">
-                                            <button id="prmApplyBtn" class="btn btn-primary" disabled data-i18n-html="prm.applyLocks">
-                                                <span class="btn-icon">[L]</span> Apply Locks
-                                            </button>
-                                            <button id="prmClearBtn" class="btn btn-secondary" disabled data-i18n-html="prm.clearLocks">
-                                                <span class="btn-icon">[X]</span> Clear
-                                            </button>
-                                            <span id="prmStatus" class="prm-status" data-i18n="prm.buildTreeFirst">Build a tree first</span>
-                                        </div>
-
                                     </div><!-- /prmTabLocks -->
 
                                     <!-- TAB: Core Settings (Globe) -->
@@ -366,13 +361,17 @@
 
                                     <!-- TAB: Alternate Pathways (placeholder) -->
                                     <div class="prm-tab-content" id="prmTabAltPaths" style="display:none;">
-                                        <div class="setting-row">
+                                        <div class="not-implemented-overlay">
+                                            <span class="not-implemented-badge">Not Yet Implemented</span>
+                                            <span class="not-implemented-desc">Alternate pathway features are planned for a future update</span>
+                                        </div>
+                                        <div class="setting-row" style="opacity: 0.35; pointer-events: none;">
                                             <div class="setting-info">
                                                 <span class="setting-label" data-i18n="prm.bidirectionalSoftPrereqs">Bidirectional Soft Prerequisites</span>
                                                 <span class="setting-desc" data-i18n="prm.bidirectionalSoftPrereqsDesc">Soft prereqs work both ways — mastering either side makes the other learnable</span>
                                             </div>
                                             <label class="toggle-switch">
-                                                <input type="checkbox" id="altPathsBidirectional" checked>
+                                                <input type="checkbox" id="altPathsBidirectional">
                                                 <span class="toggle-slider"></span>
                                             </label>
                                         </div>
@@ -471,7 +470,7 @@
                         <button id="zoom-in" class="zoom-btn" title="Zoom In" data-i18n-title="buttons.zoomIn">+</button>
                         <span id="zoom-level">100%</span>
                         <button id="zoom-out" class="zoom-btn" title="Zoom Out" data-i18n-title="buttons.zoomOut">−</button>
-                        <span id="renderer-badge" class="renderer-badge" title="Active renderer" data-i18n-title="buttons.activeRenderer">SVG</span>
+                        <span id="renderer-badge" class="renderer-badge canvas" title="Renderer: CANVAS (Canvas 2D)" data-i18n-title="buttons.activeRenderer">Canvas</span>
                         <button id="heart-settings-btn" class="zoom-btn" title="Heart Animation Settings" data-i18n-title="buttons.heartSettings">⚙</button>
                         <button id="edit-tree-btn" class="zoom-btn" title="Edit Tree" data-i18n-title="buttons.editTree">✎</button>
                         <span id="edit-tools" class="edit-tools" style="display: none;">
@@ -498,6 +497,11 @@
                                     <input type="range" id="popup-globe-density" min="25" max="500" step="25" value="50">
                                     <span id="popup-globe-density-val">50</span></div>
                             </div>
+                            <div class="popup-row">
+                                <div class="popup-cell"><label data-i18n="settings.render.globeSize">Globe Size</label>
+                                    <input type="range" id="popup-globe-particle-radius" min="10" max="150" step="5" value="50">
+                                    <span id="popup-globe-particle-radius-val">50</span></div>
+                            </div>
                             <div class="popup-row-3">
                                 <div class="popup-cell"><label data-i18n="settings.render.animate">Animate</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label></div>
@@ -508,11 +512,11 @@
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.speed">Speed</label>
-                                    <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="1">
-                                    <span id="heart-pulse-speed-val">1.00</span></div>
+                                    <input type="range" id="heart-pulse-speed" min="0" max="1" step="0.05" value="0.5">
+                                    <span id="heart-pulse-speed-val">0.50</span></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.delay">Delay</label>
-                                    <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="0.75">
-                                    <span id="heart-pulse-delay-val">0.75s</span></div>
+                                    <input type="range" id="heart-pulse-delay" min="0" max="5" step="0.25" value="2.75">
+                                    <span id="heart-pulse-delay-val">2.75s</span></div>
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.dotMin">Dot Min</label>
@@ -562,11 +566,11 @@
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.density">Density</label>
-                                    <input type="range" id="starfield-density" min="50" max="500" step="25" value="200">
-                                    <span id="starfield-density-val">200</span></div>
+                                    <input type="range" id="starfield-density" min="50" max="500" step="25" value="250">
+                                    <span id="starfield-density-val">250</span></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.size">Size</label>
-                                    <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="2.5">
-                                    <span id="starfield-size-val">2.5</span></div>
+                                    <input type="range" id="starfield-size" min="0.5" max="5" step="0.5" value="3">
+                                    <span id="starfield-size-val">3</span></div>
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.seed">Seed</label>
@@ -576,51 +580,6 @@
                                     <div class="color-swatch" id="starfield-bg-color-swatch" data-target="starfield-bg-color" style="background: #000000;"></div>
                                     <input type="hidden" id="starfield-bg-color" value="#000000">
                                     <button class="popup-apply-btn" id="starfield-bg-apply" data-i18n="settings.render.apply" title="Apply">Apply</button></div>
-                            </div>
-
-                            <!-- Dividers -->
-                            <div class="popup-divider"></div>
-                            <div class="popup-section-title" data-i18n="settings.render.dividers">Dividers</div>
-
-                            <div class="popup-row-2">
-                                <div class="popup-cell">
-                                    <label data-i18n="settings.render.show">Show</label>
-                                    <label class="toggle-switch toggle-sm">
-                                        <input type="checkbox" id="popup-show-dividers" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="popup-cell">
-                                    <label data-i18n="settings.render.mode">Mode</label>
-                                    <select id="popup-divider-color-mode" class="popup-select">
-                                        <option value="school" data-i18n="settings.render.dividerModeSchool">School</option>
-                                        <option value="custom" data-i18n="settings.render.dividerModeCustom">Custom</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="popup-row-2">
-                                <div class="popup-cell">
-                                    <label data-i18n="settings.render.length">Length</label>
-                                    <input type="range" id="popup-divider-length" min="100" max="2000" step="50" value="1450">
-                                    <span id="popup-divider-length-val">1450</span>
-                                </div>
-                                <div class="popup-cell">
-                                    <label data-i18n="settings.render.width">Width</label>
-                                    <input type="range" id="popup-divider-width" min="1" max="10" step="1" value="3">
-                                    <span id="popup-divider-width-val">3px</span>
-                                </div>
-                            </div>
-                            <div class="popup-row-2">
-                                <div class="popup-cell">
-                                    <label data-i18n="settings.render.fade">Fade</label>
-                                    <input type="range" id="popup-divider-fade" min="0" max="100" step="5" value="50">
-                                    <span id="popup-divider-fade-val">50%</span>
-                                </div>
-                                <div class="popup-cell" id="popup-divider-custom-row" style="display: none;">
-                                    <label data-i18n="settings.render.dividerColor">Color</label>
-                                    <div class="color-swatch" id="divider-custom-color-swatch" data-target="popup-divider-custom-color" style="background: #ffffff;"></div>
-                                    <input type="hidden" id="popup-divider-custom-color" value="#ffffff">
-                                </div>
                             </div>
 
                             <!-- Connections -->
@@ -658,8 +617,40 @@
                                 </div>
                                 <div class="popup-cell">
                                     <label data-i18n="settings.render.font">Font</label>
-                                    <input type="range" id="popup-node-font-size" min="6" max="18" step="1" value="13">
-                                    <span id="popup-node-font-size-val">13</span>
+                                    <input type="range" id="popup-node-font-size" min="6" max="18" step="1" value="10">
+                                    <span id="popup-node-font-size-val">10</span>
+                                </div>
+                            </div>
+
+                            <!-- Tree Colors -->
+                            <div class="popup-divider"></div>
+                            <div class="popup-section-title" data-i18n="settings.render.treeColors">Tree Colors</div>
+
+                            <div class="tree-color-row">
+                                <div class="tree-color-item">
+                                    <div class="color-swatch" id="tree-color-destruction-swatch" data-target="tree-color-destruction" style="background: #ef4444;"></div>
+                                    <input type="hidden" id="tree-color-destruction" value="#ef4444">
+                                    <span>Destr</span>
+                                </div>
+                                <div class="tree-color-item">
+                                    <div class="color-swatch" id="tree-color-restoration-swatch" data-target="tree-color-restoration" style="background: #facc15;"></div>
+                                    <input type="hidden" id="tree-color-restoration" value="#facc15">
+                                    <span>Rest</span>
+                                </div>
+                                <div class="tree-color-item">
+                                    <div class="color-swatch" id="tree-color-alteration-swatch" data-target="tree-color-alteration" style="background: #22c55e;"></div>
+                                    <input type="hidden" id="tree-color-alteration" value="#22c55e">
+                                    <span>Alter</span>
+                                </div>
+                                <div class="tree-color-item">
+                                    <div class="color-swatch" id="tree-color-conjuration-swatch" data-target="tree-color-conjuration" style="background: #a855f7;"></div>
+                                    <input type="hidden" id="tree-color-conjuration" value="#a855f7">
+                                    <span>Conj</span>
+                                </div>
+                                <div class="tree-color-item">
+                                    <div class="color-swatch" id="tree-color-illusion-swatch" data-target="tree-color-illusion" style="background: #38bdf8;"></div>
+                                    <input type="hidden" id="tree-color-illusion" value="#38bdf8">
+                                    <span>Illus</span>
                                 </div>
                             </div>
                         </div>
@@ -1001,7 +992,25 @@
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                        
+
+                        <!-- Auto-Advance Learning Target -->
+                        <div class="setting-row">
+                            <div class="setting-info">
+                                <span class="setting-label">Auto-Advance Target</span>
+                                <span class="setting-desc">When a spell is mastered, auto-learn the next available spell</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="autoAdvanceLearningToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                                <select id="autoAdvanceModeSelect" class="setting-select" style="width:auto; min-width: 130px;">
+                                    <option value="branch">Next in Branch</option>
+                                    <option value="random">Random in School</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <!-- Overall XP Multiplier -->
                         <div class="setting-row slider-row">
                             <div class="setting-info">

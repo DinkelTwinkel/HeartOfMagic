@@ -130,6 +130,7 @@ void OnGameSaved(SKSE::SerializationInterface* a_intfc)
     logger::info("SKSE Serialization: Game saved");
     ProgressionManager::GetSingleton()->OnGameSaved(a_intfc);
     SpellEffectivenessHook::GetSingleton()->OnGameSaved(a_intfc);
+    DESTIntegration::OnGameSaved(a_intfc);
 }
 
 void OnGameLoaded(SKSE::SerializationInterface* a_intfc)
@@ -137,6 +138,7 @@ void OnGameLoaded(SKSE::SerializationInterface* a_intfc)
     logger::info("SKSE Serialization: Game loaded");
     ProgressionManager::GetSingleton()->OnGameLoaded(a_intfc);
     SpellEffectivenessHook::GetSingleton()->OnGameLoaded(a_intfc);
+    DESTIntegration::OnGameLoaded(a_intfc);
 }
 
 void OnRevert(SKSE::SerializationInterface* a_intfc)
@@ -144,6 +146,7 @@ void OnRevert(SKSE::SerializationInterface* a_intfc)
     logger::info("SKSE Serialization: Reverting (new game or loading different save)");
     ProgressionManager::GetSingleton()->OnRevert(a_intfc);
     SpellEffectivenessHook::GetSingleton()->OnRevert(a_intfc);
+    DESTIntegration::OnRevert(a_intfc);
 }
 
 // =============================================================================
@@ -171,12 +174,12 @@ void OnDataLoaded()
     SpellCastHandler::GetSingleton()->Register();
     logger::info("SpellCastHandler registered for XP tracking");
     
-    // Note: ISLIntegration removed - SpellTomeHook now handles spell tome interception directly in C++
+    // Initialize ISL/DEST integration (detects DEST_ISL.esp and enables event dispatch)
+    DESTIntegration::Initialize();
     
     // Register and initialize XP sources (spell casting only - tomes handled by SpellTomeHook)
     auto& registry = SpellLearning::XPSourceRegistry::GetSingleton();
     registry.Register<SpellLearning::SpellCastXPSource>();
-    // Note: ISLTomeXPSource removed - SpellTomeHook grants XP directly
     registry.InitializeAll();
     logger::info("XP sources registered: {} total, {} active", 
                  registry.GetAll().size(), registry.GetActive().size());
@@ -287,6 +290,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
     if (papyrus) {
         papyrus->Register(PapyrusAPI::RegisterFunctions);
         logger::info("Papyrus API registered - other mods can call SpellLearning.OpenMenu() etc.");
+        
+        // Register DEST_AliasExt native functions (ISL compatibility)
+        // This provides the same API that DontEatSpellTomes.dll exposes,
+        // allowing ISL's unmodified Papyrus scripts to work with our hook.
+        papyrus->Register(DESTIntegration::RegisterDESTAliasExtFunctions);
+        papyrus->Register(DESTIntegration::RegisterPapyrusFunctions);
+        logger::info("DEST/ISL Papyrus API registered - ISL compatibility active");
     } else {
         logger::error("Failed to get Papyrus interface - API functions unavailable");
     }

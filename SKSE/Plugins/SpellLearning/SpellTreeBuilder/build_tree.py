@@ -239,6 +239,235 @@ def print_available_shapes():
     print()
 
 
+def build_tree_from_data(spells, config_dict):
+    """
+    Core tree building — accepts spell list and config dict, returns tree data dict.
+
+    Used by both the CLI (via _main_impl) and the persistent server (server.py).
+
+    Args:
+        spells: List of spell dicts with formId, name, school, etc.
+        config_dict: Configuration dict (merged defaults + user overrides).
+
+    Returns:
+        dict: Tree data with schools, nodes, metadata. Raises on fatal errors.
+    """
+    config = dict(config_dict)  # Don't mutate caller's dict
+
+    # Seed setup
+    if config.get('seed') is not None:
+        used_seed = int(config['seed'])
+    else:
+        import time
+        used_seed = int(time.time() * 1000) % 1000000
+    random.seed(used_seed)
+    config['seed'] = used_seed
+
+    log_to_file(f"[build_tree_from_data] seed={used_seed}, {len(spells)} spells")
+
+    # Apply config defaults
+    config.setdefault('shape', 'organic')
+    config.setdefault('max_children_per_node', 3)
+    config.setdefault('top_themes_per_school', 8)
+    config.setdefault('auto_fix_unreachable', True)
+    config.setdefault('density', 0.6)
+    config.setdefault('symmetry', 0.3)
+    config.setdefault('convergence_chance', 0.4)
+    config.setdefault('branching_energy', {})
+
+    # Count schools
+    schools = {}
+    for spell in spells:
+        school = spell.get('school', 'Unknown')
+        schools[school] = schools.get(school, 0) + 1
+
+    # LLM setup
+    llm_auto = config.get('llm_auto_configure', {})
+    llm_groups_cfg = config.get('llm_groups', {})
+    llm_keyword_class = config.get('llm_keyword_classification', {})
+
+    llm_client = None
+    school_configs = {}
+    llm_groups_data = {}
+
+    # Group spells by school
+    school_spells = {}
+    for spell in spells:
+        school = spell.get('school', 'Unknown')
+        if not school or school in ('null', 'undefined', 'None', ''):
+            school = 'Hedge Wizard'
+        if school not in school_spells:
+            school_spells[school] = []
+        school_spells[school].append(spell)
+
+    # Initialize LLM client if any LLM feature is enabled
+    if llm_auto.get('enabled') or llm_groups_cfg.get('enabled') or llm_keyword_class.get('enabled'):
+        try:
+            from llm_client import create_client_from_config, auto_configure_school, auto_configure_all_schools, enhance_themed_group
+            llm_client = create_client_from_config(config)
+            log_to_file(f"[LLM] Client created: {llm_client is not None}")
+        except ImportError as e:
+            log_to_file(f"[LLM] Import error: {e}")
+
+    # LLM Auto-Config
+    if llm_client and llm_auto.get('enabled'):
+        prompt_template = llm_auto.get('prompt_template', '')
+        if prompt_template:
+            schools_sample_data = {}
+            for school_name in schools.keys():
+                sample = school_spells.get(school_name, [])[:10]
+                if sample:
+                    schools_sample_data[school_name] = sample
+
+            all_llm_results = auto_configure_all_schools(llm_client, schools_sample_data, prompt_template)
+
+            for school_name, llm_result in all_llm_results.items():
+                if llm_result:
+                    school_cfg = {
+                        'shape': llm_result.get('shape', 'organic'),
+                        'density': float(llm_result.get('density', 0.6)),
+                        'symmetry': float(llm_result.get('symmetry', 0.3)),
+                        'convergence_chance': float(llm_result.get('convergence_chance', 0.4)),
+                        'source': 'llm',
+                        'reasoning': llm_result.get('reasoning', '')
+                    }
+                    if 'branching_energy' in llm_result:
+                        be = llm_result['branching_energy']
+                        school_cfg['min_straight'] = int(be.get('min_straight', 2))
+                        school_cfg['max_straight'] = int(be.get('max_straight', 5))
+                        school_cfg['energy_randomness'] = float(be.get('randomness', 0.3))
+                    else:
+                        school_cfg['min_straight'] = int(llm_result.get('min_straight', 2))
+                        school_cfg['max_straight'] = int(llm_result.get('max_straight', 5))
+                        school_cfg['energy_randomness'] = 0.3
+                    school_configs[school_name] = school_cfg
+                    log_to_file(f"[LLM] {school_name} config: {school_cfg}")
+
+    # Fill in defaults for schools without LLM config
+    for school_name in schools.keys():
+        if school_name not in school_configs:
+            school_configs[school_name] = {
+                'shape': SCHOOL_DEFAULT_SHAPES.get(school_name, config.get('shape', 'organic')),
+                'density': config.get('density', 0.6),
+                'symmetry': config.get('symmetry', 0.3),
+                'min_straight': config.get('branching_energy', {}).get('min_straight', 2),
+                'max_straight': config.get('branching_energy', {}).get('max_straight', 5),
+                'convergence_chance': config.get('convergence_chance', 0.4),
+                'source': 'config'
+            }
+
+    config['school_configs'] = school_configs
+
+    # LLM Keyword Classification
+    if llm_client and llm_keyword_class.get('enabled'):
+        try:
+            from keyword_classifier import classify_all_schools
+            classify_all_schools(
+                client=llm_client,
+                spells=spells,
+                batch_size=llm_keyword_class.get('batch_size', 100),
+                min_confidence=llm_keyword_class.get('min_confidence', 40),
+                top_themes=config.get('top_themes_per_school', 8),
+            )
+        except Exception as e:
+            log_to_file(f"[LLM Keywords] Error: {e}")
+
+    # Fuzzy Analysis
+    fuzzy_data = None
+    if config.get('run_fuzzy_analysis', False) or config.get('return_fuzzy_data', False):
+        try:
+            fuzzy_data = compute_fuzzy_relationships(spells, top_n=5)
+        except Exception as e:
+            log_to_file(f"[Fuzzy] Error: {e}")
+            fuzzy_data = {'relationships': {}, 'similarity_scores': {}, 'groups': {}, 'themes': {}}
+
+    # Build trees
+    start_time = datetime.now()
+    tree_data = build_spell_trees(spells, config)
+
+    # LLM Groups (post tree building)
+    if llm_client and llm_groups_cfg.get('enabled'):
+        group_prompt = llm_groups_cfg.get('prompt_template', '')
+        if group_prompt:
+            try:
+                from theme_discovery import discover_themes_per_school as dtp
+                from spell_grouper import group_spells_by_themes
+
+                school_themes = dtp(spells, top_n=5)
+                for school_name, themes in school_themes.items():
+                    if not themes:
+                        continue
+                    school_spell_list = [s for s in spells if s.get('school') == school_name]
+                    grouped = group_spells_by_themes(school_spell_list, themes)
+                    for theme, theme_spells in list(grouped.items())[:3]:
+                        if len(theme_spells) < 2:
+                            continue
+                        group_result = enhance_themed_group(
+                            llm_client, [theme], theme_spells[:5], group_prompt
+                        )
+                        if group_result:
+                            group_key = f"{school_name}_{theme}"
+                            llm_groups_data[group_key] = {
+                                'school': school_name,
+                                'original_theme': theme,
+                                'spell_count': len(theme_spells),
+                                **group_result
+                            }
+            except Exception as e:
+                log_to_file(f"[LLM Groups] Error: {e}")
+
+    # Metadata
+    build_time = (datetime.now() - start_time).total_seconds()
+    tree_data['generatedAt'] = datetime.now().isoformat()
+    tree_data['generator'] = 'SpellTreeBuilder (Modular)'
+    tree_data['config'] = {
+        'shape': config['shape'],
+        'density': config.get('density', 0.6),
+        'symmetry': config.get('symmetry', 0.3),
+    }
+    tree_data['seed'] = config['seed']
+    tree_data['school_configs'] = school_configs
+
+    if llm_groups_data:
+        tree_data['llm_groups'] = llm_groups_data
+
+    if fuzzy_data and config.get('return_fuzzy_data', False):
+        tree_data['fuzzy_relationships'] = fuzzy_data.get('relationships', {})
+        tree_data['similarity_scores'] = fuzzy_data.get('similarity_scores', {})
+        tree_data['fuzzy_groups'] = fuzzy_data.get('groups', {})
+        tree_data['spell_themes'] = fuzzy_data.get('themes', {})
+
+    # Validate
+    validation = validate_tree(tree_data, config['max_children_per_node'])
+    summary = get_validation_summary(validation)
+
+    if summary['total_errors'] > 0 and config.get('auto_fix_unreachable', True):
+        total_fixes = 0
+        for school_name, school_data in tree_data.get('schools', {}).items():
+            nodes_list = school_data.get('nodes', [])
+            nodes_dict = {n['formId']: n for n in nodes_list}
+            root_id = school_data.get('root')
+            if root_id:
+                fixes = fix_unreachable_nodes(nodes_dict, root_id, config['max_children_per_node'])
+                if fixes > 0:
+                    total_fixes += fixes
+                    school_data['nodes'] = list(nodes_dict.values())
+
+        if total_fixes > 0:
+            validation = validate_tree(tree_data, config['max_children_per_node'])
+            summary = get_validation_summary(validation)
+
+    tree_data['build_time'] = build_time
+    tree_data['validation'] = {
+        'all_valid': summary['all_valid'],
+        'total_nodes': summary['total_nodes'],
+        'reachable_nodes': summary['reachable_nodes'],
+    }
+
+    log_to_file(f"[build_tree_from_data] done: {summary['total_nodes']} nodes, {build_time:.2f}s")
+    return tree_data
+
+
 def main():
     # Clear and initialize log file
     clear_log()
@@ -247,7 +476,7 @@ def main():
     log_to_file(f"Working dir: {Path.cwd()}")
     log_to_file(f"Script path: {__file__}")
     log_to_file(f"Args: {sys.argv}")
-    
+
     try:
         return _main_impl()
     except Exception as e:

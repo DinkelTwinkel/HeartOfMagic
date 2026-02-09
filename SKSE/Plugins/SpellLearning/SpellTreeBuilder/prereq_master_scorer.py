@@ -66,7 +66,11 @@ def build_text(spell_data):
 
 
 def compute_tfidf(documents):
-    """Compute TF-IDF vectors for a list of documents (token lists)."""
+    """Compute TF-IDF vectors for a list of documents (token lists).
+
+    Returns list of (vec, norm) tuples where vec is {token: weight} and
+    norm is the pre-computed L2 magnitude for fast cosine similarity.
+    """
     # Document frequency
     df = Counter()
     for doc in documents:
@@ -79,33 +83,38 @@ def compute_tfidf(documents):
     for token, freq in df.items():
         idf[token] = math.log((n_docs + 1) / (freq + 1)) + 1  # smoothed IDF
 
-    # TF-IDF vectors
+    # TF-IDF vectors with pre-computed norms
     vectors = []
     for doc in documents:
         tf = Counter(doc)
         total = len(doc) if doc else 1
         vec = {}
+        norm_sq = 0.0
         for token, count in tf.items():
-            vec[token] = (count / total) * idf.get(token, 1.0)
-        vectors.append(vec)
+            w = (count / total) * idf.get(token, 1.0)
+            vec[token] = w
+            norm_sq += w * w
+        vectors.append((vec, math.sqrt(norm_sq) if norm_sq > 0 else 0.0))
 
     return vectors
 
 
-def cosine_similarity(vec_a, vec_b):
-    """Compute cosine similarity between two sparse vectors (dicts)."""
-    # Dot product
-    dot = 0.0
-    for token in vec_a:
-        if token in vec_b:
-            dot += vec_a[token] * vec_b[token]
-
-    # Magnitudes
-    mag_a = math.sqrt(sum(v * v for v in vec_a.values())) if vec_a else 0
-    mag_b = math.sqrt(sum(v * v for v in vec_b.values())) if vec_b else 0
+def cosine_similarity(vec_a_norm, vec_b_norm):
+    """Compute cosine similarity between two (vec, norm) tuples."""
+    vec_a, mag_a = vec_a_norm
+    vec_b, mag_b = vec_b_norm
 
     if mag_a == 0 or mag_b == 0:
         return 0.0
+
+    # Dot product — iterate over the smaller vector for speed
+    if len(vec_a) > len(vec_b):
+        vec_a, vec_b = vec_b, vec_a
+    dot = 0.0
+    for token, wa in vec_a.items():
+        wb = vec_b.get(token)
+        if wb is not None:
+            dot += wa * wb
 
     return dot / (mag_a * mag_b)
 

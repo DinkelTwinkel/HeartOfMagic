@@ -536,6 +536,20 @@ window.onProgressUpdate = function(dataStr) {
             if (typeof recalculateNodeAvailability === 'function') {
                 recalculateNodeAvailability();
             }
+
+            // Auto-advance to next spell if enabled
+            if (settings.autoAdvanceLearning) {
+                var _masteredNode = state.treeData.nodes.find(function(n) {
+                    var nc = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(n) : n.formId;
+                    return nc === canonId;
+                });
+                if (_masteredNode) {
+                    // Small delay to let recalculateNodeAvailability() finish updating states
+                    setTimeout(function() {
+                        autoAdvanceLearningTarget(canonId, _masteredNode.school);
+                    }, 100);
+                }
+            }
         } else if (data.unlocked && !isMastered) {
             // C++ says unlocked but unified check says not mastered - log warning
             console.warn('[SpellLearning] C++ says unlocked but not mastered yet: ' + canonId);
@@ -573,6 +587,161 @@ window.onProgressUpdate = function(dataStr) {
         console.error('[SpellLearning] Failed to parse progress update:', e);
     }
 };
+
+// =============================================================================
+// AUTO-ADVANCE LEARNING TARGET
+// =============================================================================
+
+/**
+ * When a spell is mastered, automatically select the next spell to learn.
+ * Two modes:
+ *   'branch' - Pick next available child in the same branch (random if multiple)
+ *   'random' - Pick any available spell in the same school
+ *
+ * Works with both learningMode: 'perSchool' and 'single'.
+ */
+function autoAdvanceLearningTarget(masteredCanonId, school) {
+    if (!settings.autoAdvanceLearning) return;
+    if (!state.treeData || !state.treeData.nodes) return;
+
+    console.log('[SpellLearning] Auto-advance: checking for next target after mastering ' + masteredCanonId + ' (' + school + ')');
+
+    var candidate = null;
+
+    if (settings.autoAdvanceMode === 'branch') {
+        // Find the mastered node to get its children
+        var masteredNode = state.treeData.nodes.find(function(n) {
+            var nc = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(n) : n.formId;
+            return nc === masteredCanonId;
+        });
+
+        if (masteredNode && masteredNode.children && masteredNode.children.length > 0) {
+            // Get child nodes that are 'available' (prereqs met, not learning/unlocked)
+            var availableChildren = [];
+            masteredNode.children.forEach(function(childId) {
+                var childNode = state.treeData.nodes.find(function(n) {
+                    return n.formId === childId || n.id === childId;
+                });
+                if (childNode && childNode.state === 'available') {
+                    availableChildren.push(childNode);
+                }
+            });
+
+            if (availableChildren.length > 0) {
+                // Pick randomly from available children
+                candidate = availableChildren[Math.floor(Math.random() * availableChildren.length)];
+                console.log('[SpellLearning] Auto-advance (branch): found ' + availableChildren.length + ' available children, picked ' + (candidate.name || candidate.formId));
+            }
+        }
+
+        // Fallback: if no children available, search entire school
+        if (!candidate) {
+            candidate = _findRandomAvailableInSchool(school);
+            if (candidate) {
+                console.log('[SpellLearning] Auto-advance (branch fallback): picked ' + (candidate.name || candidate.formId) + ' from school');
+            }
+        }
+    } else {
+        // 'random' mode - any available spell in the school
+        candidate = _findRandomAvailableInSchool(school);
+        if (candidate) {
+            console.log('[SpellLearning] Auto-advance (random): picked ' + (candidate.name || candidate.formId));
+        }
+    }
+
+    if (!candidate) {
+        console.log('[SpellLearning] Auto-advance: no available spells found in ' + school);
+        return;
+    }
+
+    // Set the learning target using the same flow as onLearnClick()
+    var candidateCanonId = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(candidate) : candidate.formId;
+
+    // In 'single' mode, clear ALL other learning targets first
+    if (settings.learningMode === 'single') {
+        for (var s in state.learningTargets) {
+            if (state.learningTargets[s]) {
+                var oldTargetId = state.learningTargets[s];
+                if (window.callCpp) {
+                    window.callCpp('ClearLearningTarget', JSON.stringify({ school: s }));
+                }
+                state.playerKnownSpells.delete(oldTargetId);
+
+                // Reset old target node state
+                if (state.treeData && state.treeData.nodes) {
+                    var oldNode = state.treeData.nodes.find(function(n) { return n.formId === oldTargetId; });
+                    if (oldNode && oldNode.state === 'learning') {
+                        oldNode.state = 'available';
+                    }
+                }
+            }
+        }
+        state.learningTargets = {};
+    } else {
+        // perSchool mode: clear existing target in same school if any
+        var existingTarget = state.learningTargets[candidate.school];
+        if (existingTarget && existingTarget !== candidate.formId) {
+            state.playerKnownSpells.delete(existingTarget);
+            if (state.treeData && state.treeData.nodes) {
+                var oldNode = state.treeData.nodes.find(function(n) { return n.formId === existingTarget; });
+                if (oldNode && oldNode.state === 'learning') {
+                    oldNode.state = 'available';
+                }
+            }
+        }
+    }
+
+    // Set the new learning target
+    var prereqs = candidate.prerequisites || [];
+    var reqXP = candidate.requiredXP || getXPForTier(candidate.level) || 100;
+
+    if (window.callCpp) {
+        window.callCpp('SetLearningTarget', JSON.stringify({
+            school: candidate.school,
+            formId: candidate.formId,
+            prerequisites: prereqs,
+            requiredXP: reqXP
+        }));
+    }
+    state.learningTargets[candidate.school] = candidate.formId;
+
+    // Set node state to 'learning'
+    if (candidate.state !== 'unlocked') {
+        candidate.state = 'learning';
+    }
+
+    // Rebuild learning paths for CanvasRenderer
+    if (typeof CanvasRenderer !== 'undefined' && CanvasRenderer._nodeMap) {
+        CanvasRenderer._buildLearningPaths();
+        CanvasRenderer.triggerLearningAnimation(candidate.id);
+        CanvasRenderer._needsRender = true;
+    }
+
+    setTreeStatus('Now learning: ' + (candidate.name || candidate.formId));
+    console.log('[SpellLearning] Auto-advanced to: ' + (candidate.name || candidate.formId) + ' (' + candidate.school + ')');
+
+    // Update node visuals
+    WheelRenderer.updateNodeStates();
+    if (typeof SmartRenderer !== 'undefined' && SmartRenderer.refresh) {
+        SmartRenderer.refresh();
+    }
+}
+
+/**
+ * Helper: find a random available (non-root) spell in the given school.
+ */
+function _findRandomAvailableInSchool(school) {
+    if (!state.treeData || !state.treeData.nodes) return null;
+
+    var available = state.treeData.nodes.filter(function(n) {
+        return n.school === school &&
+               n.state === 'available' &&
+               !n.isRoot;
+    });
+
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)];
+}
 
 window.onSpellReady = function(dataStr) {
     console.log('[SpellLearning] Spell ready to unlock:', dataStr);

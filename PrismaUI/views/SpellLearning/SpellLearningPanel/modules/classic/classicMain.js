@@ -30,6 +30,7 @@ var TreeGrowthClassic = {
         radialBias: 50,
         centerMask: 3,
         spellMatching: 'layered',
+        dynamicGridExpansion: true,  // Expand grid when schools run out of space
         tierZones: {
             Novice:     { min: 0,  max: 40 },
             Apprentice: { min: 10, max: 55 },

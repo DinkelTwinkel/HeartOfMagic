@@ -46,6 +46,9 @@ var ClassicLayout = {
         this._useThemeScoring = (matchMode === 'layered' || matchMode === 'smart');
         this._smartThemes = (matchMode === 'smart');
 
+        // Dynamic grid expansion: expand grid when a school runs out of placement space
+        this._dynamicGridExpansion = ls.dynamicGridExpansion !== false;
+
         var mode = baseData.mode || 'sun';
         var grid = baseData.grid;
         var baseSchools = baseData.schools || [];
@@ -737,6 +740,9 @@ var ClassicLayout = {
                 return la - lb;
             });
 
+            var expansionAttempts = 0;
+            var MAX_EXPANSIONS = 3;
+
             // For each unplaced node, find nearest open grid point to any placed neighbor
             for (var fp = 0; fp < unplacedIds.length && openGridPts.length > 0; fp++) {
                 var fpId = unplacedIds[fp];
@@ -790,7 +796,41 @@ var ClassicLayout = {
                     nearGridIdx = openGridPts[0];
                 }
 
-                if (nearGridIdx < 0) break; // no more grid space
+                // Dynamic grid expansion: grow grid when out of space
+                if (nearGridIdx < 0 && this._dynamicGridExpansion && expansionAttempts < MAX_EXPANSIONS) {
+                    expansionAttempts++;
+                    var remaining = unplacedIds.length - fp;
+                    var oldCount = schoolGridPts.length;
+                    schoolGridPts = this._densifyGrid(schoolGridPts, Math.max(remaining, 20), tierSpacing);
+                    console.log('[ClassicLayout] Dynamic expansion #' + expansionAttempts +
+                        ': ' + oldCount + ' -> ' + schoolGridPts.length + ' points (' + remaining + ' nodes remaining)');
+
+                    // Rebuild grid graph with expanded points
+                    gridGraph = this._buildGridGraph(schoolGridPts, tierSpacing);
+
+                    // Rebuild occupied array (preserve existing placements)
+                    var newOccupied = new Array(gridGraph.points.length);
+                    for (var noi = 0; noi < newOccupied.length; noi++) newOccupied[noi] = false;
+                    // Mark points that match existing placed positions
+                    for (var poi = 0; poi < positioned.length; poi++) {
+                        if (positioned[poi].gridIdx !== undefined && positioned[poi].gridIdx < newOccupied.length) {
+                            newOccupied[positioned[poi].gridIdx] = true;
+                        }
+                    }
+                    occupied = newOccupied;
+
+                    // Rebuild open grid points list
+                    openGridPts = [];
+                    for (var nogi = 0; nogi < gridGraph.points.length; nogi++) {
+                        if (!occupied[nogi]) openGridPts.push(nogi);
+                    }
+
+                    // Retry this node
+                    fp--;
+                    continue;
+                }
+
+                if (nearGridIdx < 0) break; // truly out of space after max expansions
 
                 occupied[nearGridIdx] = true;
                 placed[fpId] = true;

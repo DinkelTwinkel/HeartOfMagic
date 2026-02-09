@@ -9,6 +9,7 @@
 #include "SpellCastHandler.h"
 #include "PapyrusAPI.h"
 #include "PythonInstaller.h"
+#include "PythonBridge.h"
 
 // =============================================================================
 // JSON HELPER - Safe value accessor that handles null values
@@ -2611,258 +2612,57 @@ void UIManager::OnLogMessage(const char* argument)
 }
 
 // =============================================================================
-// PROCEDURAL PYTHON GENERATION
+// PYTHON PATH FIX FOR MO2 USVFS
+// =============================================================================
+
+// =============================================================================
+// PROCEDURAL PYTHON GENERATION (via persistent PythonBridge)
 // =============================================================================
 
 void UIManager::OnProceduralPythonGenerate(const char* argument)
 {
     logger::info("UIManager: ProceduralPythonGenerate callback triggered");
-    
+
     auto* instance = GetSingleton();
     if (!instance || !instance->m_prismaUI) return;
-    
+
     auto startTime = std::chrono::high_resolution_clock::now();
-    
+
     try {
-        // Parse incoming request
         nlohmann::json request = nlohmann::json::parse(argument);
-        auto spells = request.value("spells", nlohmann::json::array());
-        auto config = request.value("config", nlohmann::json::object());
-        
-        logger::info("UIManager: Processing {} spells with Python", spells.size());
 
-        // Get paths - use TEMP folder to avoid USVFS issues (Python can't see USVFS virtual paths)
-        std::filesystem::path tempDir;
-        if (const char* temp = std::getenv("TEMP")) {
-            tempDir = temp;
-        } else if (const char* tmp = std::getenv("TMP")) {
-            tempDir = tmp;
-        } else {
-            tempDir = std::filesystem::temp_directory_path();
-        }
-        auto dataPath = tempDir / "SpellLearning";
-        std::filesystem::create_directories(dataPath);
+        nlohmann::json payload;
+        payload["spells"] = request.value("spells", nlohmann::json::array());
+        payload["config"] = request.value("config", nlohmann::json::object());
 
-        auto inputPath = dataPath / "procedural_input.json";
-        auto outputPath = dataPath / "procedural_output.json";
-        
-        // Write input file (just the spells array wrapped for the tool)
-        nlohmann::json inputData;
-        inputData["spells"] = spells;
-        
-        {
-            std::ofstream inputFile(inputPath);
-            if (!inputFile.is_open()) {
-                throw std::runtime_error("Failed to create input file");
-            }
-            inputFile << inputData.dump();
-        }
-        
-        // Write config file (full config including LLM options, shape, etc.)
-        auto configPath = dataPath / "procedural_config.json";
-        {
-            std::ofstream configFile(configPath);
-            if (!configFile.is_open()) {
-                throw std::runtime_error("Failed to create config file");
-            }
-            configFile << config.dump();
-            logger::info("UIManager: Config written: {}", config.dump().substr(0, 200));
-        }
-        
-        // Build Python command
-        // IMPORTANT: USVFS paths don't work for child processes spawned by std::system()
-        // We need to find the REAL filesystem path to Python
+        logger::info("UIManager: Sending build_tree to PythonBridge ({} spells)", payload["spells"].size());
 
-        // First, check the relative path which parent process can see via USVFS
-        std::string toolDir = "Data/SKSE/Plugins/SpellLearning/SpellTreeBuilder";
-        std::string pythonScript = toolDir + "/build_tree.py";
+        PythonBridge::GetSingleton()->SendCommand("build_tree", payload.dump(),
+            [instance, startTime](bool success, const std::string& result) {
+                auto endTime = std::chrono::high_resolution_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
 
-        // Check if the tool exists via USVFS
-        if (!std::filesystem::exists(pythonScript)) {
-            toolDir = "SpellTreeBuilder";
-            pythonScript = toolDir + "/build_tree.py";
-        }
-
-        // Try to find the REAL path for child process to use
-        // MO2 usually runs from MO2/Stock Game/ with Overwrite at MO2/overwrite/
-        std::string pythonExe = "python";
-        std::string realPythonPath;
-        std::string realScriptPath;
-
-        // Get current directory - under MO2 this is typically Stock Game folder
-        auto cwd = std::filesystem::current_path();
-        logger::info("UIManager: Current working directory: {}", cwd.string());
-
-        // Try MO2 Overwrite path (2 levels up from Stock Game, then into overwrite)
-        auto mo2Overwrite = cwd.parent_path() / "overwrite" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-        logger::info("UIManager: Checking MO2 Overwrite: {}", mo2Overwrite.string());
-
-        // Check Python locations in order of preference
-        std::vector<std::filesystem::path> pythonPaths = {
-            // MO2 Overwrite (where runtime installer puts Python)
-            mo2Overwrite / "python" / "python.exe",
-            mo2Overwrite / ".venv" / "Scripts" / "python.exe"
-        };
-
-        std::vector<std::filesystem::path> scriptPaths = {
-            mo2Overwrite / "build_tree.py"
-        };
-
-        // Search MO2 mods folder for any mod containing SpellTreeBuilder
-        auto modsFolder = cwd.parent_path() / "mods";
-        if (std::filesystem::exists(modsFolder) && std::filesystem::is_directory(modsFolder)) {
-            for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-                if (entry.is_directory()) {
-                    auto modSpellTreeBuilder = entry.path() / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-                    auto modPython = modSpellTreeBuilder / "python" / "python.exe";
-                    auto modVenv = modSpellTreeBuilder / ".venv" / "Scripts" / "python.exe";
-                    auto modScript = modSpellTreeBuilder / "build_tree.py";
-
-                    if (std::filesystem::exists(modPython)) {
-                        pythonPaths.push_back(modPython);
-                    }
-                    if (std::filesystem::exists(modVenv)) {
-                        pythonPaths.push_back(modVenv);
-                    }
-                    if (std::filesystem::exists(modScript)) {
-                        scriptPaths.push_back(modScript);
-                        logger::info("UIManager: Found SpellTreeBuilder in mod: {}", entry.path().filename().string());
-                    }
+                nlohmann::json response;
+                if (success) {
+                    response["success"] = true;
+                    response["treeData"] = result;  // Already JSON string from PythonBridge
+                    response["elapsed"] = elapsed;
+                    logger::info("UIManager: build_tree completed in {:.2f}s", elapsed);
+                } else {
+                    response["success"] = false;
+                    response["error"] = result;
+                    logger::error("UIManager: build_tree failed: {}", result);
                 }
-            }
-        }
 
-        // Fallback for Vortex / Manual install: files are in real Data folder
-        // These paths work because they're not virtualized
-        auto realDataPath = cwd / "Data" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-        pythonPaths.push_back(realDataPath / "python" / "python.exe");
-        pythonPaths.push_back(realDataPath / ".venv" / "Scripts" / "python.exe");
-        scriptPaths.push_back(realDataPath / "build_tree.py");
+                instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
+            });
 
-        // Also check relative to cwd directly (some setups run from Data folder)
-        auto cwdRelative = cwd / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-        pythonPaths.push_back(cwdRelative / "python" / "python.exe");
-        scriptPaths.push_back(cwdRelative / "build_tree.py");
-
-        // Find Python
-        for (const auto& path : pythonPaths) {
-            if (std::filesystem::exists(path)) {
-                realPythonPath = path.string();
-                logger::info("UIManager: Found Python at: {}", realPythonPath);
-                break;
-            }
-        }
-
-        // Find script
-        for (const auto& path : scriptPaths) {
-            if (std::filesystem::exists(path)) {
-                realScriptPath = path.string();
-                logger::info("UIManager: Found build_tree.py at: {}", realScriptPath);
-                break;
-            }
-        }
-
-        if (realPythonPath.empty() || realScriptPath.empty()) {
-            // Fallback to system Python
-            logger::warn("UIManager: Could not find Python/script in real paths. Python: '{}', Script: '{}'",
-                realPythonPath, realScriptPath);
-            if (realPythonPath.empty()) {
-                realPythonPath = "python";
-            }
-            if (realScriptPath.empty()) {
-                realScriptPath = pythonScript;
-            }
-        }
-
-        // Build command line with ABSOLUTE paths
-        // NOTE: cmd.exe has special quote handling - when there are multiple quoted arguments,
-        // we need to wrap the entire command in outer quotes: cmd /c ""exe" "arg1" "arg2""
-        std::string innerCmd = "\"" + realPythonPath + "\" \"" + realScriptPath + "\"";
-        innerCmd += " -i \"" + inputPath.string() + "\"";
-        innerCmd += " -o \"" + outputPath.string() + "\"";
-        innerCmd += " --config \"" + configPath.string() + "\"";
-
-        // Capture stderr to a file for error reporting
-        auto stderrPath = inputPath.parent_path() / "procedural_stderr.txt";
-        innerCmd += " 2>\"" + stderrPath.string() + "\"";
-
-        // Wrap for cmd.exe: cmd /c "..."
-        std::string cmd = "cmd /c \"" + innerCmd + "\"";
-
-        logger::info("UIManager: Executing: {}", cmd);
-
-        // Execute Python
-        int result = std::system(cmd.c_str());
-
-        if (result != 0) {
-            // Try to read stderr for better error message
-            std::string errorDetails = "Python script failed with code " + std::to_string(result);
-            if (std::filesystem::exists(stderrPath)) {
-                std::ifstream stderrFile(stderrPath);
-                if (stderrFile.is_open()) {
-                    std::stringstream buffer;
-                    buffer << stderrFile.rdbuf();
-                    std::string stderrContent = buffer.str();
-                    if (!stderrContent.empty()) {
-                        // Truncate to first 500 chars for log readability
-                        if (stderrContent.length() > 500) {
-                            stderrContent = stderrContent.substr(0, 500) + "...";
-                        }
-                        logger::error("UIManager: Python stderr: {}", stderrContent);
-                        errorDetails += ": " + stderrContent;
-                    }
-                }
-                std::filesystem::remove(stderrPath);
-            }
-            throw std::runtime_error(errorDetails);
-        }
-
-        // Clean up stderr file on success
-        if (std::filesystem::exists(stderrPath)) {
-            std::filesystem::remove(stderrPath);
-        }
-        
-        // Read output
-        if (!std::filesystem::exists(outputPath)) {
-            throw std::runtime_error("Python did not create output file");
-        }
-        
-        std::string treeJson;
-        {
-            std::ifstream outputFile(outputPath);
-            if (!outputFile.is_open()) {
-                throw std::runtime_error("Failed to read output file");
-            }
-            std::stringstream buffer;
-            buffer << outputFile.rdbuf();
-            treeJson = buffer.str();
-        }
-        
-        // Calculate elapsed time
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
-        
-        // Clean up temp files
-        std::filesystem::remove(inputPath);
-        std::filesystem::remove(outputPath);
-        std::filesystem::remove(configPath);
-        
-        // Send success response
-        nlohmann::json response;
-        response["success"] = true;
-        response["treeData"] = treeJson;
-        response["elapsed"] = elapsed;
-        
-        logger::info("UIManager: Python procedural generation completed in {:.2f}s", elapsed);
-        instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
-        
     } catch (const std::exception& e) {
-        logger::error("UIManager: Python procedural generation failed: {}", e.what());
-        
+        logger::error("UIManager: ProceduralPythonGenerate failed: {}", e.what());
+
         nlohmann::json response;
         response["success"] = false;
         response["error"] = e.what();
-        
         instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
     }
 }
@@ -2874,189 +2674,42 @@ void UIManager::OnProceduralPythonGenerate(const char* argument)
 void UIManager::OnPreReqMasterScore(const char* argument)
 {
     logger::info("UIManager: PreReqMasterScore callback triggered");
-    
+
     auto* instance = GetSingleton();
     if (!instance || !instance->m_prismaUI) return;
-    
+
     auto startTime = std::chrono::high_resolution_clock::now();
-    
+
     try {
-        // Get temp directory
-        std::filesystem::path tempDir;
-        if (const char* temp = std::getenv("TEMP")) {
-            tempDir = temp;
-        } else if (const char* tmp = std::getenv("TMP")) {
-            tempDir = tmp;
-        } else {
-            tempDir = std::filesystem::temp_directory_path();
-        }
-        auto dataPath = tempDir / "SpellLearning";
-        std::filesystem::create_directories(dataPath);
+        // argument is already the JSON payload for PRM scoring
+        logger::info("UIManager: Sending prm_score to PythonBridge");
 
-        auto inputPath = dataPath / "prm_input.json";
-        auto outputPath = dataPath / "prm_output.json";
-        
-        // Write input file (the full PRM scoring payload)
-        {
-            std::ofstream inputFile(inputPath);
-            if (!inputFile.is_open()) {
-                throw std::runtime_error("Failed to create PRM input file");
-            }
-            inputFile << argument;
-        }
-        
-        logger::info("UIManager: PRM input written to {}", inputPath.string());
+        std::string payload(argument);
 
-        // Find Python and prereq_master_scorer.py using same search logic as ProceduralPythonGenerate
-        std::string realPythonPath;
-        std::string realScriptPath;
+        PythonBridge::GetSingleton()->SendCommand("prm_score", payload,
+            [instance, startTime](bool success, const std::string& result) {
+                auto endTime = std::chrono::high_resolution_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
 
-        auto cwd = std::filesystem::current_path();
+                logger::info("UIManager: prm_score completed in {:.2f}s (success: {})", elapsed, success);
 
-        // MO2 Overwrite path
-        auto mo2Overwrite = cwd.parent_path() / "overwrite" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-
-        std::vector<std::filesystem::path> pythonPaths = {
-            mo2Overwrite / "python" / "python.exe",
-            mo2Overwrite / ".venv" / "Scripts" / "python.exe"
-        };
-
-        std::vector<std::filesystem::path> scriptPaths = {
-            mo2Overwrite / "prereq_master_scorer.py"
-        };
-
-        // Search MO2 mods folder
-        auto modsFolder = cwd.parent_path() / "mods";
-        if (std::filesystem::exists(modsFolder) && std::filesystem::is_directory(modsFolder)) {
-            for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
-                if (entry.is_directory()) {
-                    auto modSTB = entry.path() / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-                    auto modPython = modSTB / "python" / "python.exe";
-                    auto modVenv = modSTB / ".venv" / "Scripts" / "python.exe";
-                    auto modScript = modSTB / "prereq_master_scorer.py";
-
-                    if (std::filesystem::exists(modPython)) pythonPaths.push_back(modPython);
-                    if (std::filesystem::exists(modVenv)) pythonPaths.push_back(modVenv);
-                    if (std::filesystem::exists(modScript)) scriptPaths.push_back(modScript);
+                if (success) {
+                    // result is already valid JSON from the scorer
+                    instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", result.c_str());
+                } else {
+                    nlohmann::json response;
+                    response["success"] = false;
+                    response["error"] = result;
+                    instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", response.dump().c_str());
                 }
-            }
-        }
+            });
 
-        // Fallback: real Data folder (Vortex / manual install)
-        auto realDataPath = cwd / "Data" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-        pythonPaths.push_back(realDataPath / "python" / "python.exe");
-        pythonPaths.push_back(realDataPath / ".venv" / "Scripts" / "python.exe");
-        scriptPaths.push_back(realDataPath / "prereq_master_scorer.py");
-
-        // CWD relative
-        auto cwdRelative = cwd / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
-        pythonPaths.push_back(cwdRelative / "python" / "python.exe");
-        scriptPaths.push_back(cwdRelative / "prereq_master_scorer.py");
-
-        // Find Python
-        for (const auto& path : pythonPaths) {
-            if (std::filesystem::exists(path)) {
-                realPythonPath = path.string();
-                logger::info("UIManager: PRM found Python at: {}", realPythonPath);
-                break;
-            }
-        }
-
-        // Find script
-        for (const auto& path : scriptPaths) {
-            if (std::filesystem::exists(path)) {
-                realScriptPath = path.string();
-                logger::info("UIManager: PRM found prereq_master_scorer.py at: {}", realScriptPath);
-                break;
-            }
-        }
-
-        if (realPythonPath.empty() || realScriptPath.empty()) {
-            logger::warn("UIManager: PRM could not find Python or scorer script. Python: '{}', Script: '{}'",
-                realPythonPath, realScriptPath);
-            if (realPythonPath.empty()) realPythonPath = "python";
-            if (realScriptPath.empty()) {
-                throw std::runtime_error("prereq_master_scorer.py not found");
-            }
-        }
-
-        // Build command: python prereq_master_scorer.py -i input.json -o output.json
-        std::string innerCmd = "\"" + realPythonPath + "\" \"" + realScriptPath + "\"";
-        innerCmd += " -i \"" + inputPath.string() + "\"";
-        innerCmd += " -o \"" + outputPath.string() + "\"";
-
-        // Capture stderr
-        auto stderrPath = dataPath / "prm_stderr.txt";
-        innerCmd += " 2>\"" + stderrPath.string() + "\"";
-
-        std::string cmd = "cmd /c \"" + innerCmd + "\"";
-        logger::info("UIManager: PRM executing: {}", cmd);
-
-        // Execute Python
-        int result = std::system(cmd.c_str());
-
-        if (result != 0) {
-            std::string errorDetails = "PRM Python script failed with code " + std::to_string(result);
-            if (std::filesystem::exists(stderrPath)) {
-                std::ifstream stderrFile(stderrPath);
-                if (stderrFile.is_open()) {
-                    std::stringstream buffer;
-                    buffer << stderrFile.rdbuf();
-                    std::string stderrContent = buffer.str();
-                    if (!stderrContent.empty()) {
-                        if (stderrContent.length() > 500) {
-                            stderrContent = stderrContent.substr(0, 500) + "...";
-                        }
-                        logger::error("UIManager: PRM Python stderr: {}", stderrContent);
-                        errorDetails += ": " + stderrContent;
-                    }
-                }
-                std::filesystem::remove(stderrPath);
-            }
-            throw std::runtime_error(errorDetails);
-        }
-
-        // Clean up stderr
-        if (std::filesystem::exists(stderrPath)) {
-            std::filesystem::remove(stderrPath);
-        }
-        
-        // Read output
-        if (!std::filesystem::exists(outputPath)) {
-            throw std::runtime_error("PRM Python did not create output file");
-        }
-        
-        std::string resultJson;
-        {
-            std::ifstream outputFile(outputPath);
-            if (!outputFile.is_open()) {
-                throw std::runtime_error("Failed to read PRM output file");
-            }
-            std::stringstream buffer;
-            buffer << outputFile.rdbuf();
-            resultJson = buffer.str();
-        }
-        
-        // Calculate elapsed time
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
-        
-        // Clean up temp files
-        std::filesystem::remove(inputPath);
-        std::filesystem::remove(outputPath);
-        
-        logger::info("UIManager: PRM Python scoring completed in {:.2f}s", elapsed);
-        
-        // Send result directly (it's already valid JSON from the scorer)
-        instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", resultJson.c_str());
-        
     } catch (const std::exception& e) {
-        logger::error("UIManager: PRM Python scoring failed: {}", e.what());
-        
+        logger::error("UIManager: PRM scoring failed: {}", e.what());
+
         nlohmann::json response;
         response["success"] = false;
         response["error"] = e.what();
-        
         instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", response.dump().c_str());
     }
 }

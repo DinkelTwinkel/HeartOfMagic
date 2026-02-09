@@ -3700,6 +3700,80 @@ body {
     margin-right: auto;
 }
 
+/* PRM enable toggle inside tab button */
+.prm-enable-toggle {
+    vertical-align: middle;
+    margin-left: 6px;
+    display: inline-block;
+}
+
+/* PRM split area disabled state (when enable toggle is OFF) */
+.prm-split.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+/* Not-implemented tab style */
+.prm-tab.not-implemented {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Not-implemented overlay for tab content */
+.not-implemented-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    gap: 8px;
+}
+
+.not-implemented-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: rgba(184, 140, 60, 0.15);
+    border: 1px solid rgba(184, 140, 60, 0.3);
+    border-radius: 4px;
+    color: var(--accent-gold, #b8a878);
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.not-implemented-desc {
+    color: var(--text-muted, #8a8070);
+    font-size: 0.8em;
+    text-align: center;
+    max-width: 260px;
+}
+
+/* Tree color pickers row */
+.tree-color-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 8px 6px;
+    gap: 4px;
+}
+
+.tree-color-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.tree-color-item .color-swatch {
+    width: 28px;
+    height: 28px;
+}
+
+.tree-color-item span {
+    font-size: 9px;
+    color: var(--text-muted, #8a8070);
+    letter-spacing: 0.3px;
+}
+
 .prm-scoring-note {
     font-size: 0.7em;
     color: var(--text-muted, #8a8070);

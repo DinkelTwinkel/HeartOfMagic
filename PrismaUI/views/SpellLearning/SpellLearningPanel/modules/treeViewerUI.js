@@ -70,7 +70,7 @@ function _findNodeById(id) {
 // Smart renderer - auto-selects best renderer based on node count
 // Tiers: SVG (<200), Canvas 2D (200+)
 var SmartRenderer = {
-    activeRenderer: 'svg',  // 'svg' or 'canvas'
+    activeRenderer: 'canvas',  // 'svg' or 'canvas' — matches forceRenderer default
 
     // Thresholds for renderer selection
     svgThreshold: 200,      // Use SVG below this, Canvas 2D above
@@ -235,7 +235,10 @@ function initializeTreeViewer() {
     }
     
     state.treeInitialized = true;
-    
+
+    // Update renderer badge to reflect actual renderer (defaults to canvas)
+    SmartRenderer.updateRendererBadge();
+
     // Zoom controls - use SmartRenderer for auto renderer selection
     document.getElementById('zoom-in').addEventListener('click', function() {
         SmartRenderer.setZoom(SmartRenderer.getZoom() + TREE_CONFIG.zoom.step);

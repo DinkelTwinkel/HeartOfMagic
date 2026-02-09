@@ -62,6 +62,7 @@ var ClassicSettings = {
         var radialBias = s.radialBias !== undefined ? s.radialBias : 50;
         var centerMask = s.centerMask !== undefined ? s.centerMask : 3;
         var spellMatching = s.spellMatching || 'layered';
+        var dynamicExpansion = s.dynamicGridExpansion !== false;
         var H = TreePreviewUtils.settingHTML;
 
         // Toggle button styles
@@ -89,6 +90,15 @@ var ClassicSettings = {
                 H('Spread', 'tgClassicSpread', 0, 100, 5, spread) +
                 H('Radial Bias', 'tgClassicRadialBias', 0, 100, 5, radialBias) +
                 H('Globe Mask', 'tgClassicCenterMask', 0, 10, 1, centerMask, ' tiers') +
+            '</div>' +
+
+            // --- Dynamic Grid Expansion toggle ---
+            '<div style="display:flex; align-items:center; gap:8px; margin:4px 4px 6px; font-size:10px;">' +
+                '<label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:rgba(184,168,120,0.6);">' +
+                    '<input type="checkbox" id="tgClassicDynExpand"' + (dynamicExpansion ? ' checked' : '') + '>' +
+                    'Dynamic Grid Expansion' +
+                '</label>' +
+                '<span style="color:rgba(184,168,120,0.3); font-size:9px;" title="Automatically expand grid when a school runs out of placement space (e.g. large Destruction trees)">(?)</span>' +
             '</div>' +
 
             // --- Tier zone bar chart ---
@@ -213,6 +223,14 @@ var ClassicSettings = {
                     });
                 }
             })(modes[mi]);
+        }
+
+        // Dynamic Grid Expansion toggle
+        var dynExpandCheck = document.getElementById('tgClassicDynExpand');
+        if (dynExpandCheck) {
+            dynExpandCheck.addEventListener('change', function () {
+                onChanged('dynamicGridExpansion', this.checked);
+            });
         }
 
         // Tier zone drag

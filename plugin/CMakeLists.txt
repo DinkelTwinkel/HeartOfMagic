@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.21)
 # ============================================================================
 project(
     SpellLearning
-    VERSION 2.0.0
+    VERSION 2.1.0
     DESCRIPTION "AI-Generated Spell Learning Tree System"
     LANGUAGES CXX
 )
@@ -68,6 +68,7 @@ add_library(${PROJECT_NAME} SHARED
     src/SpellTomeHook.cpp
     src/PapyrusAPI.cpp
     src/PythonInstaller.cpp
+    src/PythonBridge.cpp
 )
 
 # Include directories

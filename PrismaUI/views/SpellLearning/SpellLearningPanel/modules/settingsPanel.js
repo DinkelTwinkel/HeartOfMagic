@@ -858,7 +858,27 @@ function initializeSettings() {
             autoSaveSettings();
         });
     }
-    
+
+    // Progression settings - Auto-Advance Learning Target
+    var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
+    var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
+    if (autoAdvanceToggle) {
+        autoAdvanceToggle.checked = settings.autoAdvanceLearning;
+        autoAdvanceToggle.addEventListener('change', function() {
+            settings.autoAdvanceLearning = this.checked;
+            if (autoAdvanceModeSelect) autoAdvanceModeSelect.disabled = !this.checked;
+            autoSaveSettings();
+        });
+    }
+    if (autoAdvanceModeSelect) {
+        autoAdvanceModeSelect.value = settings.autoAdvanceMode || 'branch';
+        autoAdvanceModeSelect.disabled = !settings.autoAdvanceLearning;
+        autoAdvanceModeSelect.addEventListener('change', function() {
+            settings.autoAdvanceMode = this.value;
+            autoSaveSettings();
+        });
+    }
+
     // Progression settings - XP Multiplier Sliders
     function updateSliderFill(slider) {
         var percent = (slider.value - slider.min) / (slider.max - slider.min) * 100;
@@ -1135,6 +1155,8 @@ function saveUnifiedConfig() {
         
         // Progression settings
         learningMode: settings.learningMode,
+        autoAdvanceLearning: settings.autoAdvanceLearning,
+        autoAdvanceMode: settings.autoAdvanceMode,
         xpGlobalMultiplier: settings.xpGlobalMultiplier,
         xpMultiplierDirect: settings.xpMultiplierDirect,
         xpMultiplierSchool: settings.xpMultiplierSchool,
@@ -1232,6 +1254,7 @@ function saveUnifiedConfig() {
         globeTextSize: settings.globeTextSize,
         particleTrailEnabled: settings.particleTrailEnabled,
         globeBgFill: settings.globeBgFill,
+        globeParticleRadius: settings.globeParticleRadius,
         nodeFontSize: settings.nodeFontSize,
 
         // Spell blacklist & plugin whitelist
@@ -1263,6 +1286,8 @@ function resetSettings() {
     settings.learningColor = '#7890A8';
     settings.fontSizeMultiplier = 1.0;
     settings.learningMode = 'perSchool';
+    settings.autoAdvanceLearning = true;
+    settings.autoAdvanceMode = 'branch';
     settings.xpGlobalMultiplier = 1;
     settings.xpMultiplierDirect = 100;
     settings.xpMultiplierSchool = 50;
@@ -1314,7 +1339,16 @@ function resetSettings() {
     }
     
     if (learningModeSelect) learningModeSelect.value = 'perSchool';
-    
+
+    // Auto-advance reset
+    var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
+    var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
+    if (autoAdvanceToggle) autoAdvanceToggle.checked = true;
+    if (autoAdvanceModeSelect) {
+        autoAdvanceModeSelect.value = 'branch';
+        autoAdvanceModeSelect.disabled = false;
+    }
+
     // Global multiplier
     if (globalMultSlider) {
         globalMultSlider.value = 1;
@@ -1423,6 +1457,8 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         
         // === Progression Settings ===
         settings.learningMode = data.learningMode || 'perSchool';
+        settings.autoAdvanceLearning = data.autoAdvanceLearning !== false;  // default true
+        settings.autoAdvanceMode = data.autoAdvanceMode || 'branch';
         settings.xpGlobalMultiplier = data.xpGlobalMultiplier !== undefined ? data.xpGlobalMultiplier : 1;
         settings.xpMultiplierDirect = data.xpMultiplierDirect !== undefined ? data.xpMultiplierDirect : 100;
         settings.xpMultiplierSchool = data.xpMultiplierSchool !== undefined ? data.xpMultiplierSchool : 50;
@@ -1791,7 +1827,16 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         }
         
         if (learningModeSelect) learningModeSelect.value = settings.learningMode;
-        
+
+        // Auto-advance learning target
+        var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
+        var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
+        if (autoAdvanceToggle) autoAdvanceToggle.checked = settings.autoAdvanceLearning;
+        if (autoAdvanceModeSelect) {
+            autoAdvanceModeSelect.value = settings.autoAdvanceMode;
+            autoAdvanceModeSelect.disabled = !settings.autoAdvanceLearning;
+        }
+
         // Global multiplier slider
         var globalMultSlider = document.getElementById('xpGlobalMultiplierSlider');
         var globalMultValue = document.getElementById('xpGlobalMultiplierValue');
@@ -1986,6 +2031,7 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         settings.globeTextSize = data.globeTextSize !== undefined ? data.globeTextSize : 16;
         settings.particleTrailEnabled = data.particleTrailEnabled !== false;
         settings.globeBgFill = data.globeBgFill !== false;
+        settings.globeParticleRadius = data.globeParticleRadius !== undefined ? data.globeParticleRadius : 50;
         settings.nodeFontSize = data.nodeFontSize !== undefined ? data.nodeFontSize : 10;
 
         // Spell blacklist
@@ -2833,134 +2879,6 @@ function initializeHeartSettings() {
         });
     }
 
-    // === Divider Settings (in popup) ===
-    
-    // Show dividers toggle
-    var popupShowDividers = document.getElementById('popup-show-dividers');
-    if (popupShowDividers) {
-        popupShowDividers.checked = settings.showSchoolDividers !== false;
-        popupShowDividers.addEventListener('change', function() {
-            settings.showSchoolDividers = this.checked;
-            // Sync with main settings toggle
-            var mainToggle = document.getElementById('showSchoolDividersToggle');
-            if (mainToggle) mainToggle.checked = this.checked;
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-    
-    // Divider length slider
-    var dividerLength = document.getElementById('popup-divider-length');
-    var dividerLengthVal = document.getElementById('popup-divider-length-val');
-    if (dividerLength) {
-        var lengthValue = settings.dividerLength || 800;
-        dividerLength.value = lengthValue;
-        if (dividerLengthVal) dividerLengthVal.textContent = lengthValue;
-        dividerLength.addEventListener('input', function() {
-            settings.dividerLength = parseInt(this.value);
-            if (dividerLengthVal) dividerLengthVal.textContent = this.value;
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-    
-    // Divider width slider
-    var dividerWidth = document.getElementById('popup-divider-width');
-    var dividerWidthVal = document.getElementById('popup-divider-width-val');
-    if (dividerWidth) {
-        var widthValue = settings.dividerSpacing || 3;
-        dividerWidth.value = widthValue;
-        if (dividerWidthVal) dividerWidthVal.textContent = widthValue + 'px';
-        dividerWidth.addEventListener('input', function() {
-            settings.dividerSpacing = parseInt(this.value);
-            if (dividerWidthVal) dividerWidthVal.textContent = this.value + 'px';
-            // Sync with main settings slider
-            var mainSlider = document.getElementById('dividerSpacingSlider');
-            var mainVal = document.getElementById('dividerSpacingValue');
-            if (mainSlider) mainSlider.value = this.value;
-            if (mainVal) mainVal.textContent = this.value + 'px';
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-    
-    // Divider fade slider
-    var popupDividerFade = document.getElementById('popup-divider-fade');
-    var popupDividerFadeVal = document.getElementById('popup-divider-fade-val');
-    if (popupDividerFade) {
-        var fadeValue = settings.dividerFade !== undefined ? settings.dividerFade : 50;
-        popupDividerFade.value = fadeValue;
-        if (popupDividerFadeVal) popupDividerFadeVal.textContent = fadeValue + '%';
-        popupDividerFade.addEventListener('input', function() {
-            settings.dividerFade = parseInt(this.value);
-            if (popupDividerFadeVal) popupDividerFadeVal.textContent = this.value + '%';
-            // Sync with main settings slider
-            var mainSlider = document.getElementById('dividerFadeSlider');
-            var mainVal = document.getElementById('dividerFadeValue');
-            if (mainSlider) mainSlider.value = this.value;
-            if (mainVal) mainVal.textContent = this.value + '%';
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-    
-    // Divider color mode select
-    var popupDividerColorMode = document.getElementById('popup-divider-color-mode');
-    var popupDividerCustomRow = document.getElementById('popup-divider-custom-row');
-    if (popupDividerColorMode) {
-        popupDividerColorMode.value = settings.dividerColorMode || 'school';
-        // Show/hide custom color row
-        if (popupDividerCustomRow) {
-            popupDividerCustomRow.style.display = popupDividerColorMode.value === 'custom' ? '' : 'none';
-        }
-        popupDividerColorMode.addEventListener('change', function() {
-            settings.dividerColorMode = this.value;
-            // Sync with main settings select
-            var mainSelect = document.getElementById('dividerColorModeSelect');
-            if (mainSelect) mainSelect.value = this.value;
-            // Show/hide custom color row
-            if (popupDividerCustomRow) {
-                popupDividerCustomRow.style.display = this.value === 'custom' ? '' : 'none';
-            }
-            updateDividerColorRowVisibility();
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-    
-    // Divider custom color swatch (uses color picker)
-    var dividerCustomSwatch = document.getElementById('divider-custom-color-swatch');
-    var dividerCustomInput = document.getElementById('popup-divider-custom-color');
-    if (dividerCustomSwatch && dividerCustomInput) {
-        var customColor = settings.dividerCustomColor || '#ffffff';
-        dividerCustomSwatch.style.background = customColor;
-        dividerCustomInput.value = customColor;
-        
-        // Color picker callback is handled by setupColorSwatch in colorPicker.js
-        // Just need to add the change listener on the hidden input
-        dividerCustomInput.addEventListener('change', function() {
-            settings.dividerCustomColor = this.value;
-            dividerCustomSwatch.style.background = this.value;
-            // Sync with main settings picker
-            var mainPicker = document.getElementById('dividerCustomColorPicker');
-            if (mainPicker) mainPicker.value = this.value;
-            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
-                CanvasRenderer._needsRender = true;
-            }
-            autoSaveSettings();
-        });
-    }
-
     // === Connection Lines Settings ===
 
     // Selection path toggle
@@ -2991,7 +2909,7 @@ function initializeHeartSettings() {
 
     // === Globe Settings ===
 
-    // Core Size slider (controls both globe and heart ring)
+    // Core Size slider (controls heart ring visual size)
     var coreSize = document.getElementById('popup-core-size');
     var coreSizeVal = document.getElementById('popup-core-size-val');
     if (coreSize) {
@@ -3000,6 +2918,20 @@ function initializeHeartSettings() {
         coreSize.addEventListener('input', function() {
             settings.globeSize = parseInt(this.value);
             if (coreSizeVal) coreSizeVal.textContent = this.value;
+            applyGlobeSettings();
+            autoSaveSettings();
+        });
+    }
+
+    // Globe Size slider (controls particle area radius independently)
+    var globeParticleRadius = document.getElementById('popup-globe-particle-radius');
+    var globeParticleRadiusVal = document.getElementById('popup-globe-particle-radius-val');
+    if (globeParticleRadius) {
+        globeParticleRadius.value = settings.globeParticleRadius || 50;
+        if (globeParticleRadiusVal) globeParticleRadiusVal.textContent = settings.globeParticleRadius || 50;
+        globeParticleRadius.addEventListener('input', function() {
+            settings.globeParticleRadius = parseInt(this.value);
+            if (globeParticleRadiusVal) globeParticleRadiusVal.textContent = this.value;
             applyGlobeSettings();
             autoSaveSettings();
         });
@@ -3143,6 +3075,65 @@ function initializeHeartSettings() {
                 CanvasRenderer._needsRender = true;
             }
             autoSaveSettings();
+        });
+    }
+
+    // === Tree Color Pickers (per-school colors in popup) ===
+    var treeColorSchools = [
+        { key: 'Destruction', swatchId: 'tree-color-destruction-swatch', inputId: 'tree-color-destruction' },
+        { key: 'Restoration', swatchId: 'tree-color-restoration-swatch', inputId: 'tree-color-restoration' },
+        { key: 'Alteration', swatchId: 'tree-color-alteration-swatch', inputId: 'tree-color-alteration' },
+        { key: 'Conjuration', swatchId: 'tree-color-conjuration-swatch', inputId: 'tree-color-conjuration' },
+        { key: 'Illusion', swatchId: 'tree-color-illusion-swatch', inputId: 'tree-color-illusion' }
+    ];
+
+    treeColorSchools.forEach(function(school) {
+        var swatch = document.getElementById(school.swatchId);
+        var hiddenInput = document.getElementById(school.inputId);
+        if (!swatch) return;
+
+        var color = (settings.schoolColors && settings.schoolColors[school.key]) || hiddenInput.value;
+        swatch.style.background = color;
+        if (hiddenInput) hiddenInput.value = color;
+
+        swatch.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (typeof ColorPicker !== 'undefined') {
+                ColorPicker.show(swatch, color, function(newColor) {
+                    color = newColor;
+                    if (!settings.schoolColors) settings.schoolColors = {};
+                    settings.schoolColors[school.key] = newColor;
+                    swatch.style.background = newColor;
+                    if (hiddenInput) hiddenInput.value = newColor;
+                    // Apply to CSS and re-render
+                    if (typeof applySchoolColorsToCSS === 'function') applySchoolColorsToCSS();
+                    if (typeof updateSchoolColorPickerUI === 'function') updateSchoolColorPickerUI();
+                    if (typeof CanvasRenderer !== 'undefined') CanvasRenderer._needsRender = true;
+                    autoSaveSettings();
+                    console.log('[HeartSettings] Tree color ' + school.key + ' = ' + newColor);
+                });
+            }
+        });
+    });
+
+    // === PRM Enable/Disable Toggle (inside Pre Req Master tab) ===
+    // Disables the content area below the tab bar, not the tab bar itself
+    var prmEnabled = document.getElementById('prmEnabled');
+    var prmSplit = document.querySelector('#prmContent .prm-split');
+    if (prmEnabled && prmSplit) {
+        if (!prmEnabled.checked) {
+            prmSplit.classList.add('disabled');
+        }
+        // Stop toggle clicks from triggering the parent tab's click
+        prmEnabled.closest('.prm-enable-toggle').addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        prmEnabled.addEventListener('change', function() {
+            if (this.checked) {
+                prmSplit.classList.remove('disabled');
+            } else {
+                prmSplit.classList.add('disabled');
+            }
         });
     }
 
@@ -4050,13 +4041,14 @@ window.TREE_GENERATION_PRESETS = TREE_GENERATION_PRESETS;
  */
 function applyGlobeSettings() {
     if (typeof Globe3D !== 'undefined') {
-        var sizeChanged = Globe3D.radius !== (settings.globeSize || 50);
+        var globeRadius = settings.globeParticleRadius || settings.globeSize || 50;
+        var sizeChanged = Globe3D.radius !== globeRadius;
         var countChanged = Globe3D.particleCount !== (settings.globeDensity || 50);
         var dotMinChanged = Globe3D.dotSizeMin !== (settings.globeDotMin || 0.5);
         var dotMaxChanged = Globe3D.dotSizeMax !== (settings.globeDotMax || 1);
 
-        Globe3D.radius = settings.globeSize || 50;
-        Globe3D.globeCenterZ = -(settings.globeSize || 50);
+        Globe3D.radius = globeRadius;
+        Globe3D.globeCenterZ = -globeRadius;
         Globe3D.particleCount = settings.globeDensity || 50;
 
         // Store size range for particle initialization

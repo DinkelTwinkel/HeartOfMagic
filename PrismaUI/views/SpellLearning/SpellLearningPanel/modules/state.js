@@ -24,27 +24,29 @@ var settings = {
     
     // Heart animation settings
     heartAnimationEnabled: true,
-    heartPulseSpeed: 0.2,
-    heartPulseDelay: 5.0,
+    heartPulseSpeed: 0.5,
+    heartPulseDelay: 2.75,
     heartBgOpacity: 1.0,
-    
+
     // Starfield settings
     starfieldEnabled: true,
     starfieldFixed: false,
     starfieldColor: '#ffffff',
-    starfieldDensity: 200,
-    starfieldMaxSize: 2.5,
-    
+    starfieldDensity: 250,
+    starfieldMaxSize: 3,
+
     // Globe settings
-    globeSize: 30,
-    globeDensity: 200,
-    globeDotMin: 1,
-    globeDotMax: 3,
+    globeSize: 50,
+    globeDensity: 50,
+    globeDotMin: 0.5,
+    globeDotMax: 1,
     globeColor: '#b8a878',
-    magicTextColor: '#b8a878',
-    globeText: 'HoM',
+    magicTextColor: '#ffecb3',
+    globeText: 'HEART',
     globeTextSize: 16,
     particleTrailEnabled: true,
+    globeBgFill: true,
+    globeParticleRadius: 50,  // Separate control for globe particle area radius
     
     heartBgColor: '#000000',
     heartRingColor: '#b8a878',
@@ -55,6 +57,7 @@ var settings = {
     showBaseConnections: true,    // Show dim connection lines between all nodes
     nodeSizeScaling: true,
     showNodeNames: true,
+    nodeFontSize: 10,
     showSchoolDividers: true,
     strictPieSlices: true,  // Keep schools strictly in their pie slices (vs. allowing overlap)
     dividerFade: 50,      // 0-100, percentage of line length to fade out
@@ -83,6 +86,8 @@ var settings = {
     },
     // Progression settings
     learningMode: 'perSchool',  // 'perSchool' or 'single'
+    autoAdvanceLearning: true,  // Auto-select next spell when one is mastered
+    autoAdvanceMode: 'branch',  // 'branch' = next in tree, 'random' = any available in school
     xpGlobalMultiplier: 1,
     // XP multipliers (how much XP per cast)
     xpMultiplierDirect: 100,
@@ -259,7 +264,7 @@ var settings = {
         warnOnElementMismatch: true,    // Warn on cross-element links
 
         // === BIDIRECTIONAL SOFT PREREQS ===
-        bidirectionalSoftPrereqs: true,  // When A is soft prereq of B, B also soft prereq of A
+        bidirectionalSoftPrereqs: false,  // When A is soft prereq of B, B also soft prereq of A
 
         // === LLM EDGE CASE RESOLUTION (Legacy - use llm.edgeCases instead) ===
         llmEdgeCaseEnabled: false,      // Use LLM for low-confidence assignments

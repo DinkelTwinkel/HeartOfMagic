@@ -789,6 +789,14 @@ function initializeTabs() {
             }
         });
     });
+
+    // Return button — navigates back to spell tree view
+    var returnBtn = document.getElementById('returnToTreeBtn');
+    if (returnBtn) {
+        returnBtn.addEventListener('click', function() {
+            switchTab('spellTree');
+        });
+    }
 }
 
 function switchTab(tabId) {
@@ -807,6 +815,12 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(function(content) {
         content.classList.remove('active');
     });
+
+    // Show/hide Return button based on current tab
+    var returnBtn = document.getElementById('returnToTreeBtn');
+    if (returnBtn) {
+        returnBtn.style.display = (tabId !== 'spellTree') ? '' : 'none';
+    }
 
     if (tabId === 'spellScan') {
         document.getElementById('contentSpellScan').classList.add('active');

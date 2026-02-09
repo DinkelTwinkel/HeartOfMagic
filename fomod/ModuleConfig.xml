@@ -1,0 +1,81 @@
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+
+    <moduleName>Heart of Magic - Spell Learning &amp; Progression</moduleName>
+
+    <!-- ================================================================== -->
+    <!-- REQUIRED FILES — always installed                                   -->
+    <!-- ================================================================== -->
+    <requiredInstallFiles>
+        <folder source="SKSE"     destination="SKSE"     priority="0"/>
+        <folder source="PrismaUI" destination="PrismaUI" priority="0"/>
+        <folder source="Scripts"  destination="Scripts"  priority="0"/>
+    </requiredInstallFiles>
+
+    <!-- ================================================================== -->
+    <!-- CONDITIONAL — auto-install ISL compatibility patch                  -->
+    <!-- ================================================================== -->
+    <!-- If DEST_ISL.esp or the original DontEatSpellTomes DLL is detected, -->
+    <!-- overwrite it with our inert shim.  SpellLearning.dll provides the  -->
+    <!-- DEST Papyrus API that ISL needs, so ISL works without changes.     -->
+    <!-- ================================================================== -->
+    <conditionalFileInstalls>
+        <patterns>
+            <pattern>
+                <dependencies operator="Or">
+                    <fileDependency file="DEST_ISL.esp"             state="Active"/>
+                    <fileDependency file="DontEatSpellTomes.esp"    state="Active"/>
+                    <fileDependency file="SKSE\Plugins\DontEatSpellTomes.dll" state="Active"/>
+                </dependencies>
+                <files>
+                    <folder source="optional\ISLPatch\SKSE" destination="SKSE" priority="1"/>
+                </files>
+            </pattern>
+        </patterns>
+    </conditionalFileInstalls>
+
+    <!-- ================================================================== -->
+    <!-- INSTALL STEPS — optional user choices                               -->
+    <!-- ================================================================== -->
+    <installSteps order="Explicit">
+        <installStep name="ISL / DEST Compatibility">
+            <optionalFileGroups order="Explicit">
+                <group name="Immersive Spell Learning (ISL) Compatibility" type="SelectAny">
+                    <plugins order="Explicit">
+                        <plugin name="Install ISL Compatibility Patch">
+                            <description>
+Replaces DontEatSpellTomes.dll with an inert shim so Heart of Magic's spell tome hook doesn't conflict with ISL's.
+
+ISL's study system (menus, animations, time passage) continues to work. Spell tomes grant XP through Heart of Magic's progression system.
+
+This is auto-selected if ISL or DEST was detected. If you don't use ISL, leave this unchecked.
+                            </description>
+                            <conditionFlags>
+                                <flag name="ISLDetected">On</flag>
+                            </conditionFlags>
+                            <files>
+                                <folder source="optional\ISLPatch\SKSE" destination="SKSE" priority="1"/>
+                            </files>
+                            <typeDescriptor>
+                                <dependencyType>
+                                    <defaultType name="Optional"/>
+                                    <patterns>
+                                        <pattern>
+                                            <dependencies operator="Or">
+                                                <fileDependency file="DEST_ISL.esp" state="Active"/>
+                                                <fileDependency file="DontEatSpellTomes.esp" state="Active"/>
+                                                <fileDependency file="SKSE\Plugins\DontEatSpellTomes.dll" state="Active"/>
+                                            </dependencies>
+                                            <type name="Recommended"/>
+                                        </pattern>
+                                    </patterns>
+                                </dependencyType>
+                            </typeDescriptor>
+                        </plugin>
+                    </plugins>
+                </group>
+            </optionalFileGroups>
+        </installStep>
+    </installSteps>
+
+</config>

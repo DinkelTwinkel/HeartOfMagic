@@ -2,6 +2,7 @@
 #include "ProgressionManager.h"
 #include "SpellEffectivenessHook.h"
 #include "UIManager.h"
+#include "ISLIntegration.h"
 
 // Xbyak for assembly code generation
 #include <xbyak/xbyak.h>
@@ -122,7 +123,57 @@ void SpellTomeHook::OnSpellTomeRead(RE::TESObjectBOOK* a_book, RE::SpellItem* a_
         logger::error("SpellTomeHook: Player not available");
         return;
     }
-    
+
+    // =========================================================================
+    // ISL INTEGRATION — Immersive Spell Learning compatibility
+    // =========================================================================
+    // When ISL is active we delegate the user-facing experience (study menus,
+    // animations, time passage) to ISL's Papyrus scripts.  We still grant our
+    // XP on first read so the spell's effectiveness scales through our system.
+    // ISL's AddSpell at the end of study gives the player the spell, and our
+    // SpellEffectivenessHook applies power scaling based on earned XP.
+    // =========================================================================
+    if (DESTIntegration::IsActive()) {
+        logger::info("SpellTomeHook: ISL/DEST active — delegating to ISL");
+
+        RE::FormID spellFormId = a_spell->GetFormID();
+        char formIdStr[32];
+        snprintf(formIdStr, sizeof(formIdStr), "0x%08X", spellFormId);
+
+        auto* pm = ProgressionManager::GetSingleton();
+
+        // Grant our XP on FIRST read only (anti-exploit)
+        if (pm && !hook->HasGrantedTomeXP(spellFormId)) {
+            float requiredXP = pm->GetRequiredXP(formIdStr);
+            if (requiredXP <= 0) requiredXP = 100.0f;
+
+            float xpToGrant = requiredXP * (hook->m_settings.xpPercentToGrant / 100.0f);
+            pm->AddXP(formIdStr, xpToGrant);
+            hook->MarkTomeXPGranted(spellFormId);
+
+            if (hook->m_settings.autoSetLearningTarget) {
+                pm->SetLearningTargetFromTome(formIdStr, a_spell);
+            }
+
+            logger::info("SpellTomeHook: [ISL] Granted {:.1f} XP ({:.0f}%) for '{}'",
+                         xpToGrant, hook->m_settings.xpPercentToGrant, a_spell->GetName());
+
+            // Notify UI so the tree updates
+            UIManager::GetSingleton()->NotifyProgressUpdate(formIdStr);
+        }
+
+        // Dispatch the event to ISL's Papyrus alias.
+        // ISL handles: study menu, animations, time, and eventually AddSpell.
+        // If player already knows the spell, ISL shows its own "already known"
+        // or "forget" dialog.
+        DESTIntegration::DispatchSpellTomeRead(a_book, a_spell, nullptr);
+        return;
+    }
+
+    // =========================================================================
+    // NON-ISL PATH — our built-in spell tome handling
+    // =========================================================================
+
     // Check if player already knows this spell
     if (player->HasSpell(a_spell)) {
         if (hook->m_settings.showNotifications) {
