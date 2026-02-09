@@ -1,179 +1,210 @@
-# Heart of Magic - Spell Learning System
+# Heart of Magic - Spell Learning & Progression
 
-A spell progression system for Skyrim SE/AE that creates skill trees for learning spells. Spells must be unlocked through a progression tree before they can be learned from spell tomes.
+Heart of Magic transforms spell learning into an active journey of practice and growth. The mod scans every spell in your load order, generates a personalized skill tree with intelligent prerequisites, and tracks your progress as you cast and practice magic.
+
+No manual configuration required. Compatible with every spell mod.
+
+## Features
+
+### Intelligent Spell Tree Generation
+
+The system analyzes spell names, effects, keywords, and descriptions to build prerequisite trees that make sense. Fire spells branch from fire. Healing chains lead to greater restoration. No hardcoded spell lists - it discovers what elements exist in your load order and builds around them.
+
+**Two build paths, both fully automatic:**
+
+| | Python Builder (Recommended) | JavaScript Builder |
+|---|---|---|
+| **Quality** | High - multi-stage NLP pipeline | Good - lighter analysis |
+| **Theme Discovery** | TF-IDF analysis of names, effects, descriptions | TF-IDF with basic grouping |
+| **Spell Grouping** | Fuzzy string matching (partial ratio, token set, substring) | Keyword-based matching |
+| **Edge Scoring** | Multi-factor: element isolation, tier ordering, theme coherence, effect matching | Basic tier + theme scoring |
+| **Validation** | Full path simulation with auto-fix (up to 20 passes) | Basic validation |
+| **Dependencies** | Python 3.9+ (auto-installer included in UI) | None |
+
+### Two Growth Modes
+
+- **Classic** - Concentric rings with natural symmetrical fan layouts. Configurable spell matching (Simple, Layered, or Smart).
+- **Tree** - Trunk corridor with configurable branch/trunk/root allocation. More structured visual design.
+
+Both modes show a live ghost-node preview as the tree builds.
+
+### Spells Are Earned, Not Given
+
+XP comes from actually casting prerequisite spells. Hit a target? Bonus XP. Deal damage? Even more. Highly configurable difficulty with built-in presets (Easy, Default, Hard) or create your own.
+
+### Early Access with Progressive Power
+
+At configurable thresholds, gain early access to a weakened spell that grows in discrete steps:
+
+| XP Progress | Spell Power | Stage |
+|---|---|---|
+| 25% | 20% | Budding |
+| 40% | 35% | Developing |
+| 55% | 50% | Practicing |
+| 70% | 65% | Advancing |
+| 85% | 80% | Refining |
+| 100% | 100% | Mastered |
+
+Binary effects (Paralysis, Invisibility) are disabled below 80% effectiveness.
+
+### Progressive Discovery
+
+In Discovery Mode, spells ahead of you remain hidden - names obscured, effects unknown. You uncover the tree as you progress.
+
+### Pre-Req Master (Lock Prerequisites)
+
+An advanced optional system that adds hidden "lock" prerequisites on top of your tree. Lock candidates are scored using token overlap and fuzzy similarity, with proximity bias. Higher tiers get more locks. BFS cycle detection prevents deadlocks.
+
+### Scanner UI - Easy & Complex Modes
+
+- **Easy Mode** (Default) - Pick a preset, hit Build, done. Big preset chips, live tree preview, one screen.
+- **Complex Mode** - Full control over every parameter: output fields, fuzzy match thresholds, generation seed, plugin filtering, growth mode settings, and more.
+
+### Spell Tome Integration
+
+When you read a spell tome for a spell in your learning tree:
+- Grants configurable XP toward that spell
+- Sets it as your active learning target
+- Keeps the book (doesn't consume it)
+- Bonus XP while the tome is in your inventory
+
+For spells not in the tree, vanilla behavior is preserved. Built-in DEST compatibility.
+
+### Presets
+
+- **Settings Presets** - Control progression feel. Three built-in profiles (Default, Easy, Hard) plus unlimited custom presets.
+- **Tree Generation Presets** - Save and load entire tree-building configurations. Auto-applied on startup.
+
+### Plugin Whitelist & Blacklist
+
+Control exactly which mods contribute spells. Uses stable `plugin:formId` keys that survive load order changes.
 
 ## Requirements
 
 ### Required
 - **Skyrim SE/AE** (1.5.97+ or AE)
-- **SKSE64** - [Download](https://skse.silverlock.org/)
-- **Address Library for SKSE Plugins** - [Nexus](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
-- **PrismaUI** - UI framework (included or separate download)
-- **OpenRouter API Key** - For LLM-powered tree generation (optional)
+- **[SKSE64](https://skse.silverlock.org/)**
+- **[Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)**
+- **[PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/)** - UI framework (must load before Heart of Magic)
 
-### Optional (for Complex Build mode)
-- **Python 3.10+** - Required for the "BUILD TREE (Complex)" option
-  - Download from [python.org](https://www.python.org/downloads/)
-  - During installation, check "Add Python to PATH"
+### Optional
+- **Python 3.9+** - For the detailed tree builder (auto-installer included in mod UI)
 
 ## Installation
 
-### Using Mod Organizer 2 (Recommended)
-1. Download `HeartOfMagic_v1.0.zip`
-2. In MO2, click "Install a new mod from archive" (📦 icon)
-3. Select the downloaded ZIP file
-4. Name it "Heart of Magic" and click OK
-5. Enable the mod in your load order
+### Using a Mod Manager (Recommended)
+1. Download the latest release
+2. Install through your mod manager (MO2, Vortex, etc.)
+3. Ensure PrismaUI loads before Heart of Magic
+4. Enable the mod
 
-### Manual Installation
-1. Extract `HeartOfMagic_v1.0.zip` to your Skyrim `Data` folder
-2. Your folder structure should look like:
-   ```
-   Data/
-   ├── Scripts/
-   │   ├── SpellLearning_Bridge.pex
-   │   └── ...
-   ├── SKSE/
-   │   └── Plugins/
-   │       ├── SpellLearning.dll
-   │       └── SpellLearning/
-   │           └── SpellTreeBuilder/
-   │               ├── build_tree.py
-   │               └── ...
-   └── PrismaUI/
-       └── views/
-           └── SpellLearning/
-               └── ...
-   ```
-
-### Python Setup (for Complex Build)
-If you want to use the **BUILD TREE (Complex)** option for better thematic spell grouping:
-
-**Easy Setup (Recommended):**
-1. Install Python 3.9 or newer from https://www.python.org/downloads/
-   - **IMPORTANT**: Check "Add Python to PATH" during installation!
-2. Navigate to `Data\SKSE\Plugins\SpellLearning\SpellTreeBuilder\`
-3. Double-click **`setup.bat`**
-4. Done! The script installs everything automatically.
-
-**Manual Setup:**
-If the setup script doesn't work, open Command Prompt in the SpellTreeBuilder folder and run:
+### Folder Structure
 ```
-cd "C:\path\to\Skyrim\Data\SKSE\Plugins\SpellLearning\SpellTreeBuilder"
-python -m pip install -r requirements.txt
+Data/
+├── Scripts/
+│   └── SpellLearning_Bridge.pex
+├── SKSE/
+│   └── Plugins/
+│       ├── SpellLearning.dll
+│       └── SpellLearning/
+│           ├── config.json
+│           ├── presets/
+│           │   ├── settings/     (DEFAULT.json, Easy.json, Hard.json)
+│           │   └── scanner/      (DEFAULT.json)
+│           └── SpellTreeBuilder/
+│               ├── build_tree.py
+│               └── prereq_master_scorer.py
+├── SEQ/
+│   └── SpellLearning.seq
+└── PrismaUI/
+    └── views/
+        └── SpellLearning/
+            └── SpellLearningPanel/
 ```
-Use `python -m pip` (not plain `pip`) so it uses the same Python that's on your PATH. If only `py` works, use: `py -3.11 -m pip install -r requirements.txt` (see Troubleshooting below).
 
-**Python Version:**
-- Minimum: Python 3.9
-- Recommended: Python 3.10 or 3.11
-- Python 3.12+ should also work
+## Quick Start
 
-**Optional: Using a venv**
+1. Install Heart of Magic and PrismaUI via your mod manager
+2. Launch the game and press **F8** (default hotkey) to open the UI
+3. You'll land on the **Easy Mode** scanner page
+4. Click **Scan** to detect all spells in your load order
+5. Choose a preset (or use defaults) and click **Build Tree**
+6. For the detailed builder: click the Python setup button if prompted - it auto-installs
+7. Switch to the **Spell Tree** tab to see your generated tree
+8. In gameplay: find spell tomes for root spells to begin learning. Cast prerequisite spells to earn XP toward new ones
 
-Yes, you can use a Python virtual environment for the Complex Build tool. The plugin runs `python build_tree.py ...` from the game; it uses whatever `python` is on your PATH unless we add venv detection.
+> Depending on load order size, the Python builder can take up to 2 minutes. The JavaScript build is near-instant.
 
-| | Pros | Cons |
-|---|------|------|
-| **Venv** | **Isolation** – no conflict with other projects or system Python (e.g. you have 3.13 elsewhere; venv can be 3.11 + known-good scikit-learn). **Reproducible** – same deps per mod install. **No global pollution** – packages stay inside the mod folder. **Clean uninstall** – delete mod folder = delete venv. | **Plugin must use it** – in-game Complex Build currently runs `python` from PATH. To use a venv, the DLL would need to look for `SpellTreeBuilder\.venv\Scripts\python.exe` (Windows) and call that if present. **Don’t ship venv in the zip** – release stays small; users run setup to create the venv and install deps (same as now, but setup would create `.venv` first). **Slightly more setup** – “run setup.bat” becomes “run setup.bat (creates .venv + pip install)”. |
+## Settings & Customization
 
-- **Manual use today:** You can create a venv in the SpellTreeBuilder folder and run the script yourself: `python build_tree.py -i ... -o ...`. The in-game “BUILD TREE (Complex)” button will still use system `python` unless the plugin is updated to prefer the venv interpreter when present.
-- **If we add venv support:** Setup script would run `python -m venv .venv` then `.venv\Scripts\pip install -r requirements.txt`. The C++ plugin would check for `SpellTreeBuilder\.venv\Scripts\python.exe` (or `Scripts/python.exe` relative to the script) and use it if it exists, otherwise fall back to `python` on PATH.
+**Progression** - Learning mode (per-school or global), XP multiplier and per-source caps, tier XP requirements, early learning thresholds, self-cast requirements.
 
-## Usage
+**Visual** - Theme selection, per-school color customization, node size scaling by tier, ghost node opacity and preview controls.
 
-### Opening the UI
-- Press the configured hotkey (default: check MCM/keybinds)
-- Or use the console command: `coc SpellLearningPanel`
-
-### Building Your Spell Tree
-
-1. **Scan Spells**
-   - Click **SCAN ALL SPELLS** to discover your installed spell mods
-   - Wait for the scan to complete
-
-2. **Generate Tree**
-   - **BUILD TREE (Complex)** - Recommended if you have Python installed
-     - Uses fuzzy NLP matching for intelligent thematic grouping
-     - Fire spells connect to fire spells, healing to healing, etc.
-   - **BUILD TREE (Simple)** - No Python required
-     - Basic theme grouping using JavaScript
-     - Still creates valid progression trees
-
-3. **View Your Tree**
-   - Click the **SPELL TREE** tab to see your generated tree
-   - Navigate by clicking on spell nodes
-   - Zoom with mouse wheel or +/- buttons
-
-### Unlocking Spells
-- Start with the root spell in each school (e.g., Flames for Destruction)
-- Learn connected spells by meeting their requirements:
-  - **Hard Requirements** - Must learn ALL of these first
-  - **Soft Requirements** - Must learn X out of Y options
-- Once a spell is unlocked, you can learn it from spell tomes
-
-### Settings
-- **Developer Mode** - Enables advanced options (tree rules, debug grid, etc.)
-- **Cheat Mode** - Allows unlocking any spell instantly
-- **Discovery Mode** - Choose how mystery spells are revealed
-
-## Build Modes Comparison
-
-| Feature | Complex (Python) | Simple (JS) |
-|---------|-----------------|-------------|
-| Thematic Grouping | Fuzzy NLP matching | Basic keyword matching |
-| Prerequisites | Hard/Soft with tier weighting | Hard/Soft basic |
-| Alternate Paths | Yes | Yes |
-| Shape Control | Yes | No |
-| LLM Auto-Config | Yes (optional) | No |
-| Dependencies | Python 3.10+ | None |
+**Developer Mode** - Debug grid, tree rules, and output fields for modders.
 
 ## Troubleshooting
 
-### "pip" is not recognized / "py" gives scikit-learn errors
-This usually happens for one of these reasons:
+### Python Issues
 
-1. **Python wasn't added to PATH**  
-   During install from [python.org](https://www.python.org/downloads/), you must check **"Add Python to PATH"**. If you missed it:
-   - Re-run the installer and choose "Modify" → enable "Add Python to PATH", or
-   - Use the full path to pip, e.g. `"C:\Users\YourName\AppData\Local\Programs\Python\Python311\python.exe" -m pip install -r requirements.txt` (adjust path to your Python version).
+The mod includes a built-in Python installer accessible from the UI. If you prefer manual setup:
 
-2. **Cmd was already open**  
-   PATH is set when the window opens. After installing Python, close Command Prompt and open a **new** one (or restart the PC), then try `python -m pip install -r requirements.txt` again.
+1. Install Python 3.9+ from [python.org](https://www.python.org/downloads/) - **check "Add Python to PATH"**
+2. Navigate to `Data\SKSE\Plugins\SpellLearning\SpellTreeBuilder\`
+3. Run: `python -m pip install -r requirements.txt`
 
-3. **Using `py` runs a different Python**  
-   The Windows "Python Launcher" (`py`) can point at a different Python (e.g. 32-bit, or an old 2.7/3.6). scikit-learn needs **64-bit Python 3.9–3.12** and often has no wheel for 32-bit or very new (e.g. 3.13) versions, so you get "failed to find a suitable install for scikit-learn".
-   - Check what you have: `py -0p` (lists installed Pythons).
-   - Install with a specific version: `py -3.11 -m pip install -r requirements.txt` (use 3.10 or 3.11 if you have it).
-   - Prefer installing from python.org (64-bit) and using `python -m pip` so the mod's "Complex Build" finds the same Python.
+See [docs/PYTHON_TROUBLESHOOTING.md](docs/PYTHON_TROUBLESHOOTING.md) for detailed troubleshooting.
 
-4. **Upgrade pip first**  
-   Old pip can fail to find wheels. Run: `python -m pip install --upgrade pip` then `python -m pip install -r requirements.txt`.
+### Common Issues
 
-### "Python not found" error
-- Ensure Python is installed and added to PATH
-- Restart your computer after installing Python
-- Try running `python --version` in Command Prompt
+| Problem | Fix |
+|---------|-----|
+| UI not opening | Ensure PrismaUI is installed and loading. Check SKSE logs. |
+| DLL not loading | Verify `SpellLearning.dll` exists in `SKSE/Plugins/`. Check SKSE logs for errors. |
+| Tree not generating | Make sure you scanned spells first. Try the JS builder if Python fails. |
+| Quest not starting on existing save | Console: `stopquest SpellLearning` then `startquest SpellLearning` |
+| Spells not appearing | Some NPC-only or duplicate spells are filtered. Check plugin whitelist/blacklist. |
 
-### Tree not generating
-- Make sure you scanned spells first
-- Check the Output area for error messages
-- Try the Simple Build if Complex fails
+## Documentation
 
-### Spells not appearing
-- Some spells may be filtered out (NPC-only, duplicates)
-- Check "Scan Spell Tomes Only" setting
-- Enable Developer Mode to see Output Fields options
+- [CREATING_MODULES.md](docs/CREATING_MODULES.md) - How to create modules for Heart of Magic
+- [TRANSLATING.md](docs/TRANSLATING.md) - Translation guide
+- [PRESETS.md](docs/PRESETS.md) - Preset system documentation
+- [PYTHON_TROUBLESHOOTING.md](docs/PYTHON_TROUBLESHOOTING.md) - Python setup help
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Technical architecture overview
 
-### UI not opening
-- Ensure PrismaUI is installed correctly
-- Check SKSE is loading (see SKSE logs)
-- Verify SpellLearning.dll exists in SKSE/Plugins
+## Technical Details
+
+- Pure DLL + UI mod. No ESP required. Save-safe to add and remove.
+- SKSE plugin with Address Library support (SE 1.5.97+ and AE)
+- PrismaUI-powered web interface (CEF/Ultralight)
+- FormID persistence survives load order changes (`plugin:localFormId` format)
+- Performance-optimized for large load orders (tested with 1500+ spells)
+
+## Building from Source
+
+### Requirements
+- Visual Studio 2022
+- CMake 3.21+
+- [vcpkg](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` environment variable set
+- [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR)
+
+### Build
+```powershell
+cd plugin
+cmake --preset vs2022-windows
+cmake --build build --config Release
+```
+
+The output DLL will be in `plugin/build/Release/`.
 
 ## Credits
-- SKSE Team for SKSE64
-- PrismaUI developers
-- OpenRouter for LLM API access
+
+- [SKSE Team](https://skse.silverlock.org/) for SKSE64
+- [PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/) developers
+- [DEST](https://www.nexusmods.com/skyrimspecialedition/mods/43095) - Spell tome hook reference
+- [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR) by alandtse
 
 ## License
-This mod is provided as-is for personal use. Do not redistribute without permission.
+
+[MIT License](LICENSE)
