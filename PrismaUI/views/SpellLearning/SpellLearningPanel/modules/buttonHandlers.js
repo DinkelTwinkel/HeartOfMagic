@@ -55,7 +55,16 @@ function onFullAutoClick() {
     startScan(true);
 }
 
+var _lastScanTime = 0;
 function startScan(autoGenerate) {
+    // Debounce: prevent rapid-fire scans (min 2s between scans)
+    var now = Date.now();
+    if (now - _lastScanTime < 2000) {
+        console.log('[SpellLearning] Scan debounced - too soon since last scan');
+        return;
+    }
+    _lastScanTime = now;
+
     state.fullAutoMode = autoGenerate;
 
     // Always scan ALL spells - tome toggle is a client-side filter for primed count
