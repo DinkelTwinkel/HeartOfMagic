@@ -88,6 +88,11 @@ var TreeGrowthTree = {
             return;
         }
 
+        // Reset _treeBuilt so setTreeBuilt(true) sees wasBuilt=false and PRM runs
+        if (typeof TreeGrowth !== 'undefined') {
+            TreeGrowth._treeBuilt = false;
+        }
+
         // Show build progress modal
         var hasPRM = typeof PreReqMaster !== 'undefined' && PreReqMaster.isEnabled && PreReqMaster.isEnabled();
         if (typeof BuildProgress !== 'undefined') {
