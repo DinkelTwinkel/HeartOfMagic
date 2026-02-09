@@ -105,9 +105,9 @@ window.onPythonAddonStatus = function(statusStr) {
             // Gray out Complex Build button if Python addon not installed
             buildTreeBtn.disabled = true;
             if (hasScript && !hasPython) {
-                buildTreeBtn.title = 'Python not installed - click "Setup Python" to install automatically';
+                buildTreeBtn.title = t('treeGrowth.pythonTooltipNotInstalled');
             } else if (!hasScript) {
-                buildTreeBtn.title = 'SpellTreeBuilder scripts not found';
+                buildTreeBtn.title = t('treeGrowth.pythonTooltipScriptsNotFound');
             }
         }
         // Note: Button stays disabled until spells are scanned even if addon is installed
@@ -131,13 +131,13 @@ window.onPythonAddonStatus = function(statusStr) {
         var consSpan = genModeRow.querySelector('.gen-mode-cons');
         if (consSpan) {
             if (installed) {
-                consSpan.textContent = 'Python ready (' + (status.pythonSource || 'detected') + ')';
+                consSpan.textContent = t('treeGrowth.pythonReadySource', {source: status.pythonSource || 'detected'});
                 consSpan.style.color = '#22c55e';  // Green
             } else if (hasScript && !hasPython) {
-                consSpan.textContent = 'Python not installed - Setup available';
+                consSpan.textContent = t('treeGrowth.pythonNotInstalledSetup');
                 consSpan.style.color = '#f59e0b';  // Amber
             } else {
-                consSpan.textContent = 'SpellTreeBuilder not found';
+                consSpan.textContent = t('treeGrowth.builderNotFound');
                 consSpan.style.color = '#ef4444';  // Red
             }
         }
@@ -178,14 +178,14 @@ window.updateSpellData = function(jsonStr) {
         if (outputArea) outputArea.value = formatted;
         
         if (state.fullAutoMode) {
-            updateStatus('Step 2/3: Generating trees for ' + data.spellCount + ' spells...');
-            updateScanStatus('Step 2/3: Generating trees for ' + data.spellCount + ' spells...', 'working');
+            updateStatus(t('status.step2Generating', {count: data.spellCount}));
+            updateScanStatus(t('status.step2Generating', {count: data.spellCount}), 'working');
         } else {
             var schoolSet = {};
             if (data.spells) data.spells.forEach(function(s) { if (s.school) schoolSet[s.school] = true; });
             var schoolCount = Object.keys(schoolSet).length;
-            updateStatus('Scanned ' + data.spellCount + ' spells');
-            updateScanStatus(data.spellCount + ' spells scanned across ' + schoolCount + ' schools', 'success');
+            updateStatus(t('status.scannedSpells', {count: data.spellCount}));
+            updateScanStatus(t('status.scannedSpellsSchools', {count: data.spellCount, schools: schoolCount}), 'success');
         }
         setStatusIcon('X');
         updateCharCount();
@@ -223,7 +223,7 @@ window.updateSpellData = function(jsonStr) {
             } else {
                 // Keep disabled and update tooltip
                 buildTreeBtn.disabled = true;
-                buildTreeBtn.title = 'Requires Python Addon - Install HeartOfMagic_PythonAddon to enable Complex Build';
+                buildTreeBtn.title = t('treeGrowth.pythonTooltipRequiresAddon');
             }
         }
         
@@ -280,7 +280,7 @@ window.updateSpellData = function(jsonStr) {
         console.error('[SpellLearning] Failed to parse spell data:', e);
         var outputAreaFallback = document.getElementById('outputArea');
         if (outputAreaFallback) outputAreaFallback.value = jsonStr;
-        updateStatus('Received data (parse error)');
+        updateStatus(t('status.receivedDataParseError'));
         setStatusIcon('!');
         state.fullAutoMode = false;
     }
@@ -344,10 +344,10 @@ window.updateSpellData = function(jsonStr) {
             var schoolSet2 = {};
             spells.forEach(function(s) { if (s.school) schoolSet2[s.school] = true; });
             if (typeof updateStatus === 'function') {
-                updateStatus('Scanned ' + spells.length + ' spells');
+                updateStatus(t('status.scannedSpells', {count: spells.length}));
             }
             if (typeof updateScanStatus === 'function') {
-                updateScanStatus(spells.length + ' spells scanned across ' + Object.keys(schoolSet2).length + ' schools', 'success');
+                updateScanStatus(t('status.scannedSpellsSchools', {count: spells.length, schools: Object.keys(schoolSet2).length}), 'success');
             }
         }
     }
@@ -355,7 +355,7 @@ window.updateSpellData = function(jsonStr) {
     var scanBtn = document.getElementById('scanBtn');
     if (scanBtn) {
         scanBtn.disabled = false;
-        scanBtn.innerHTML = '<span class="btn-icon">[*]</span>Scan Spells';
+        scanBtn.innerHTML = '<span class="btn-icon">[*]</span>' + t('buttons.scanSpells');
     }
     
     // Continue to auto-generation if in full auto mode
@@ -445,7 +445,7 @@ window.onClipboardContent = function(content) {
     console.log('[SpellLearning] Received clipboard content, length:', content ? content.length : 0);
     
     if (!content || content.length === 0) {
-        updateStatus('Clipboard is empty');
+        updateStatus(t('status.clipboardEmpty'));
         setStatusIcon('!');
         state.pasteTarget = null;
         return;
@@ -459,7 +459,7 @@ window.onClipboardContent = function(content) {
         targetEl.value = content.trim();
         
         if (targetId === 'outputArea') {
-            updateStatus('Pasted from clipboard (' + content.length + ' chars)');
+            updateStatus(t('status.pastedClipboard', {length: content.length}));
             setStatusIcon('X');
             updateCharCount();
         } else if (targetId === 'import-textarea') {
@@ -469,7 +469,7 @@ window.onClipboardContent = function(content) {
         } else if (targetId === 'apiKeyInput') {
             // API key pasted
             targetEl.dataset.hasKey = 'false';
-            updateStatus('API key pasted from clipboard');
+            updateStatus(t('status.apiKeyPasted'));
             setStatusIcon('X');
             
             // Temporarily show the key so user can see it was pasted
@@ -482,7 +482,7 @@ window.onClipboardContent = function(content) {
             targetEl.focus();
         } else if (targetId === 'customModelInput') {
             // Custom model ID pasted
-            updateStatus('Custom model ID pasted: ' + content.trim());
+            updateStatus(t('status.customModelPasted', {model: content.trim()}));
             setStatusIcon('X');
             updateModelDisplayState();
             onSaveApiSettings();
@@ -498,10 +498,10 @@ window.onClipboardContent = function(content) {
  */
 window.onCopyComplete = function(success) {
     if (success === 'true' || success === true) {
-        updateStatus('Copied to Windows clipboard!');
+        updateStatus(t('status.copiedClipboard'));
         setStatusIcon('X');
     } else {
-        updateStatus('Copy failed');
+        updateStatus(t('status.copyFailed'));
         setStatusIcon('X');
     }
 };
@@ -626,9 +626,9 @@ window.updateSpellInfoBatch = function(json) {
         });
         WheelRenderer.render();
         
-        var statusMsg = 'Loaded ' + foundCount + ' spells';
+        var statusMsg = t('status.loadedSpells', {found: foundCount});
         if (notFoundCount > 0) {
-            statusMsg += ' (' + notFoundCount + ' not found)';
+            statusMsg = t('status.loadedSpellsNotFound', {found: foundCount, notFound: notFoundCount});
         }
         setTreeStatus(statusMsg);
     }

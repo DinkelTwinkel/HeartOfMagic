@@ -292,18 +292,7 @@ var TreeRenderer = {
         ctx.closePath();
     },
 
-    _hexToRgba: function(hex, alpha) {
-        if (!hex || hex.charAt(0) !== '#' || hex.length < 7) {
-            return 'rgba(136,136,136,' + alpha + ')';
-        }
-        var r = parseInt(hex.slice(1, 3), 16);
-        var g = parseInt(hex.slice(3, 5), 16);
-        var b = parseInt(hex.slice(5, 7), 16);
-        if (isNaN(r) || isNaN(g) || isNaN(b)) {
-            return 'rgba(136,136,136,' + alpha + ')';
-        }
-        return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
-    }
+    _hexToRgba: function(hex, alpha) { return hexToRgba(hex, alpha); }
 };
 
 console.log('[TreeRenderer] Loaded');

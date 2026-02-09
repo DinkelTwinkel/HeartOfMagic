@@ -202,8 +202,8 @@ function initGenerationModeUI() {
             var finalPromptArea = document.getElementById('finalPromptArea');
             if (finalPromptArea && finalPromptArea.value) {
                 navigator.clipboard.writeText(finalPromptArea.value).then(function() {
-                    copyFinalPromptBtn.textContent = 'Copied!';
-                    setTimeout(function() { copyFinalPromptBtn.textContent = 'Copy'; }, 1500);
+                    copyFinalPromptBtn.textContent = t('generationMode.copied');
+                    setTimeout(function() { copyFinalPromptBtn.textContent = t('generationMode.copy'); }, 1500);
                 });
             }
         });
@@ -255,7 +255,7 @@ function initGenerationModeUI() {
     var clearTreeScanBtn = document.getElementById('clear-tree-scan-btn');
     if (clearTreeScanBtn) {
         clearTreeScanBtn.addEventListener('click', function() {
-            if (confirm('Clear the current spell tree? This cannot be undone.')) {
+            if (confirm(t('generationMode.clearTreeConfirm'))) {
                 if (typeof clearTree === 'function') {
                     clearTree();
                 } else {
@@ -400,7 +400,7 @@ function generateFinalPrompt() {
     var spellData = state.outputData || state.lastScanData || null;
     
     if (!spellData || !spellData.schools) {
-        finalPromptArea.value = '// ERROR: No spell data available. Please scan spells first.';
+        finalPromptArea.value = t('generationMode.noSpellDataError');
         return;
     }
     
@@ -441,7 +441,7 @@ function applyLLMResponse() {
     
     var responseText = llmResponseArea.value.trim();
     if (!responseText) {
-        alert('No LLM response to apply. Paste the response first.');
+        alert(t('generationMode.noLlmResponse'));
         return;
     }
     
@@ -451,7 +451,7 @@ function applyLLMResponse() {
         currentConfigArea.value = JSON.stringify(parsed, null, 2);
         saveCurrentConfig();
         console.log('[LLMWorkflow] Applied LLM response as config');
-        alert('Config applied successfully!');
+        alert(t('generationMode.configApplied'));
     } catch (e) {
         // Try to extract JSON from response
         var jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -461,12 +461,12 @@ function applyLLMResponse() {
                 currentConfigArea.value = JSON.stringify(extracted, null, 2);
                 saveCurrentConfig();
                 console.log('[LLMWorkflow] Extracted and applied JSON from response');
-                alert('Config extracted and applied!');
+                alert(t('generationMode.configExtracted'));
             } catch (e2) {
-                alert('Could not parse JSON from response. Please check the format.');
+                alert(t('generationMode.cannotParseJson'));
             }
         } else {
-            alert('Could not find valid JSON in response. Please check the format.');
+            alert(t('generationMode.noValidJson'));
         }
     }
 }

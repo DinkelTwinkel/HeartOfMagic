@@ -30,7 +30,7 @@ var settings = {
     
     // Starfield settings
     starfieldEnabled: true,
-    starfieldFixed: true,
+    starfieldFixed: false,
     starfieldColor: '#ffffff',
     starfieldDensity: 200,
     starfieldMaxSize: 2.5,
@@ -100,7 +100,7 @@ var settings = {
     xpExpert: 800,
     xpMaster: 1500,
     // Progressive reveal thresholds (%)
-    revealName: 10,
+    revealName: 0,
     revealEffects: 25,
     revealDescription: 50,
     // Window position and size
@@ -128,7 +128,7 @@ var settings = {
     islTomeBonus: 25,
     islDetected: false,
     // Discovery mode
-    discoveryMode: false,
+    discoveryMode: true,
     showRootSpellNames: true,  // Show root spell names even in discovery mode (helps players know what to look for)
     // Early spell learning
     earlySpellLearning: {

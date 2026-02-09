@@ -17,23 +17,36 @@
 
 namespace
 {
-    // Function ID for TESObjectBOOK::ProcessBook
-    // SE 1.6.318+: ID 17842
-    constexpr REL::ID ProcessBookID(17842);
-    
+    // Function ID for TESObjectBOOK::Read (aka ProcessBook)
+    // SE (1.5.97):    ID 17439
+    // AE (1.6.317+):  ID 17842
+    // Source: CommonLibSSE-NG src/RE/T/TESObjectBOOK.cpp — RELOCATION_ID(17439, 17842)
+    constexpr REL::RelocationID ProcessBookID(17439, 17842);
+
     // Offset into ProcessBook where spell teaching happens
-    // SE 1.6.318+: +0x11D
-    constexpr std::ptrdiff_t PatchOffset = 0x11D;
-    
+    // Source: Exit-9B/Dont-Eat-Spell-Tomes SE v1.2.0 (commit 18b81b1) used +0xE8
+    // Source: Exit-9B/Dont-Eat-Spell-Tomes AE (commit 180bb8b) used +0x11D
+    // SE (1.5.97):    +0xE8
+    // AE (1.6.317+):  +0x11D
+    inline std::ptrdiff_t GetPatchOffset()
+    {
+        return REL::Module::IsAE() ? 0x11D : 0xE8;
+    }
+
     // Size of code we're replacing (must NOP this much)
-    constexpr std::size_t PatchSize = 0x56;
-    
+    // Same for both versions
+    inline std::size_t GetPatchSize()
+    {
+        return 0x56;
+    }
+
     // Jump offset to skip past the patched region
-    constexpr std::ptrdiff_t JumpOffset = 0x72;
-    
-    // Pattern to verify we're patching the right location
-    // "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ??" - mov rcx, [rip+??]; call ??
-    constexpr auto VerifyPattern = "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ??"sv;
+    // SE (1.5.97):    0x70  (DEST SE used jmp +0x70)
+    // AE (1.6.317+):  0x72
+    inline std::ptrdiff_t GetJumpOffset()
+    {
+        return REL::Module::IsAE() ? 0x72 : 0x70;
+    }
 }
 
 // =============================================================================
@@ -335,30 +348,45 @@ RE::TESObjectREFR* SpellTomeHook::GetBookContainer()
 bool SpellTomeHook::Install()
 {
     logger::info("SpellTomeHook: Installing spell tome read hook...");
-    
+    logger::info("SpellTomeHook: Runtime = {} ({})",
+        REL::Module::get().version().string(),
+        REL::Module::IsAE() ? "AE" : "SE");
+
+    // Get version-specific offsets
+    const auto patchOffset = GetPatchOffset();
+    const auto patchSize = GetPatchSize();
+    const auto jumpOffset = GetJumpOffset();
+
     // Get the address of TESObjectBOOK::ProcessBook
-    std::uintptr_t hookAddr = ProcessBookID.address() + PatchOffset;
+    std::uintptr_t hookAddr = ProcessBookID.address() + patchOffset;
     
     // Verify we're patching the right location
     auto pattern = REL::make_pattern<"48 8B 0D">();
     if (!pattern.match(hookAddr)) {
         logger::error("SpellTomeHook: Pattern verification failed at {:X} - game version mismatch?", hookAddr);
+        logger::error("SpellTomeHook: This may mean the SE/AE offsets need updating for this game version.");
         return false;
     }
     
     logger::info("SpellTomeHook: Pattern verified at {:X}", hookAddr);
     
     // Create the patch using Xbyak
+    // Register usage differs between SE and AE:
+    //   SE:  rdi = TESObjectBOOK*   (source: DEST v1.2.0 SE, commit 18b81b1)
+    //   AE:  r15 = TESObjectBOOK*
+    // rdx = RE::SpellItem* in both versions
+    const bool isAE = REL::Module::IsAE();
+
     struct Patch : Xbyak::CodeGenerator
     {
-        Patch(std::uintptr_t a_callbackAddr, std::uintptr_t a_returnAddr)
+        Patch(std::uintptr_t a_callbackAddr, std::uintptr_t a_returnAddr, bool a_isAE)
         {
-            // At this point in ProcessBook:
-            // r15 = TESObjectBOOK* (the book being read)
-            // rdx = RE::SpellItem* (the spell from the tome)
-            
             // Move book pointer to rcx (first param for our callback)
-            mov(rcx, r15);
+            if (a_isAE) {
+                mov(rcx, r15);  // AE: book is in r15
+            } else {
+                mov(rcx, rdi);  // SE: book is in rdi
+            }
             // rdx already has spell pointer (second param)
             
             // Load our callback address and call it
@@ -367,7 +395,7 @@ bool SpellTomeHook::Install()
             
             // Set rsi = 0 to prevent book consumption
             // This flag is checked after the patched region
-            xor_(rsi, rsi);  // xor is more efficient than mov for setting 0
+            xor_(rsi, rsi);
             
             // Jump to return address (past the patched region)
             mov(rax, a_returnAddr);
@@ -376,21 +404,21 @@ bool SpellTomeHook::Install()
     };
     
     std::uintptr_t callbackAddr = reinterpret_cast<std::uintptr_t>(&OnSpellTomeRead);
-    std::uintptr_t returnAddr = hookAddr + JumpOffset;  // Where to jump after our code
-    Patch patch(callbackAddr, returnAddr);
+    std::uintptr_t returnAddr = hookAddr + jumpOffset;  // Where to jump after our code
+    Patch patch(callbackAddr, returnAddr, isAE);
     patch.ready();
     
     // Verify patch size
-    if (patch.getSize() > PatchSize) {
-        logger::error("SpellTomeHook: Patch too large ({} bytes, max {})", patch.getSize(), PatchSize);
+    if (patch.getSize() > patchSize) {
+        logger::error("SpellTomeHook: Patch too large ({} bytes, max {})", patch.getSize(), patchSize);
         return false;
     }
     
-    logger::info("SpellTomeHook: Patch size: {} bytes (max {})", patch.getSize(), PatchSize);
+    logger::info("SpellTomeHook: Patch size: {} bytes (max {})", patch.getSize(), patchSize);
     
     // Write the patch
     // First, NOP out the entire region we're replacing
-    REL::safe_fill(hookAddr, REL::NOP, PatchSize);
+    REL::safe_fill(hookAddr, REL::NOP, patchSize);
     
     // Then write our patch code
     REL::safe_write(hookAddr, patch.getCode(), patch.getSize());

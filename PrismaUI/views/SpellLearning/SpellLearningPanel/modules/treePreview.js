@@ -39,6 +39,8 @@ var TreePreview = {
     // Render loop
     _needsRender: false,
     _rafId: null,
+    _rafRunning: false,
+    _idleFrames: 0,
     _resizeObserver: null,
     _resizeTimeout: null,
 
@@ -282,7 +284,7 @@ var TreePreview = {
 
         this._width = width;
         this._height = height;
-        this._needsRender = true;
+        this._markDirty();
     },
 
     // =========================================================================
@@ -314,7 +316,7 @@ var TreePreview = {
                     self._panRafPending = false;
                     self.panX = self._pendingPanX;
                     self.panY = self._pendingPanY;
-                    self._needsRender = true;
+                    self._markDirty();
                 });
             }
         });
@@ -340,7 +342,7 @@ var TreePreview = {
             self.panY = mouseY - (mouseY - self.panY) * (newZoom / self.zoom);
             self.zoom = newZoom;
 
-            self._needsRender = true;
+            self._markDirty();
         }, { passive: false });
 
         canvas.addEventListener('contextmenu', function(e) {
@@ -356,6 +358,11 @@ var TreePreview = {
 
     _markDirty: function() {
         this._needsRender = true;
+        this._idleFrames = 0;
+        // Restart the RAF loop if it has stopped due to idling
+        if (!this._rafRunning) {
+            this._startRenderLoop();
+        }
         // Also notify downstream sections that depend on our output
         if (typeof TreeCore !== 'undefined' && TreeCore._markDirty) {
             TreeCore._markDirty();
@@ -366,13 +373,23 @@ var TreePreview = {
     },
 
     _startRenderLoop: function() {
-        if (this._rafId) return;
+        if (this._rafRunning) return;
 
+        this._rafRunning = true;
+        this._idleFrames = 0;
         var self = this;
         function loop() {
             if (self._needsRender) {
+                self._idleFrames = 0;
                 self._needsRender = false;
                 self._render();
+            } else {
+                self._idleFrames++;
+                if (self._idleFrames >= 60) {
+                    self._rafRunning = false;
+                    self._rafId = null;
+                    return; // Stop loop after ~1s of idle
+                }
             }
             self._rafId = requestAnimationFrame(loop);
         }
@@ -384,6 +401,8 @@ var TreePreview = {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
+        this._rafRunning = false;
+        this._idleFrames = 0;
     },
 
     _render: function() {

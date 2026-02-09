@@ -18,6 +18,52 @@
  */
 
 // =============================================================================
+// NODE LOOKUP CACHE — O(1) node-by-id lookup instead of O(n) Array.find()
+// =============================================================================
+
+/**
+ * Cached map of { formId/id: node } built once per tree load.
+ * Invalidated when _nodeLookupVersion !== current tree version.
+ */
+var _nodeLookupMap = {};
+var _nodeLookupVersion = -1;
+var _nodeLookupTreeRef = null;
+
+/**
+ * Returns a node lookup map { id: node } for the current tree data.
+ * Rebuilds the cache only when the tree data reference changes.
+ */
+function _getNodeLookupMap() {
+    var treeData = state.treeData;
+    if (!treeData || !treeData.nodes) {
+        return {};
+    }
+    // Rebuild if the tree data reference changed (new tree loaded)
+    if (treeData !== _nodeLookupTreeRef) {
+        _nodeLookupMap = {};
+        var nodes = treeData.nodes;
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            if (n.id) _nodeLookupMap[n.id] = n;
+            // Also index by formId if different from id
+            if (n.formId && n.formId !== n.id) _nodeLookupMap[n.formId] = n;
+        }
+        _nodeLookupTreeRef = treeData;
+        console.log('[NodeLookup] Rebuilt cache: ' + Object.keys(_nodeLookupMap).length + ' entries');
+    }
+    return _nodeLookupMap;
+}
+
+/**
+ * Look up a node by its id/formId in O(1).
+ * Falls back to null if not found.
+ */
+function _findNodeById(id) {
+    var map = _getNodeLookupMap();
+    return map[id] || null;
+}
+
+// =============================================================================
 // TREE VIEWER
 // =============================================================================
 
@@ -242,9 +288,9 @@ function initializeTreeViewer() {
     if (saveTreeBtn) {
         saveTreeBtn.addEventListener('click', function() {
             if (saveTreeToFile()) {
-                setTreeStatus('Tree saved to file');
+                setTreeStatus(t('status.treeSaved'));
             } else {
-                setTreeStatus('No tree data to save');
+                setTreeStatus(t('status.noTreeData'));
             }
         });
     }
@@ -335,9 +381,9 @@ function hideImportModal() {
 function loadSavedTree() {
     if (window.callCpp) {
         window.callCpp('LoadSpellTree', '');
-        setTreeStatus('Loading saved tree...');
+        setTreeStatus(t('status.loadingSavedTree'));
     } else {
-        setTreeStatus('No saved tree available');
+        setTreeStatus(t('status.noSavedTree'));
     }
 }
 
@@ -345,7 +391,7 @@ function importTreeFromModal() {
     var textarea = document.getElementById('import-textarea');
     var text = textarea ? textarea.value.trim() : '';
     if (!text) {
-        showImportError('No JSON to save');
+        showImportError(t('status.noJsonToSave'));
         return;
     }
 
@@ -354,21 +400,21 @@ function importTreeFromModal() {
     try {
         data = JSON.parse(text);
     } catch (e) {
-        showImportError('Invalid JSON: ' + e.message);
+        showImportError(t('status.invalidJson', {error: e.message}));
         return;
     }
 
     // Step 2: Validate through TreeParser
     var parsed = TreeParser.parse(data);
     if (!parsed.success) {
-        showImportError('Tree validation failed: ' + (parsed.error || 'Unknown error'));
+        showImportError(t('status.treeValidationFailed', {error: parsed.error || 'Unknown error'}));
         return;
     }
 
     // Step 3: Load the validated tree
     loadTreeData(data, true, true);
     hideImportModal();
-    setTreeStatus('Tree saved (' + parsed.nodes.length + ' spells)');
+    setTreeStatus(t('status.treeSavedCount', {count: parsed.nodes.length}));
 
     // Save to file via C++
     if (window.callCpp) {
@@ -376,10 +422,32 @@ function importTreeFromModal() {
     }
 }
 
+/**
+ * Simple deep copy for plain data objects (no functions, no circular refs).
+ * Avoids the overhead of JSON.parse(JSON.stringify()) serialization round-trip.
+ */
+function _deepCopyPlain(obj) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+        var arrCopy = [];
+        for (var i = 0; i < obj.length; i++) {
+            arrCopy[i] = _deepCopyPlain(obj[i]);
+        }
+        return arrCopy;
+    }
+    var objCopy = {};
+    for (var key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            objCopy[key] = _deepCopyPlain(obj[key]);
+        }
+    }
+    return objCopy;
+}
+
 function mergeTreeData(existing, newData) {
     // Create a deep copy of existing data
-    var merged = JSON.parse(JSON.stringify(existing));
-    
+    var merged = _deepCopyPlain(existing);
+
     if (!merged.schools) merged.schools = {};
     
     // Merge each school from new data
@@ -399,31 +467,45 @@ function mergeTreeData(existing, newData) {
                 existingSchool.layoutStyle = newSchool.layoutStyle;
                 console.log('[Merge] Updated ' + schoolName + ' layout style: ' + newSchool.layoutStyle);
             }
-            var existingNodeIds = new Set(existingSchool.nodes.map(function(n) { return n.formId || n.spellId; }));
-            
+            var existingNodeIds = {};
+            var existingNodeMap = {};
+            for (var ei = 0; ei < existingSchool.nodes.length; ei++) {
+                var eNodeId = existingSchool.nodes[ei].formId || existingSchool.nodes[ei].spellId;
+                existingNodeIds[eNodeId] = true;
+                existingNodeMap[eNodeId] = existingSchool.nodes[ei];
+            }
+
             var addedCount = 0;
             newSchool.nodes.forEach(function(newNode) {
                 var nodeId = newNode.formId || newNode.spellId;
-                if (!existingNodeIds.has(nodeId)) {
+                if (!existingNodeIds[nodeId]) {
                     existingSchool.nodes.push(newNode);
                     addedCount++;
                 } else {
                     // Node exists - update children/prerequisites if new ones exist
-                    var existingNode = existingSchool.nodes.find(function(n) { 
-                        return (n.formId || n.spellId) === nodeId; 
-                    });
+                    var existingNode = existingNodeMap[nodeId];
                     if (existingNode && newNode.children) {
+                        if (!existingNode.children) existingNode.children = [];
+                        var childrenSeen = {};
+                        for (var ci = 0; ci < existingNode.children.length; ci++) {
+                            childrenSeen[existingNode.children[ci]] = true;
+                        }
                         newNode.children.forEach(function(childId) {
-                            if (!existingNode.children) existingNode.children = [];
-                            if (existingNode.children.indexOf(childId) === -1) {
+                            if (!childrenSeen[childId]) {
+                                childrenSeen[childId] = true;
                                 existingNode.children.push(childId);
                             }
                         });
                     }
                     if (existingNode && newNode.prerequisites) {
+                        if (!existingNode.prerequisites) existingNode.prerequisites = [];
+                        var prereqsSeen = {};
+                        for (var pri = 0; pri < existingNode.prerequisites.length; pri++) {
+                            prereqsSeen[existingNode.prerequisites[pri]] = true;
+                        }
                         newNode.prerequisites.forEach(function(prereqId) {
-                            if (!existingNode.prerequisites) existingNode.prerequisites = [];
-                            if (existingNode.prerequisites.indexOf(prereqId) === -1) {
+                            if (!prereqsSeen[prereqId]) {
+                                prereqsSeen[prereqId] = true;
                                 existingNode.prerequisites.push(prereqId);
                             }
                         });
@@ -670,7 +752,7 @@ function _loadTrustedTree(data, switchToTreeTab) {
     }
 
     _logToSKSE('[_loadTrustedTree] === DONE ===');
-    setTreeStatus('Loaded ' + nodes.length + ' spells (trusted tree)');
+    setTreeStatus(t('status.loadedTrustedTree', {count: nodes.length}));
 }
 
 /**
@@ -731,10 +813,12 @@ function mirrorBidirectionalSoftPrereqs(nodes) {
         }
     }
 
-    // Apply all mirrors
+    // Build a set of legacy prerequisite ids per target for O(1) duplicate check
+    var targetLegacySets = {};
     for (var m = 0; m < mirrors.length; m++) {
         var target = mirrors[m].target;
         var addId = mirrors[m].addFormId;
+        var targetId = target.formId || target.id;
 
         if (!target.hardPrereqs) target.hardPrereqs = [];
         if (!target.softPrereqs) target.softPrereqs = [];
@@ -747,12 +831,17 @@ function mirrorBidirectionalSoftPrereqs(nodes) {
             target.softNeeded = 1;
         }
 
-        // Add to legacy prerequisites array for compatibility
-        var inLegacy = false;
-        for (var lp = 0; lp < target.prerequisites.length; lp++) {
-            if (target.prerequisites[lp] === addId) { inLegacy = true; break; }
+        // Build legacy set on first encounter of this target
+        if (!targetLegacySets[targetId]) {
+            targetLegacySets[targetId] = {};
+            for (var lp = 0; lp < target.prerequisites.length; lp++) {
+                targetLegacySets[targetId][target.prerequisites[lp]] = true;
+            }
         }
-        if (!inLegacy) {
+
+        // Add to legacy prerequisites array for compatibility (O(1) check)
+        if (!targetLegacySets[targetId][addId]) {
+            targetLegacySets[targetId][addId] = true;
             target.prerequisites.push(addId);
         }
     }
@@ -880,7 +969,7 @@ function loadTreeData(jsonData, switchToTreeTab, isManualImport) {
 
         if (totalProblems > 0) {
             console.log('[SpellLearning] Validation found ' + totalProblems + ' unreachable spells - regenerate tree');
-            setTreeStatus('WARNING: ' + totalProblems + ' unreachable spells - regenerate tree');
+            setTreeStatus(t('status.warningUnreachable', {count: totalProblems}));
         }
     }
     
@@ -1235,7 +1324,7 @@ function showSpellDetails(node) {
     
     // Helper to create prereq list item
     function createPrereqItem(id, isHard, isMet) {
-        var n = state.treeData ? state.treeData.nodes.find(function(x) { return x.id === id; }) : null;
+        var n = state.treeData ? _findNodeById(id) : null;
         var li = document.createElement('li');
         var showPrereqName = settings.cheatMode || (n && n.state !== 'locked');
 
@@ -1295,7 +1384,7 @@ function showSpellDetails(node) {
     
     // Check if a prereq is met (node is unlocked/mastered)
     function isPrereqMet(id) {
-        var n = state.treeData ? state.treeData.nodes.find(function(x) { return x.id === id; }) : null;
+        var n = state.treeData ? _findNodeById(id) : null;
         return n && n.state === 'unlocked';
     }
     
@@ -1390,7 +1479,7 @@ function showSpellDetails(node) {
     var unlocksList = document.getElementById('spell-unlocks');
     unlocksList.innerHTML = '';
     node.children.forEach(function(id) {
-        var n = state.treeData ? state.treeData.nodes.find(function(x) { return x.id === id; }) : null;
+        var n = state.treeData ? _findNodeById(id) : null;
         var li = document.createElement('li');
         // Cheat mode shows all names
         var showChildName = settings.cheatMode || (n && n.state !== 'locked');
@@ -1620,7 +1709,7 @@ function updateDetailsProgression(node) {
 
 function selectNodeById(id) {
     if (!state.treeData) return;
-    var node = state.treeData.nodes.find(function(n) { return n.id === id; });
+    var node = _findNodeById(id);
     if (node) {
         WheelRenderer.selectNode(node);
         WheelRenderer.rotateSchoolToTop(node.school);

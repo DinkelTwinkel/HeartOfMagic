@@ -33,7 +33,7 @@ function onFullAutoClick() {
     
     // Check if API key is configured
     if (!state.llmConfig.apiKey || state.llmConfig.apiKey.length < 10) {
-        updateStatus('Configure API key in Settings first!');
+        updateStatus(t('status.configureApiKey'));
         setStatusIcon('X');
         // Flash the settings button
         var settingsBtn = document.getElementById('settingsBtn');
@@ -71,7 +71,7 @@ function startScan(autoGenerate) {
     var scanBtn = document.getElementById('scanBtn');
     if (scanBtn) {
         scanBtn.disabled = true;
-        scanBtn.textContent = 'Scanning...';
+        scanBtn.textContent = t('status.scanning');
     }
 
     // Always include plugin field — needed for whitelist filtering even if user preset doesn't show it
@@ -111,17 +111,17 @@ function onSaveClick() {
     var content = outputAreaEl ? outputAreaEl.value : '';
     
     if (!content || content.trim().length === 0) {
-        updateStatus('Nothing to export - scan spells first');
+        updateStatus(t('status.nothingToExport'));
         setStatusIcon('!');
-        if (typeof updateScanStatus === 'function') updateScanStatus('Nothing to export - scan spells first', 'error');
+        if (typeof updateScanStatus === 'function') updateScanStatus(t('status.nothingToExport'), 'error');
         return;
     }
 
     if (window.callCpp) {
-        if (typeof updateScanStatus === 'function') updateScanStatus('Exporting scan data...', 'working');
+        if (typeof updateScanStatus === 'function') updateScanStatus(t('status.exportingScanData'), 'working');
         window.callCpp('SaveOutput', content);
             } else {
-        updateStatus('Cannot save - C++ bridge not ready');
+        updateStatus(t('status.cannotSaveNoBridge'));
         setStatusIcon('X');
     }
 }
@@ -131,7 +131,7 @@ function onSaveBySchoolClick() {
     var content = outputAreaEl ? outputAreaEl.value : '';
     
     if (!content || content.trim().length === 0) {
-        updateStatus('Nothing to save - scan spells first');
+        updateStatus(t('status.nothingToSave'));
         setStatusIcon('!');
         return;
     }
@@ -141,7 +141,7 @@ function onSaveBySchoolClick() {
         var data = JSON.parse(content);
         
         if (!data.spells || !Array.isArray(data.spells)) {
-            updateStatus('Invalid spell data format');
+            updateStatus(t('status.invalidSpellDataFormat'));
             setStatusIcon('X');
             return;
         }
@@ -194,7 +194,7 @@ function onSaveBySchoolClick() {
         // Send to C++ to save all school files
         if (window.callCpp) {
             window.callCpp('SaveOutputBySchool', JSON.stringify(schoolOutputs));
-            updateStatus('Saving ' + schools.length + ' school files...');
+            updateStatus(t('status.savingSchoolFiles', {count: schools.length}));
             setStatusIcon('[S]');
         } else {
             updateStatus('Cannot save - C++ bridge not ready');
@@ -203,7 +203,7 @@ function onSaveBySchoolClick() {
         
     } catch (e) {
         console.error('[SpellLearning] Failed to parse spell data:', e);
-        updateStatus('Failed to parse spell data');
+        updateStatus(t('status.failedParseSpellData'));
         setStatusIcon('X');
     }
 }
@@ -213,7 +213,7 @@ function onCopyClick() {
     var content = outputArea ? outputArea.value : '';
     
     if (!content || content.trim().length === 0) {
-        updateStatus('Nothing to copy - scan spells first');
+        updateStatus(t('status.nothingToCopy'));
         setStatusIcon('!');
         return;
     }
@@ -221,14 +221,14 @@ function onCopyClick() {
     // Use C++ to copy to Windows clipboard
     if (window.callCpp) {
         window.callCpp('CopyToClipboard', content);
-        updateStatus('Copied to Windows clipboard!');
+        updateStatus(t('status.copiedClipboard'));
         setStatusIcon('X');
     } else {
         // Fallback for browser testing
         try {
             outputArea.select();
             document.execCommand('copy');
-            updateStatus('Copied to clipboard!');
+            updateStatus(t('status.copiedToClipboard'));
             setStatusIcon('X');
             setTimeout(function() { outputArea.setSelectionRange(0, 0); }, 100);
         } catch (e) {
@@ -244,9 +244,9 @@ function onPasteClick() {
     if (window.callCpp) {
         state.pasteTarget = 'outputArea';
         window.callCpp('GetClipboard', '');
-        updateStatus('Reading clipboard...');
+        updateStatus(t('status.readingClipboard'));
     } else {
-        updateStatus('Paste not available - C++ bridge required');
+        updateStatus(t('status.pasteNotAvailable'));
         setStatusIcon('!');
     }
 }
@@ -269,7 +269,7 @@ function onCloseClick() {
     if (window.callCpp) {
         window.callCpp('HidePanel', '');
     } else {
-        updateStatus('Press hotkey to close');
+        updateStatus(t('status.pressHotkeyToClose'));
     }
 }
 

@@ -483,7 +483,7 @@ function renameSettingsPreset(oldName, newName) {
 
     // Check duplicate
     if (settingsPresets[newName]) {
-        if (!confirm('A preset named "' + newName + '" already exists. Overwrite it?')) {
+        if (!confirm(t('settingsPresets.overwriteConfirm', {name: newName}))) {
             updateSettingsPresetsUI();
             return;
         }

@@ -1,459 +1,461 @@
-# Spell Learning System - Design Document
+# Heart of Magic — UI & Feature Design
 
-**Status:** Design intent and historical reference. **Tiers 1–5 are implemented.** For current implementation details (components, tree generation flow, modules) see **`ARCHITECTURE.md`** and **`QUICK_REFERENCE.md`**.
+> Last updated: 2026-02-09
+
+## UI Structure
+
+The mod runs inside a single PrismaUI panel (CEF/Ultralight overlay) toggled with **F8**. Three top-level pages, plus modals.
+
+```
+┌─────────────────────────────────────────┐
+│  [Spell Tree]   [Spell Scan]  [Settings]│  ← header tabs
+├─────────────────────────────────────────┤
+│                                         │
+│           Active Page Content           │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+Default landing page: **Spell Tree**
 
 ---
 
-## Overview
+## Page 1: Spell Tree (`contentSpellTree`)
 
-A Skyrim SKSE mod that creates an AI-generated spell learning tree. The system:
-1. Scans all spells in the game, extracting their properties and relationships
-2. Sends spell data to an LLM with a customizable prompt to generate a learning tree
-3. Displays the tree in-game via PrismaUI, allowing player progression through spell unlocks
+The main gameplay page. Shows the interactive spell tree after it's been built.
+
+**Modules:** `treeViewerUI.js`, `canvasRendererV2.js`, `wheelRenderer.js`, `treeCore.js`, `progressionUI.js`
+
+### Layout
+
+```
+┌──────────────────────────────────────────────┐
+│ [Zoom -][100%][Zoom +]  [Heart⚙] [✏ Edit]   │
+├──────────────────────────────────────────────┤
+│                                              │
+│         Canvas 2D Spell Tree                 │
+│         (radial/wheel layout)                │
+│         Pan + zoom + node click              │
+│                                              │
+│    ┌─────────┐              ┌────────────┐   │
+│    │ Details │              │  How-to    │   │
+│    │ Sidebar │              │  Learn     │   │
+│    │(on click)│             │  Panel     │   │
+│    └─────────┘              └────────────┘   │
+├──────────────────────────────────────────────┤
+│ [Import] [LLM toolbar] Spells: 247  Legend   │
+└──────────────────────────────────────────────┘
+```
+
+### Features
+- **Canvas 2D renderer** — primary renderer for 200+ node trees
+- **Node interaction** — click to see spell details, prerequisites, XP progress
+- **Details sidebar** — spell name, school, tier, effects, prerequisites, learning controls
+- **How-to-Learn panel** — shows what the player needs to do to unlock a spell
+- **Discovery mode** — hides spell names/effects until XP thresholds are met
+- **Zoom/pan** — mouse wheel + drag
+- **Heart Settings popup** — cosmetic settings (starfield, globe, dividers, connections, node sizes)
+- **Edit mode** — move nodes, pen tool, eraser (developer feature)
+- **Empty state** — shown when no tree is loaded, prompts user to scan
+
+### Visual Effects
+- **Starfield** (`starfield.js`) — animated star background, parallax with pan
+- **3D Globe** (`globe3D.js`) — rotating globe at tree center
+- **Chain links** — drawn between nodes with hard prerequisites (locked spells)
+- **Node states** — locked (gray fill + hole), learning (blue glow), unlocked (full color), weakened (partial opacity)
 
 ---
 
-## Core Systems
+## Page 2: Spell Scan (`contentSpellScan`)
 
-### System 1: Spell Scanner & Data Extractor
-- Scans all SpellItem records from loaded plugins
-- Extracts: name, school, level, effects, magnitude, duration, cost, casting type, delivery, keywords
-- Outputs structured JSON suitable for LLM consumption
-- Generates an LLM prompt that instructs tree construction
+Where players scan spells and build their tree. Has two modes: **Easy** and **Complex**.
 
-### System 2: LLM Output Interpreter
-- Parses LLM response (structured JSON tree format)
-- Builds internal spell tree graph structure
-- Validates spell references exist in game
-- Handles tree serialization/deserialization to file
+**Modules:** `easyMode.js`, `treeGrowth.js`, `buttonHandlers.js`, `scannerPresets.js`, `buildProgress.js`, `prereqMaster.js`
 
-### System 3: PrismaUI Display
-- Interactive tree visualization
-- Shows spell nodes with connections
-- Highlights unlocked/locked/available spells
-- Allows spell unlocking (future tier)
+### Shared Components (both modes)
 
-### System 4: Progression Controller ✅ (Implemented)
-- Tracks which spells player has unlocked (ProgressionManager, SKSE co-save)
-- Enforces prerequisite requirements; grants spells when unlocked (early at threshold, full at 100%)
-- Persists progress in save game
+```
+┌──────────────────────────────────────────────┐
+│       [EASY]  [COMPLEX]  ← mode toggle       │
+├──────────────────────────────────────────────┤
+│ Status: Ready to scan                        │
+│ [Scan Spells] [Export Scan]                  │
+├──────────────────────────────────────────────┤
+│ Total: 247 │ Mods: 12 │ Primed: 0           │
+│ [Blacklist] [Whitelist] [☑ Tomes Only]       │
+├──────────────────────────────────────────────┤
+│                                              │
+│         Mode-specific content below          │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+### Easy Mode (`scannerEasyContent`)
+
+Simplified one-click workflow.
+
+```
+┌─────────────────────┬────────────────────────┐
+│  Preset Chips       │                        │
+│  [DEFAULT] [Easy]   │   PRM Preview Canvas   │
+│  [Hard] [Custom]    │   (shows tree + locks  │
+│                     │    after build)         │
+│  [Build Tree]       │                        │
+│  [Apply Tree]       │                        │
+│  [Clear Tree]       │                        │
+│  [Setup Python]     │                        │
+│                     │                        │
+│  Status: ...        │                        │
+└─────────────────────┴────────────────────────┘
+```
+
+### Complex Mode (`scannerComplexContent`)
+
+Full control over tree generation.
+
+```
+┌──────────────────────────────────────────────┐
+│  Tree Building: [Classic] [Tree] [Sun] [Flat]│
+│  ─────────────────────────────────────────── │
+│  Tree Growth Settings                        │
+│  (mode-specific: root count, trunk, branches)│
+│  ─────────────────────────────────────────── │
+│  Preview: [Sun preview] or [Flat preview]    │
+│  ─────────────────────────────────────────── │
+│                                              │
+│  ▼ EXTRA SETTINGS (collapsible, post-scan)   │
+│  ┌──────────────────────────────────────┐    │
+│  │[Pre Req Master][Core][Alt Pathways]  │    │
+│  ├────────────────────┬─────────────────┤    │
+│  │  Tab Settings      │  Shared Preview │    │
+│  │  (scrollable)      │  Canvas         │    │
+│  └────────────────────┴─────────────────┘    │
+│                                              │
+│  [Build Tree] [Apply Tree] [Clear] [Python]  │
+└──────────────────────────────────────────────┘
+```
+
+### Extra Settings Tabs
+
+Only visible after a spell scan.
+
+#### Pre Req Master (`prmTabLocks`)
+Adds hard prerequisite "locks" to spells using NLP similarity scoring.
+- Master enable toggle
+- Global lock % slider
+- Per-tier lock % (Novice → Master)
+- School distribution mode
+- Pool source (Same School / Any / Nearby)
+- Tier constraints (Same, Previous, Higher tiers allowed)
+- Chain locks toggle
+- [Apply Locks] [Clear]
+
+#### Core (`prmTabCore`)
+Globe position and radius controls. Radius writes to `spell_tree.json` and is used by the canvas renderer for the central globe size.
+- H Offset, V Offset, Radius sliders
+
+#### Alternate Pathways (`prmTabAltPaths`)
+Bidirectional soft prerequisite mirroring. Currently **disabled** (code commented out).
+- Bidirectional toggle
+- Stats display
 
 ---
 
-## Development Tiers
+## Page 3: Settings (`contentSettings`)
 
-### Tier 1: Foundation & Spell Scanning
-**Goal:** Get the UI working, scan spells, and produce LLM-ready output
+All mod configuration. Split-row layout for space efficiency.
 
-#### 1.1 PrismaUI Panel Setup ✅
-- [x] Create basic HTML/CSS/JS view for SpellLearningPanel
-- [x] Register F9 hotkey to toggle panel visibility
-- [x] Panel shows: title, status text, scan button, editable text area
+**Modules:** `settingsPanel.js`, `settingsPresets.js`
 
-#### 1.2 SKSE Plugin Foundation ✅
-- [x] Create C++ plugin with CMake build
-- [x] Register with PrismaUI for view management
-- [x] Hotkey handler (F9 = scancode 67)
-- [x] Basic logging
+### Layout
 
-#### 1.3 Spell Scanning ✅
-- [x] Iterate all SpellItem forms from data handler
-- [ ] Extract relevant spell data:
-  - EditorID, FormID, Name
-  - School (Alteration, Conjuration, Destruction, Illusion, Restoration)
-  - Skill Level (Novice, Apprentice, Adept, Expert, Master)
-  - Magicka Cost
-  - Effects (name, magnitude, duration)
-  - Casting Type (Fire and Forget, Concentration, etc.)
-  - Delivery (Self, Touch, Aimed, Target Location)
-  - Keywords
-- [x] Filter to player-learnable spells (exclude abilities, powers, lesser powers)
+```
+┌──────────────────────┬───────────────────────┐
+│  Hotkey Settings     │  UI Display           │
+│  Panel key: F8       │  Theme, Colors, Font  │
+│  Pause game on open  │                       │
+├──────────────────────┴───────────────────────┤
+│  [DEFAULT] [Easy] [Hard] [Save Preset]       │
+├──────────────────────┬───────────────────────┤
+│  Progression         │  Early Spell Learning │
+│  Learning mode       │  Enable toggle        │
+│  XP multipliers      │  Unlock threshold     │
+│  XP caps per source  │  Self-cast required at│
+│  XP per tier         │  Power steps          │
+│  Reveal thresholds   │  Binary effect thresh │
+├──────────────────────┬───────────────────────┤
+│  Spell Tome Learning │  Developer & Debug    │
+│  Progression toggle  │  Dev mode toggle      │
+│  XP grant on read    │  Cheat mode toggle    │
+│  Inventory boost     │  Debug options        │
+│  Require prereqs     │  (hidden by default)  │
+├──────────────────────┴───────────────────────┤
+│         [Save Settings]  [Reset Defaults]    │
+└──────────────────────────────────────────────┘
+```
 
-#### 1.4 LLM Prompt Generation ✅
-- [x] Generate structured JSON of all spells
-- [ ] Create system prompt that instructs LLM to:
-  - Group spells by school
-  - Create prerequisite chains based on spell difficulty
-  - Start each school with 1 basic spell
-  - Branch outward with logical progressions
-  - **Calculate XP requirements** for each spell based on:
-    - Base XP per cast (from configuration)
-    - Expected casts needed (considering hit/damage bonuses)
-    - Spell complexity and tier
-    - Difficulty setting (easy/normal/hard/expert/master)
-  - **Mark orphaned spells** that don't fit tree structure (place in `orphanedSpells` array)
-  - Output in specific JSON tree format with `requiredXP` and `orphanedSpells` fields
-- [ ] Include XP calculation parameters in prompt (baseXPPerCast, bonuses, difficulty multipliers)
-- [x] Save prompt + spell data to file
-- [x] Display in UI text area (editable)
+### Key Settings Groups
 
-#### 1.5 Testing Tier 1 ✅
-- [x] Launch game, press F9, verify panel appears
-- [x] Click scan button, verify spells are scanned (check logs)
-- [x] Verify output file created with spell data + prompt
-- [x] Verify text area shows the content
+**Progression:** How XP is earned and what thresholds unlock spells.
+**Early Learning:** Grants nerfed spells before full mastery.
+**Spell Tomes:** How reading spell tomes interacts with progression.
+**Developer:** Tree generation tuning, procedural injection, LLM settings (hidden by default).
 
 ---
 
-### Tier 2: LLM Integration & Tree Building ✅ (Implemented)
-**Goal:** Process LLM output and build the spell tree data structure. Implemented; tree can also be built via BUILD TREE (Complex) or (Simple)—see ARCHITECTURE.md.
+## Modals
 
-#### 2.1 LLM Response Format
-Define expected JSON structure:
-```json
-{
-  "version": "1.0",
-  "difficulty": "normal",
-  "schools": {
-    "Destruction": {
-      "root": "Flames",
-      "nodes": [
-        {
-          "spellId": "Flames",
-          "formId": "0x00012FCD",
-          "children": ["Firebolt", "Frostbite"],
-          "prerequisites": [],
-          "requiredXP": 100,
-          "description": "Basic fire spell, starting point for destruction magic"
-        },
-        {
-          "spellId": "Firebolt",
-          "formId": "0x0001C789",
-          "children": ["Fireball", "Incinerate"],
-          "prerequisites": ["Flames"],
-          "requiredXP": 250,
-          "description": "Intermediate fire projectile"
-        }
-      ],
-      "orphanedSpells": [
-        {
-          "spellId": "SpecialSpell",
-          "formId": "0x000ABCDE",
-          "requiredXP": 500,
-          "description": "Unique spell that doesn't fit the tree structure"
-        }
-      ]
-    }
-  }
-}
+| Modal | Trigger | Module |
+|-------|---------|--------|
+| Build Progress | Build Tree button | `buildProgress.js` |
+| Python Setup | Setup Python button | `pythonSetup.js` |
+| Preset Name | Save Preset button | `uiHelpers.js` |
+| Blacklist | Blacklist button | `buttonHandlers.js` |
+| Whitelist | Whitelist button | `buttonHandlers.js` |
+| Import Tree | Import button (tree page) | `treeViewerUI.js` |
+| Spawn Spell | Edit mode | `editMode.js` |
+| Color Picker | Color swatches | `colorPicker.js` |
+
+### Build Progress Modal
+
+Shows staged progress during tree building:
+
+```
+┌─────────────────────────────────────┐
+│  Building Spell Tree                │
+│                                     │
+│  ● Analyzing & Building Spell Tree  │
+│  ○ Generating Prerequisites         │
+│  ○ Finalizing Layout                │
+│                                     │
+│  ████████░░░░░░░░░  45%             │
+│  Building tree structure...         │
+│                                     │
+│              [Done]  (hidden until  │
+│                       complete)     │
+└─────────────────────────────────────┘
 ```
 
-**Key Fields:**
-- **requiredXP**: LLM-determined XP requirement for learning this spell (based on difficulty, spell complexity, and XP gain rates)
-- **orphanedSpells**: Spells that don't fit into the tree structure (appear floating in their school)
-- **difficulty**: Overall difficulty setting used for XP calculations ("easy", "normal", "hard", "expert", "master")
-
-#### 2.2 Tree Parser
-- [ ] Parse LLM JSON response
-- [ ] Validate spell references against game data
-- [ ] Build SpellNode graph structure
-- [ ] Handle missing/invalid spells gracefully
-
-#### 2.3 Tree Persistence
-- [ ] Save parsed tree to JSON file
-- [ ] Load tree from file on game start
-- [ ] UI button to "Import LLM Response"
-- [ ] Text area for pasting LLM response
-
-#### 2.4 Testing Tier 2
-- [ ] Manually paste sample LLM response in UI
-- [ ] Click import, verify tree builds (check logs)
-- [ ] Verify tree file saved
-- [ ] Reload game, verify tree loads
+Stages: Tree (Python/JS build) → Prereqs (PRM if enabled) → Finalize
 
 ---
 
-### Tier 3: Tree Visualization
-**Goal:** Display the spell tree graphically in PrismaUI
+## Main User Workflows
 
-#### 3.1 Tree Rendering
-- [ ] Canvas/SVG based tree display
-- [ ] Nodes for each spell (icon, name, school color)
-- [ ] Lines connecting prerequisite → unlocked spell
-- [ ] Zoom/pan controls
-- [ ] School filter tabs
-
-#### 3.2 Node States
-- [ ] Locked (greyed out, prerequisite not met)
-- [ ] Available (prerequisite met, can unlock)
-- [ ] Unlocked (full color, player knows spell)
-- [ ] Orphaned (floating position, standalone badge, no prerequisites)
-- [ ] Visual feedback for state changes
-
-#### 3.3 Node Interaction
-- [ ] Hover: show spell tooltip (effects, cost, description, requiredXP)
-- [ ] Click: select node, show details panel
-- [ ] Orphaned spells: show "Standalone" badge, no prerequisite display
-- [ ] Future: unlock button on available nodes
-
-#### 3.4 Testing Tier 3
-- [ ] Load tree, verify visual display
-- [ ] Test zoom/pan
-- [ ] Test school filters
-- [ ] Verify node states display correctly
-- [ ] Verify orphaned spells appear floating (separate from tree)
-- [ ] Verify orphaned spells show "Standalone" badge
-- [ ] Verify requiredXP is displayed for all spells
-
----
-
-### Tier 4: Progression System (Future)
-**Goal:** Track and manage player spell unlocking
-
-#### 4.1 Progress Tracking
-- [ ] Track unlocked spells per save
-- [ ] SKSE cosave integration for persistence
-- [ ] Check prerequisites when attempting unlock
-
-#### 4.2 Spell Granting
-- [ ] When spell unlocked, add to player spell list
-- [ ] Remove spell if "un-unlocking" (optional)
-
-#### 4.3 Unlock Requirements
-- [ ] Basic: just prerequisites
-- [ ] Advanced: skill level requirements
-- [ ] Advanced: spell tome consumption
-- [ ] Advanced: perk requirements
-
----
-
-## Technical Architecture
-
-### File Structure
-```
-SpellLearning/
-├── plugin/
-│   ├── src/
-│   │   ├── Main.cpp              # SKSE entry, hotkey registration
-│   │   ├── SpellScanner.cpp      # Spell enumeration and data extraction
-│   │   ├── SpellScanner.h
-│   │   ├── TreeBuilder.cpp       # LLM response parser, tree structure
-│   │   ├── TreeBuilder.h
-│   │   ├── UIManager.cpp         # PrismaUI communication
-│   │   ├── UIManager.h
-│   │   ├── PrismaUI_API.h        # PrismaUI header
-│   │   └── PCH.h
-│   ├── CMakeLists.txt
-│   ├── CMakePresets.json
-│   └── vcpkg.json
-├── PrismaUI/
-│   └── views/
-│       └── SpellLearningPanel/
-│           ├── index.html
-│           ├── script.js
-│           └── styles.css
-├── docs/
-│   ├── DESIGN.md                 # This file
-│   └── LLM_PROMPT_TEMPLATE.md    # Default prompt template
-├── config/
-│   └── settings.yaml             # User settings
-└── data/
-    ├── spell_scan_output.json    # Last scan results
-    ├── llm_prompt.txt            # Generated prompt for LLM
-    └── spell_tree.json           # Parsed spell tree
-```
-
-### Data Flow
+### 1. First-Time Setup
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TIER 1                                  │
-│  ┌──────────┐    ┌─────────────┐    ┌──────────────────┐       │
-│  │ F9 Key   │───►│ Open Panel  │───►│ PrismaUI View    │       │
-│  └──────────┘    └─────────────┘    └──────────────────┘       │
-│                                              │                  │
-│  ┌──────────────┐    ┌─────────────┐         ▼                 │
-│  │ Scan Button  │───►│ SpellScanner│───►┌──────────────┐       │
-│  └──────────────┘    └─────────────┘    │ JSON Output  │       │
-│                                         │ + LLM Prompt │       │
-│                                         └──────────────┘       │
-│                                                │                │
-│                                                ▼                │
-│                                         ┌──────────────┐       │
-│                                         │ Text Editor  │       │
-│                                         │ (editable)   │       │
-│                                         └──────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         TIER 2                                  │
-│  ┌──────────────┐                                               │
-│  │ User pastes  │                                               │
-│  │ LLM response │                                               │
-│  └──────┬───────┘                                               │
-│         │                                                       │
-│         ▼                                                       │
-│  ┌──────────────┐    ┌─────────────┐    ┌──────────────┐       │
-│  │ Import Btn   │───►│ TreeBuilder │───►│ spell_tree   │       │
-│  └──────────────┘    │ (validate)  │    │ .json        │       │
-│                      └─────────────┘    └──────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         TIER 3                                  │
-│  ┌──────────────┐    ┌─────────────┐    ┌──────────────┐       │
-│  │ spell_tree   │───►│ JS Renderer │───►│ Canvas/SVG   │       │
-│  │ .json        │    │             │    │ Tree Display │       │
-│  └──────────────┘    └─────────────┘    └──────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
+Open panel (F8)
+  → Spell Tree page (empty state)
+  → Navigate to Spell Scan
+  → Click "Scan Spells"
+  → C++ scans game → returns spell JSON
+  → UI shows scan stats, enables Build
 ```
 
-### PrismaUI Communication
+### 2. Build Tree (Easy Mode)
 
-**C++ → JS:**
-```cpp
-// Send spell scan results to UI
-PrismaUI::ExecuteJS("SpellLearningPanel", 
-    "updateSpellData(" + jsonData + ")");
+```
+Scan complete
+  → Select preset chip (DEFAULT/Easy/Hard)
+  → Click "Build Tree"
+  → Build Progress modal opens
+  → Stage 1: Python builds tree (TF-IDF themes → layout → edges)
+  → Stage 2: PRM scores locks (if enabled)
+  → Stage 3: Finalize
+  → Modal completes → tree visible in preview
+  → Click "Apply Tree"
+  → C++ receives prerequisites → gameplay begins
 ```
 
-**JS → C++:**
-```javascript
-// Request spell scan
-window.callCpp('ScanSpells', '');
+### 3. Build Tree (Complex Mode)
 
-// Import tree from text
-window.callCpp('ImportTree', jsonString);
+```
+Scan complete
+  → Switch to Complex mode
+  → Choose growth mode (Classic/Tree/Sun/Flat)
+  → Adjust settings (root count, branching, shapes)
+  → Preview updates in real-time
+  → Expand Extra Settings → tune PRM / Core
+  → Click "Build Tree"
+  → Same build pipeline as Easy
+  → Click "Apply Tree"
 ```
 
-**Registered JS Functions:**
-```javascript
-window.updateSpellData = function(json) { ... }
-window.updateTreeData = function(json) { ... }
-window.updateStatus = function(message) { ... }
+### 4. Gameplay Loop
+
+```
+Tree applied
+  → Navigate to Spell Tree page
+  → See full tree with locked/available nodes
+  → Click a node → Details sidebar shows prerequisites + XP
+  → Cast spells in-game:
+      Direct prereq cast → high XP (up to 50%)
+      Same-school cast → medium XP (up to 15%)
+      Any spell cast → low XP (up to 5%)
+      Read spell tome → configurable XP%
+  → At 25%: Early learning grants nerfed spell
+  → At 100%: Mastery — full power spell
+  → Discovery mode hides info until XP thresholds met
 ```
 
 ---
 
-## Spell Data Schema
+## JS Module Map
 
-### Scan Output Format
-```json
-{
-  "scanTimestamp": "2026-01-27T12:00:00Z",
-  "spellCount": 472,
-  "spells": [
-    {
-      "formId": "0x00012FCD",
-      "editorId": "Flames",
-      "name": "Flames",
-      "school": "Destruction",
-      "skillLevel": "Novice",
-      "magickaCost": 14,
-      "castingType": "Concentration",
-      "delivery": "Aimed",
-      "chargeTime": 0.0,
-      "effects": [
-        {
-          "name": "Flames",
-          "magnitude": 8.0,
-          "duration": 0,
-          "area": 0,
-          "description": "A gout of fire that does 8 points per second"
-        }
-      ],
-      "keywords": ["MagicDamageFire"],
-      "plugin": "Skyrim.esm"
-    }
-  ]
-}
-```
+### Core Infrastructure
+| Module | Purpose |
+|--------|---------|
+| `state.js` | Global state store (300+ properties) |
+| `constants.js` | Default prompts, palettes, tier mappings |
+| `config.js` | Tree config constants |
+| `i18n.js` | Translation engine |
+| `main.js` | Entry point, tab switching, module verification |
+| `cppCallbacks.js` | All C++→JS callback handlers |
+| `uiHelpers.js` | UI utilities, modal helpers, preset UI |
 
-### LLM Prompt Template
-See `docs/LLM_PROMPT_TEMPLATE.md` for the default prompt.
+### Tree Rendering
+| Module | Purpose |
+|--------|---------|
+| `canvasRendererV2.js` | **Primary** Canvas 2D renderer (handles 200+ nodes) |
+| `wheelRenderer.js` | Legacy SVG renderer (still loaded, not primary) |
+| `treeViewerUI.js` | Tree viewer page logic, node selection, detail panels |
+| `treeParser.js` | Parses spell_tree.json, cycle detection, orphan fixing |
+| `treeCore.js` | Core tree settings (globe position, size) |
+| `trustedRenderer.js` | Renderer wrapper with validation |
 
-Key prompt instructions:
-1. Group spells by school (5 schools)
-2. Each school starts with exactly 1 root spell (typically Novice level)
-3. Create logical progression chains
-4. Consider: same effect but stronger → linear chain
-5. Consider: branching into different elements (fire/frost/shock)
-6. Consider: skill level as rough difficulty indicator
-7. **Determine XP Requirements**: Calculate `requiredXP` for each spell based on:
-   - Base XP per cast (from configuration)
-   - Expected casts needed (considering hit/damage bonuses)
-   - Spell complexity and tier
-   - Difficulty setting (easy/normal/hard/expert/master)
-   - Formula: `requiredXP = (ExpectedCasts * BaseXPPerCast * TierMultiplier) * DifficultyMultiplier`
-8. **Orphan Spells**: Some spells may not fit the tree structure (unique mechanics, standalone spells). Place these in `orphanedSpells` array - they appear floating in their school without prerequisites
-9. Output strictly valid JSON matching the schema
+### Tree Building
+| Module | Purpose |
+|--------|---------|
+| `proceduralTreeBuilder.js` | JS/Python procedural tree builder |
+| `visualFirstBuilder.js` | Visual-first builder (layout → assign → edges) |
+| `settingsAwareTreeBuilder.js` | Settings-aware wrapper |
+| `layoutGenerator.js` | Grid/shape layout generation |
+| `edgeScoring.js` | Edge scoring for spell relationships |
+| `shapeProfiles.js` | Shape definitions (explosion, tree, organic) |
+| `growthDSL.js` | Growth recipe DSL parser |
+| `growthBehaviors.js` | Growth behavior implementations |
 
----
+### Tree Preview
+| Module | Purpose |
+|--------|---------|
+| `treePreview.js` | Preview orchestrator |
+| `treePreviewSun.js` | Sun grid preview mode |
+| `treePreviewFlat.js` | Flat grid preview mode |
+| `treePreviewUtils.js` | Preview utilities |
+| `sunGridLinear.js` | Linear sun grid layout |
+| `sunGridEqualArea.js` | Equal-area sun grid |
+| `sunGridFibonacci.js` | Fibonacci spiral grid |
+| `sunGridSquare.js` | Square grid layout |
 
-## Configuration
+### Growth Modes
+| Module | Purpose |
+|--------|---------|
+| `treeGrowth.js` | Growth mode orchestrator |
+| `treeGrowthTree.js` | Tree growth mode (trunk/branch) |
+| `classic/classicMain.js` | Classic growth mode |
+| `classic/classicRenderer.js` | Classic mode renderer |
+| `classic/classicLayout.js` | Classic layout engine |
+| `classic/classicSettings.js` | Classic mode settings |
+| `classic/classicThemeEngine.js` | Classic theme engine |
+| `tree/treeRenderer.js` | Tree mode renderer |
+| `tree/treeTrunk.js` | Tree trunk generation |
+| `tree/treeSettings.js` | Tree mode settings |
 
-### settings.yaml
-```yaml
-# SpellLearning Configuration
+### UI Panels & Features
+| Module | Purpose |
+|--------|---------|
+| `settingsPanel.js` | Settings page (all config) |
+| `settingsPresets.js` | Settings preset save/load |
+| `scannerPresets.js` | Scanner preset save/load |
+| `easyMode.js` | Easy mode scan page |
+| `generationModeUI.js` | Complex mode per-school controls |
+| `buttonHandlers.js` | Scan/build/apply button handlers |
+| `buildProgress.js` | Build progress modal |
+| `progressionUI.js` | Progression UI (learning targets, XP) |
+| `prereqMaster.js` | Pre Req Master system |
+| `pythonSetup.js` | Python installation wizard |
+| `editMode.js` | Tree edit mode |
+| `colorPicker.js` | Color picker component |
 
-ui:
-  hotkey: 67  # F9 (DirectInput scancode)
-  defaultTab: "Destruction"
-  
-scanner:
-  includeModSpells: true
-  excludePlugins:
-    - "ccBGSSSE037-Curios.esl"  # Example exclusion
-  minMagickaCost: 0
-  maxMagickaCost: 999999
-  
-tree:
-  autoLoadOnStart: true
-  treeFilePath: "Data/SKSE/Plugins/SpellLearning/spell_tree.json"
+### Visual Effects
+| Module | Purpose |
+|--------|---------|
+| `starfield.js` | Animated starfield background |
+| `globe3D.js` | 3D globe at tree center |
+| `treeAnimation.js` | Build replay animation |
 
-llm:
-  promptTemplatePath: "Data/SKSE/Plugins/SpellLearning/llm_prompt_template.txt"
-  outputPath: "Data/SKSE/Plugins/SpellLearning/llm_output.json"
-  difficulty: "normal"  # easy, normal, hard, expert, master
-  # LLM uses this to calculate XP requirements
-  # Also receives baseXPPerCast and bonus multipliers for calculations
-```
+### LLM Integration
+| Module | Purpose |
+|--------|---------|
+| `llmIntegration.js` | LLM API integration |
+| `llmTreeFeatures.js` | LLM tree features |
+| `llmApiSettings.js` | LLM API settings UI |
 
----
+### Utilities
+| Module | Purpose |
+|--------|---------|
+| `spellCache.js` | Spell data caching |
+| `colorUtils.js` | Color management, school colors |
 
-## Success Criteria
-
-### Tier 1 Complete When:
-- [x] F9 opens/closes PrismaUI panel
-- [x] Panel displays title, status, scan button, text area
-- [x] Scan button triggers spell enumeration
-- [x] Spell data + LLM prompt appears in text area
-- [x] Output saved to file
-- [x] SKSE logs show scan progress and results
-
-### Tier 2 Complete When:
-- [ ] Can paste LLM JSON response into text area
-- [ ] Import button parses and validates tree
-- [ ] Tree saved to spell_tree.json (includes requiredXP and orphanedSpells)
-- [ ] Tree loads on game start
-- [ ] Invalid spell references logged as warnings
-- [ ] Orphaned spells parsed and stored separately
-- [ ] Fallback XP requirements used if LLM doesn't provide requiredXP
-
-### Tier 3 Complete When:
-- [ ] Tree displays visually with nodes and edges
-- [ ] Orphaned spells appear floating (separate from tree)
-- [ ] Can zoom and pan the view
-- [ ] School tabs filter display
-- [ ] Node hover shows spell details (including requiredXP)
-- [ ] Node states visually distinct (including orphaned state)
-- [ ] Orphaned spells show "Standalone" badge
+### Unused / Archive
+| Module | Status |
+|--------|--------|
+| `_archive/canvasRenderer.js` | Replaced by canvasRendererV2 |
+| `_archive/spellTreeRenderer.js` | Old renderer |
+| `_archive/tierVisuals.js` | Old tier visuals |
+| `webglRenderer.js` | Not supported in CEF |
+| `webglShaders.js` | Not supported in CEF |
+| `webglShapes.js` | Not supported in CEF |
+| `unificationTest.js` | Test only |
+| `autoTest.js` | Test only |
 
 ---
 
-## Dependencies
+## C++ ↔ JS Communication
 
-- **SKSE64** - Script extender
-- **CommonLibSSE-NG** - Modern SKSE plugin framework
-- **PrismaUI 1.2.0+** - In-game HTML/JS UI framework
-- **nlohmann/json** - C++ JSON library (via vcpkg)
-- **yaml-cpp** - Configuration loading (via vcpkg)
+### JS → C++ (35 listeners via `callCpp`)
+
+**Scanning:** `ScanSpells`, `SaveOutput`, `SaveOutputBySchool`
+**Tree:** `LoadSpellTree`, `SaveSpellTree`, `GetSpellInfo`, `GetSpellInfoBatch`
+**Progression:** `SetLearningTarget`, `ClearLearningTarget`, `UnlockSpell`, `GetProgress`, `CheatUnlockSpell`, `RelockSpell`, `GetPlayerKnownSpells`, `SetSpellXP`, `SetTreePrerequisites`
+**Config:** `LoadUnifiedConfig`, `SaveUnifiedConfig`, `SetHotkey`, `SetPauseGameOnFocus`
+**Presets:** `SavePreset`, `DeletePreset`, `LoadPresets`
+**LLM:** `CheckLLM`, `LLMGenerate`, `PollLLMResponse`, `LoadLLMConfig`, `SaveLLMConfig`
+**Python:** `ProceduralPythonGenerate`, `PreReqMasterScore`, `SetupPython`, `CancelPythonSetup`
+**Clipboard:** `CopyToClipboard`, `GetClipboard`
+**Other:** `HidePanel`, `LogMessage`, `LoadPrompt`, `SavePrompt`
+
+### C++ → JS (30+ calls via `InteropCall`)
+
+**Lifecycle:** `onPrismaReady`, `onPanelShowing`, `onPanelHiding`
+**Data:** `updateSpellData`, `updateTreeData`, `updateSpellInfo`, `updateSpellInfoBatch`
+**State:** `updateSpellState`, `onResetTreeStates`, `onSaveGameLoaded`
+**Progress:** `onProgressUpdate`, `onSpellReady`, `onSpellUnlocked`, `onProgressData`
+**Config:** `onUnifiedConfigLoaded`, `onPresetsLoaded`
+**Python:** `onProceduralPythonComplete`, `onPreReqMasterComplete`, `onPythonAddonStatus`, `onPythonSetupProgress`, `onPythonSetupComplete`
+**LLM:** `onLLMStatus`, `onLLMQueued`, `onLLMPollResult`, `onLLMConfigLoaded`
 
 ---
 
-## Notes
+## Preset System
 
-- The LLM call happens outside the game (user copies prompt, runs LLM, pastes result)
-- Future enhancement: integrate local LLM or API call from mod
-- Spell tree is per-playthrough, not global (stored in save-specific location eventually)
-- Consider mod compatibility: handle spells added by other mods gracefully
+Two preset types, stored as individual JSON files:
+
+### Settings Presets (`presets/settings/`)
+Capture: Progression settings, early learning, tome learning, notifications.
+Bundled: `DEFAULT.json`, `Easy.json`, `Hard.json`
+
+### Scanner Presets (`presets/scanner/`)
+Capture: Tree generation settings, preview modes, PRM settings, growth configs.
+Bundled: `DEFAULT.json`
+
+Presets are loaded from files on panel open via `LoadPresets` → `onPresetsLoaded`.
+
+---
+
+## Input & Focus
+
+The panel uses a `.focus-overlay` div with `background: rgba(0,0,0,0.01)` to capture mouse events (CEF requires non-transparent pixels for hit testing). `tabindex="-1"` captures keyboard input. The C++ side calls `Focus()`/`Unfocus()` on PrismaUI to control game input passthrough.
+
+`pauseGameOnFocus` (default: true) freezes the game while the panel is open.

@@ -101,26 +101,39 @@ function generateDynamicSchoolCSS() {
 // COLOR CONVERSION UTILITIES
 // =============================================================================
 
-// Convert hex to rgba with specified alpha
+// Cache for hexToRgba results — keyed by hex + '_' + alpha
+var _rgbaCache = {};
+
+// Convert hex to rgba with specified alpha (cached)
 function hexToRgba(hex, alpha) {
+    var cacheKey = hex + '_' + alpha;
+    if (_rgbaCache[cacheKey]) {
+        return _rgbaCache[cacheKey];
+    }
+
     var r, g, b;
-    
+    var result;
+
     if (hex.startsWith('hsl')) {
-        return hex.replace('hsl(', 'hsla(').replace(')', ', ' + alpha + ')');
+        result = hex.replace('hsl(', 'hsla(').replace(')', ', ' + alpha + ')');
+        _rgbaCache[cacheKey] = result;
+        return result;
     }
-    
-    hex = hex.replace('#', '');
-    if (hex.length === 3) {
-        r = parseInt(hex[0] + hex[0], 16);
-        g = parseInt(hex[1] + hex[1], 16);
-        b = parseInt(hex[2] + hex[2], 16);
+
+    var cleanHex = hex.replace('#', '');
+    if (cleanHex.length === 3) {
+        r = parseInt(cleanHex[0] + cleanHex[0], 16);
+        g = parseInt(cleanHex[1] + cleanHex[1], 16);
+        b = parseInt(cleanHex[2] + cleanHex[2], 16);
     } else {
-        r = parseInt(hex.substr(0, 2), 16);
-        g = parseInt(hex.substr(2, 2), 16);
-        b = parseInt(hex.substr(4, 2), 16);
+        r = parseInt(cleanHex.substr(0, 2), 16);
+        g = parseInt(cleanHex.substr(2, 2), 16);
+        b = parseInt(cleanHex.substr(4, 2), 16);
     }
-    
-    return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+
+    result = 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
+    _rgbaCache[cacheKey] = result;
+    return result;
 }
 
 // Convert hex to rgba fill color (more opaque for unlocked fills)

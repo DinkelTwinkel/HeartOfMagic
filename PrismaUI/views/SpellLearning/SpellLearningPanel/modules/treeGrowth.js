@@ -48,6 +48,8 @@ var TreeGrowth = {
     // Render loop
     _needsRender: false,
     _rafId: null,
+    _rafRunning: false,
+    _idleFrames: 0,
     _resizeObserver: null,
     _resizeTimeout: null,
 
@@ -132,7 +134,7 @@ var TreeGrowth = {
 
         return '' +
             '<div class="tree-preview-header">' +
-                '<span class="tree-preview-title">Tree Growth Preview</span>' +
+                '<span class="tree-preview-title">' + t('treeViewer.treeGrowthPreview') + '</span>' +
             '</div>' +
             '<div class="tree-preview-tabs" id="treeGrowthTabs">' +
                 tabsHTML +
@@ -287,7 +289,7 @@ var TreeGrowth = {
 
         this._width = width;
         this._height = height;
-        this._needsRender = true;
+        this._markDirty();
     },
 
     // =========================================================================
@@ -319,7 +321,7 @@ var TreeGrowth = {
                     self._panRafPending = false;
                     self.panX = self._pendingPanX;
                     self.panY = self._pendingPanY;
-                    self._needsRender = true;
+                    self._markDirty();
                 });
             }
         });
@@ -345,7 +347,7 @@ var TreeGrowth = {
             self.panY = mouseY - (mouseY - self.panY) * (newZoom / self.zoom);
             self.zoom = newZoom;
 
-            self._needsRender = true;
+            self._markDirty();
         }, { passive: false });
 
         canvas.addEventListener('contextmenu', function(e) {
@@ -361,6 +363,11 @@ var TreeGrowth = {
 
     _markDirty: function() {
         this._needsRender = true;
+        this._idleFrames = 0;
+        // Restart the RAF loop if it has stopped due to idling
+        if (!this._rafRunning) {
+            this._startRenderLoop();
+        }
     },
 
     getSpellData: function() {
@@ -368,13 +375,23 @@ var TreeGrowth = {
     },
 
     _startRenderLoop: function() {
-        if (this._rafId) return;
+        if (this._rafRunning) return;
 
+        this._rafRunning = true;
+        this._idleFrames = 0;
         var self = this;
         function loop() {
             if (self._needsRender) {
+                self._idleFrames = 0;
                 self._needsRender = false;
                 self._render();
+            } else {
+                self._idleFrames++;
+                if (self._idleFrames >= 60) {
+                    self._rafRunning = false;
+                    self._rafId = null;
+                    return; // Stop loop after ~1s of idle
+                }
             }
             self._rafId = requestAnimationFrame(loop);
         }
@@ -386,6 +403,8 @@ var TreeGrowth = {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
+        this._rafRunning = false;
+        this._idleFrames = 0;
     },
 
     _render: function() {
@@ -505,14 +524,14 @@ var TreeGrowth = {
             if (applyBtn) applyBtn.disabled = false;
             if (clearBtn) clearBtn.disabled = false;
 
-            var label = 'Tree built';
+            var label = t('treeGrowth.treeBuilt');
             if (this._nodeCount > 0) {
-                label += ' \u2014 ' + this._nodeCount + '/' + (this._totalPool || this._nodeCount) + ' nodes placed';
+                label += ' \u2014 ' + t('treeGrowth.nodesPlaced', {placed: this._nodeCount, total: this._totalPool || this._nodeCount});
             }
             this.setStatusText(label, '#22c55e');
 
             // Force the main tree growth preview canvas to re-render
-            this._needsRender = true;
+            this._markDirty();
 
             // Only auto-run PRM on FIRST build (not on layout recalculations)
             if (!wasBuilt) {
@@ -558,7 +577,7 @@ var TreeGrowth = {
             if (replayBtn) replayBtn.style.display = 'none';
 
             if (this._pythonInstalled) {
-                this.setStatusText('Python ready (detected)', '#22c55e');
+                this.setStatusText(t('treeGrowth.pythonReady'), '#22c55e');
             }
         }
     },
@@ -587,13 +606,13 @@ var TreeGrowth = {
         var setupBtn = document.getElementById('tgSetupPythonBtn');
 
         if (installed) {
-            this.setStatusText('Python ready (detected)', '#22c55e');
+            this.setStatusText(t('treeGrowth.pythonReady'), '#22c55e');
             if (setupBtn) setupBtn.style.display = 'none';
         } else if (hasScript && !hasPython) {
-            this.setStatusText('Python not installed', '#f59e0b');
+            this.setStatusText(t('treeGrowth.pythonNotInstalled'), '#f59e0b');
             if (setupBtn) setupBtn.style.display = '';
         } else if (!hasScript) {
-            this.setStatusText('SpellTreeBuilder not found', '#ef4444');
+            this.setStatusText(t('treeGrowth.builderNotFound'), '#ef4444');
             if (setupBtn) setupBtn.style.display = 'none';
         }
 

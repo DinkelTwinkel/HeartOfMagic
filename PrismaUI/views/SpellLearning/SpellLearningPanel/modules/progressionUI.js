@@ -68,15 +68,15 @@ function updateHowToContent() {
         var settingsItems = [];
         
         if (el.enabled) {
-            settingsItems.push('Spells unlock at ' + el.unlockThreshold + '% progress');
-            settingsItems.push('Start at ' + el.minEffectiveness + '% power');
-            settingsItems.push('Scale up to ' + el.maxEffectiveness + '% before mastery');
-            settingsItems.push('At 100% mastery: full power unlocked!');
-            settingsItems.push('After ' + el.selfCastRequiredAt + '%, must cast spell itself');
+            settingsItems.push(t('progression.howto.unlockAt', {threshold: el.unlockThreshold}));
+            settingsItems.push(t('progression.howto.startPower', {min: el.minEffectiveness}));
+            settingsItems.push(t('progression.howto.scaleUp', {max: el.maxEffectiveness}));
+            settingsItems.push(t('progression.howto.fullMastery'));
+            settingsItems.push(t('progression.howto.selfCastAt', {threshold: el.selfCastRequiredAt}));
         } else {
-            settingsItems.push('Early spell learning is disabled');
-            settingsItems.push('Spells unlock at 100% XP');
-            settingsItems.push('Click "Unlock Spell" when ready');
+            settingsItems.push(t('progression.howto.earlyDisabled'));
+            settingsItems.push(t('progression.howto.unlockAt100'));
+            settingsItems.push(t('progression.howto.clickUnlock'));
         }
         
         settingsList.innerHTML = '';
@@ -91,18 +91,18 @@ function updateHowToContent() {
     if (xpList) {
         var xpItems = [];
         
-        xpItems.push('Direct prerequisite: ' + settings.xpMultiplierDirect + '% XP');
-        xpItems.push('Same school spell: ' + settings.xpMultiplierSchool + '% XP');
-        xpItems.push('Any spell: ' + settings.xpMultiplierAny + '% XP');
+        xpItems.push(t('progression.howto.directPrereq', {value: settings.xpMultiplierDirect}));
+        xpItems.push(t('progression.howto.sameSchool', {value: settings.xpMultiplierSchool}));
+        xpItems.push(t('progression.howto.anySpell', {value: settings.xpMultiplierAny}));
         
         if (settings.islEnabled && settings.islDetected) {
             xpItems.push({
-                text: 'ISL study: ' + settings.islXpPerHour + ' XP/hour',
+                text: t('progression.howto.islStudy', {value: settings.islXpPerHour}),
                 className: 'isl-active'
             });
             if (settings.islTomeBonus > 0) {
                 xpItems.push({
-                    text: 'Own spell tome: +' + settings.islTomeBonus + '% bonus',
+                    text: t('progression.howto.islTomeBonus', {value: settings.islTomeBonus}),
                     className: 'isl-active'
                 });
             }
@@ -125,18 +125,18 @@ function updateHowToContent() {
     if (tipsList) {
         // Adjust tip based on learning mode setting
         var targetTip = settings.learningMode === 'perSchool' 
-            ? 'Set learning targets (one per school)' 
-            : 'Set one learning target at a time';
+            ? t('progression.howto.targetPerSchool') 
+            : t('progression.howto.targetSingle');
         
         var tipsItems = [
             targetTip,
-            'Combat usage grants more XP than practice',
-            'Higher tier spells take longer to master'
+            t('progression.howto.combatTip'),
+            t('progression.howto.tierTip')
         ];
         
         if (settings.earlySpellLearning.enabled) {
-            tipsItems.push('Practice with weakened spells to gain XP');
-            tipsItems.push('The jump from ' + settings.earlySpellLearning.maxEffectiveness + '% to 100% feels amazing!');
+            tipsItems.push(t('progression.howto.weakenedTip'));
+            tipsItems.push(t('progression.howto.jumpTip', {max: settings.earlySpellLearning.maxEffectiveness}));
         }
         
         tipsList.innerHTML = '';
@@ -168,32 +168,32 @@ function updateLearningStatusBadge(node, progress) {
     if (node.state === 'unlocked' || progress.unlocked || progressPercent >= 100) {
         // MASTERED - 100% complete
         stage = 'mastered';
-        hintText = 'Full mastery achieved! Spell at 100% power.';
+        hintText = t('progression.hint.mastered');
         effectivenessPercent = 100;
         effectivenessClass = 'full';
     } else if (node.state === 'locked') {
         // LOCKED - Prerequisites not met
         stage = 'locked';
-        hintText = 'Complete prerequisites first to begin learning.';
+        hintText = t('progression.hint.locked');
         effectivenessPercent = null;
         effectivenessClass = '';
     } else if (!el.enabled) {
         // Early learning disabled - simple available/locked display
         if (progressPercent > 0) {
             stage = 'studying';
-            hintText = 'Cast prerequisite spells to gain XP.';
+            hintText = t('progression.hint.studying');
             effectivenessPercent = null;
             effectivenessClass = '';
         } else {
             stage = 'locked';
-            hintText = 'Set as learning target to begin.';
+            hintText = t('progression.hint.setTarget');
             effectivenessPercent = null;
             effectivenessClass = '';
         }
     } else if (progressPercent < el.unlockThreshold) {
         // STUDYING - 0% to unlock threshold
         stage = 'studying';
-        hintText = 'Cast prerequisite spells to unlock this spell at ' + el.unlockThreshold + '%.';
+        hintText = t('progression.hint.studyingThreshold', {threshold: el.unlockThreshold});
         effectivenessPercent = null;
         effectivenessClass = '';
     } else if (progressPercent < el.selfCastRequiredAt) {
@@ -201,13 +201,13 @@ function updateLearningStatusBadge(node, progress) {
         stage = 'weakened';
         effectivenessPercent = calculateCurrentEffectiveness(progressPercent, el);
         effectivenessClass = 'weak';
-        hintText = 'Spell obtained! ' + Math.round(effectivenessPercent) + '% power. Cast prerequisites to improve.';
+        hintText = t('progression.hint.weakened', {percent: Math.round(effectivenessPercent)});
     } else if (progressPercent < 100) {
         // PRACTICING - selfCastRequiredAt to 99%
         stage = 'practicing';
         effectivenessPercent = calculateCurrentEffectiveness(progressPercent, el);
         effectivenessClass = 'medium';
-        hintText = 'Cast this spell directly to reach mastery! At 100%: full power jump!';
+        hintText = t('progression.hint.practicing');
     } else {
         // Should not reach here, but fallback
         stage = 'studying';
@@ -323,7 +323,7 @@ function onLearnClick() {
             CanvasRenderer._needsRender = true;
         }
         
-        setTreeStatus('Stopped learning ' + (node.name || node.formId) + ' - spell removed');
+        setTreeStatus(t('progression.stoppedLearning', {name: node.name || node.formId}));
         console.log('[SpellLearning] Cleared learning target - early spell removed from player');
     } else {
         // In "single" mode, clear ALL other learning targets first
@@ -396,7 +396,7 @@ function onLearnClick() {
             CanvasRenderer._needsRender = true;
         }
         
-        setTreeStatus('Now learning: ' + (node.name || node.formId));
+        setTreeStatus(t('progression.nowLearning', {name: node.name || node.formId}));
     }
     
     // Recalculate node availability (in case switching targets changes what's available)
@@ -421,7 +421,7 @@ function onUnlockClick() {
             // Relock the spell (remove from player) - send canonical formId to C++
             if (window.callCpp) {
                 window.callCpp('RelockSpell', JSON.stringify({ formId: canonId }));
-                setTreeStatus('Relocking ' + (node.name || node.formId) + '...');
+                setTreeStatus(t('progression.relocking', {name: node.name || node.formId}));
             }
 
             // Update local state immediately for responsiveness (canonical ID)
@@ -439,14 +439,14 @@ function onUnlockClick() {
             // Update the state badge
             var stateBadge = document.getElementById('spell-state');
             if (stateBadge) {
-                stateBadge.textContent = 'Available';
+                stateBadge.textContent = t('progression.available');
                 stateBadge.className = 'state-badge available';
             }
         } else {
             // Unlock the spell (cheat - bypass XP) - send canonical formId to C++
             if (window.callCpp) {
                 window.callCpp('CheatUnlockSpell', JSON.stringify({ formId: canonId }));
-                setTreeStatus('Cheat unlocking ' + (node.name || node.formId) + '...');
+                setTreeStatus(t('progression.cheatUnlocking', {name: node.name || node.formId}));
             }
 
             // Update local state immediately for responsiveness (canonical ID)
@@ -466,7 +466,7 @@ function onUnlockClick() {
             // Update the state badge
             var stateBadge = document.getElementById('spell-state');
             if (stateBadge) {
-                stateBadge.textContent = 'Unlocked';
+                stateBadge.textContent = t('progression.unlocked');
                 stateBadge.className = 'state-badge unlocked';
             }
         }
@@ -481,13 +481,13 @@ function onUnlockClick() {
     
     // NORMAL MODE: Require XP
     if (!progress || progress.xp < progress.required) {
-        setTreeStatus('Not enough XP to unlock');
+        setTreeStatus(t('progression.notEnoughXp'));
         return;
     }
     
     if (window.callCpp) {
         window.callCpp('UnlockSpell', JSON.stringify({ formId: canonId }));
-        setTreeStatus('Unlocking ' + (node.name || node.formId) + '...');
+        setTreeStatus(t('progression.unlocking', {name: node.name || node.formId}));
     }
 }
 
@@ -589,7 +589,7 @@ window.onSpellReady = function(dataStr) {
         }) : null;
         var name = node ? (node.name || node.formId) : data.formId;
 
-        setTreeStatus(name + ' is ready to unlock!');
+        setTreeStatus(t('progression.readyToUnlock', {name: name}));
 
         // Update details panel if selected node matches canonical ID
         var selectedCanon = state.selectedNode ? ((typeof getCanonicalFormId === 'function') ? getCanonicalFormId(state.selectedNode) : state.selectedNode.formId) : null;
@@ -623,7 +623,7 @@ window.onSpellUnlocked = function(dataStr) {
                     var nCanon = (typeof getCanonicalFormId === 'function') ? getCanonicalFormId(n) : n.formId;
                     if (nCanon === canonId && n.state !== 'unlocked') {
                         n.state = 'unlocked';
-                        setTreeStatus('MASTERED: ' + (n.name || n.formId) + '!');
+                        setTreeStatus(t('progression.mastered', {name: n.name || n.formId}));
                         if (typeof syncDuplicateState === 'function') syncDuplicateState(n);
                     }
                 });
@@ -664,7 +664,7 @@ window.onSpellUnlocked = function(dataStr) {
             }).length;
             document.getElementById('unlocked-count').textContent = unlockedCount;
         } else {
-            setTreeStatus('Failed to unlock spell');
+            setTreeStatus(t('progression.failedUnlock'));
         }
         
     } catch (e) {
@@ -706,7 +706,7 @@ window.onLearningTargetSet = function(dataStr) {
                 }
             }
             
-            setTreeStatus('Now learning: ' + (data.spellName || data.formId));
+            setTreeStatus(t('progression.nowLearning', {name: data.spellName || data.formId}));
         }
     } catch (e) {
         console.error('[SpellLearning] Failed to parse learning target:', e);

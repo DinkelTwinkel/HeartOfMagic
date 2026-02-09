@@ -339,7 +339,7 @@ function renameScannerPreset(oldName, newName) {
 
     // Check duplicate
     if (scannerPresets[newName]) {
-        if (!confirm('A preset named "' + newName + '" already exists. Overwrite it?')) {
+        if (!confirm(t('scannerPresets.overwriteConfirm', {name: newName}))) {
             updateScannerPresetsUI();
             return;
         }

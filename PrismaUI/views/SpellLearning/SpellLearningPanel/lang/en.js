@@ -1,11 +1,11 @@
-{
+// Auto-generated from en.json - do not edit directly
+window._i18nPreload = {
     "_meta": {
         "language": "English",
         "locale": "en",
         "author": "Heart of Magic Team",
         "version": "2.0.0"
     },
-
     "buildProgress.analyzingSpellRelationships": "Analyzing spell relationships...",
     "buildProgress.buildFailed": "Build failed",
     "buildProgress.close": "Close",
@@ -14,7 +14,6 @@
     "buildProgress.finalizingLayout": "Finalizing layout...",
     "buildProgress.prmDisabled": "Pre Req Master disabled",
     "buildProgress.scoringPrereqCandidates": "Scoring prerequisite candidates...",
-
     "buttons.activeRenderer": "Active renderer",
     "buttons.applyTree": "<span class=\"btn-icon\">[A]</span> Apply Tree",
     "buttons.buildTree": "<span class=\"btn-icon\">[B]</span> Build Tree",
@@ -32,7 +31,6 @@
     "buttons.toggleFullscreen": "Toggle Fullscreen",
     "buttons.zoomIn": "Zoom In",
     "buttons.zoomOut": "Zoom Out",
-
     "details.description": "Description",
     "details.effects": "Effects",
     "details.learningProgress": "Learning Progress",
@@ -50,21 +48,17 @@
     "details.unlocks": "Unlocks",
     "details.unlockSpell": "Unlock Spell",
     "details.xpUnit": "XP",
-
     "easyMode.choosePreset": "Choose a Preset",
     "easyMode.noPresets": "No presets yet. Build will use current settings.",
     "easyMode.statusWrap": "Status: <span id=\"easyStatus\">Waiting for scan...</span>",
-
     "editMode.editTree": "Edit Tree",
     "editMode.exitEditMode": "Exit Edit Mode",
     "editMode.nothingToUndo": "Nothing to undo",
     "editMode.undoAction": "Undo: {{action}}",
-
     "filter.blacklist": "<span class=\"btn-icon\">[-]</span> Blacklist",
     "filter.title": "Filters",
     "filter.tomesOnly": "Tomes only",
     "filter.whitelist": "<span class=\"btn-icon\">[+]</span> Whitelist",
-
     "footer.import": "Import",
     "footer.legendAvailable": "Available",
     "footer.legendLearning": "Learning",
@@ -75,7 +69,6 @@
     "footer.spellsLabel": "spells",
     "footer.statusReady": "Ready",
     "footer.unlockedLabel": "unlocked",
-
     "generationMode.cannotParseJson": "Could not parse JSON from response. Please check the format.",
     "generationMode.clearTreeConfirm": "Clear the current spell tree? This cannot be undone.",
     "generationMode.configApplied": "Config applied successfully!",
@@ -85,10 +78,8 @@
     "generationMode.noLlmResponse": "No LLM response to apply. Paste the response first.",
     "generationMode.noSpellDataError": "// ERROR: No spell data available. Please scan spells first.",
     "generationMode.noValidJson": "Could not find valid JSON in response. Please check the format.",
-
     "header.panelTitle": "HEART OF MAGIC",
     "header.title": "Heart of Magic",
-
     "howto.currentSettings": "[i] Current Settings",
     "howto.gainingXp": "[^] Gaining XP",
     "howto.loading": "Loading...",
@@ -98,7 +89,6 @@
     "howto.tips": "(!) Tips",
     "howto.tipSetTargets": "Set learning targets (one per school)",
     "howto.title": "How to Learn Spells",
-
     "modals.blacklist.clearAll": "Clear All",
     "modals.blacklist.done": "Done",
     "modals.blacklist.empty": "No spells blacklisted",
@@ -138,10 +128,8 @@
     "modals.whitelist.modPlugins": "Mod Plugins",
     "modals.whitelist.none": "None",
     "modals.whitelist.title": "Plugin Whitelist",
-
     "presets.save": "[+] Save",
     "presets.title": "PRESETS",
-
     "prm.applyLocks": "<span class=\"btn-icon\">[L]</span> Apply Locks",
     "prm.bidirectionalSoftPrereqs": "Bidirectional Soft Prerequisites",
     "prm.bidirectionalSoftPrereqsDesc": "Soft prereqs work both ways — mastering either side makes the other learnable",
@@ -180,7 +168,6 @@
     "prm.tierMaster": "Master",
     "prm.tierNovice": "Novice",
     "prm.vOffset": "V Offset",
-
     "progression.available": "Available",
     "progression.cheatUnlocking": "Cheat unlocking {{name}}...",
     "progression.failedUnlock": "Failed to unlock spell",
@@ -218,7 +205,6 @@
     "progression.stoppedLearning": "Stopped learning {{name}} - spell removed",
     "progression.unlocked": "Unlocked",
     "progression.unlocking": "Unlocking {{name}}...",
-
     "scanner.complexStatusWrap": "Status: <span id=\"tgStatus\" style=\"color:rgba(184,168,120,0.5);\">Waiting for scan...</span>",
     "scanner.modeComplex": "COMPLEX",
     "scanner.modeEasy": "EASY",
@@ -227,9 +213,7 @@
     "scanner.readyToScan": "Ready to scan",
     "scanner.scanResults": "Scan Results",
     "scanner.totalSpells": "Total Spells",
-
     "scannerPresets.overwriteConfirm": "A preset named \"{{name}}\" already exists. Overwrite it?",
-
     "settings.actions.resetDefaults": "Reset to Defaults",
     "settings.actions.saveSettings": "Save Settings",
     "settings.colorPicker.apply": "Apply",
@@ -420,13 +404,10 @@
     "settings.ui.refreshThemesTitle": "Rescan themes folder",
     "settings.ui.theme": "UI Theme",
     "settings.ui.title": "UI Display",
-
     "settingsPanel.generationFailed": "generation failed",
     "settingsPanel.pressAKey": "Press a key...",
     "settingsPanel.unreachableNodes": "{{count}} unreachable nodes",
-
     "settingsPresets.overwriteConfirm": "A preset named \"{{name}}\" already exists. Overwrite it?",
-
     "status.apiKeyPasted": "API key pasted from clipboard",
     "status.cannotSaveNoBridge": "Cannot save - C++ bridge not ready",
     "status.clipboardEmpty": "Clipboard is empty",
@@ -467,18 +448,15 @@
     "status.treeValidationFailed": "Tree validation failed: {{error}}",
     "status.warningUnreachable": "WARNING: {{count}} unreachable spells - regenerate tree",
     "status.working": "Working...",
-
     "tabs.scan": "Scan",
     "tabs.scanTitle": "Spell Scanner",
     "tabs.settings": "Settings",
     "tabs.settingsTitle": "Settings",
-
     "tree.emptyState.goToScanner": "Go to Scanner",
     "tree.emptyState.hint": "Scan your spells and build a tree to get started.",
     "tree.emptyState.icon": "*",
     "tree.emptyState.title": "No spell tree loaded",
     "tree.instructions": "Drag to pan / Scroll to zoom / Click node to select",
-
     "treeGrowth.builderNotFound": "SpellTreeBuilder not found",
     "treeGrowth.nodesPlaced": "{{placed}}/{{total}} nodes placed",
     "treeGrowth.pythonNotInstalled": "Python not installed",
@@ -489,9 +467,8 @@
     "treeGrowth.pythonTooltipRequiresAddon": "Requires Python Addon - Install HeartOfMagic_PythonAddon to enable Complex Build",
     "treeGrowth.pythonTooltipScriptsNotFound": "SpellTreeBuilder scripts not found",
     "treeGrowth.treeBuilt": "Tree built",
-
     "treeViewer.clearTree": "Clear Tree",
     "treeViewer.clickAgainConfirm": "Click Again to Confirm",
     "treeViewer.noSettingsAvailable": "No settings available",
     "treeViewer.treeGrowthPreview": "Tree Growth Preview"
-}
+};

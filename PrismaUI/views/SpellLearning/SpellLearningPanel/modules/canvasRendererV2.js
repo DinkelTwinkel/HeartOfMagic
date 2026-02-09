@@ -62,6 +62,9 @@ var CanvasRenderer = {
     _width: 0,
     _height: 0,
     
+    // Cached DOM elements
+    _zoomLevelEl: null,
+
     // Debug grid
     showDebugGrid: false,
     
@@ -268,22 +271,25 @@ var CanvasRenderer = {
     
     init: function(container) {
         this.container = container;
-        
+
         // Initialize Path2D cache
         if (!this._shapePaths) {
             this._initShapePaths();
         }
-        
+
+        // Cache frequently-accessed DOM elements
+        this._zoomLevelEl = document.getElementById('zoom-level');
+
         // Create canvas element if not already created
         if (!this.canvas) {
             this.canvas = document.createElement('canvas');
             this.canvas.id = 'tree-canvas';
             this.canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; z-index: 1;';
             this.ctx = this.canvas.getContext('2d');
-            
+
             this.setupEvents();
         }
-        
+
         console.log('[CanvasRenderer] Initialized');
         return this;
     },
@@ -418,42 +424,64 @@ var CanvasRenderer = {
         var numSchools = schoolNames.length;
         var sliceAngle = 360 / numSchools;
 
+        // Build a lookup map { schoolName: [nodes] } once — O(n) instead of
+        // O(n * numSchools) from repeated .filter() calls per school
+        var schoolNodeMap = {};
+        var i;
+        for (i = 0; i < schoolNames.length; i++) {
+            schoolNodeMap[schoolNames[i]] = [];
+        }
+        for (i = 0; i < this.nodes.length; i++) {
+            var n = this.nodes[i];
+            if (n.school && schoolNodeMap[n.school]) {
+                schoolNodeMap[n.school].push(n);
+            }
+        }
+
         // DATA-DRIVEN: Derive sector centers from actual root node positions
         // This ensures dividers always align with nodes regardless of generation formula
-        schoolNames.forEach(function(name, i) {
+        for (i = 0; i < schoolNames.length; i++) {
+            var name = schoolNames[i];
             var school = self.schools[name];
 
             // Skip if already set from external data
             if (school.spokeAngle !== undefined && school.startAngle !== undefined) {
-                return;
+                continue;
             }
 
-            // Find root node(s) for this school
-            var rootNodes = self.nodes.filter(function(n) {
-                return n.school === name && n.isRoot;
-            });
+            var allSchoolNodes = schoolNodeMap[name];
+
+            // Find root node(s) for this school from pre-built lookup
+            var rootNodes = [];
+            var j;
+            for (j = 0; j < allSchoolNodes.length; j++) {
+                if (allSchoolNodes[j].isRoot) {
+                    rootNodes.push(allSchoolNodes[j]);
+                }
+            }
 
             // Fallback: find node closest to center
-            if (rootNodes.length === 0) {
-                var schoolNodes = self.nodes.filter(function(n) { return n.school === name; });
-                if (schoolNodes.length > 0) {
-                    var closest = schoolNodes.reduce(function(best, n) {
-                        var dist = Math.sqrt(n.x * n.x + n.y * n.y);
-                        var bestDist = Math.sqrt(best.x * best.x + best.y * best.y);
-                        return dist < bestDist ? n : best;
-                    });
-                    rootNodes = [closest];
+            if (rootNodes.length === 0 && allSchoolNodes.length > 0) {
+                var closest = allSchoolNodes[0];
+                var closestDist = closest.x * closest.x + closest.y * closest.y;
+                for (j = 1; j < allSchoolNodes.length; j++) {
+                    var dist = allSchoolNodes[j].x * allSchoolNodes[j].x + allSchoolNodes[j].y * allSchoolNodes[j].y;
+                    if (dist < closestDist) {
+                        closest = allSchoolNodes[j];
+                        closestDist = dist;
+                    }
                 }
+                rootNodes = [closest];
             }
 
             if (rootNodes.length > 0) {
                 // Average angle of all root nodes = sector center
                 var sumSin = 0, sumCos = 0;
-                rootNodes.forEach(function(rn) {
-                    var a = Math.atan2(rn.y, rn.x);
+                for (j = 0; j < rootNodes.length; j++) {
+                    var a = Math.atan2(rootNodes[j].y, rootNodes[j].x);
                     sumSin += Math.sin(a);
                     sumCos += Math.cos(a);
-                });
+                }
                 var avgAngle = Math.atan2(sumSin, sumCos) * 180 / Math.PI;
 
                 school.spokeAngle = avgAngle;
@@ -468,7 +496,7 @@ var CanvasRenderer = {
                 school.angleSpan = sliceAngle;
                 school.spokeAngle = startAngle + sliceAngle / 2;
             }
-        });
+        }
     },
     
     /**
@@ -697,14 +725,14 @@ var CanvasRenderer = {
     },
     
     onMouseMove: function(e) {
+        var self = this;
         if (this.isPanning) {
             // Batch pan updates using RAF to prevent multiple renders per frame
             this._pendingPanX = e.clientX - this.panStartX;
             this._pendingPanY = e.clientY - this.panStartY;
-            
+
             if (!this._panRafPending) {
                 this._panRafPending = true;
-                var self = this;
                 requestAnimationFrame(function() {
                     self._panRafPending = false;
                     self.panX = self._pendingPanX;
@@ -716,12 +744,12 @@ var CanvasRenderer = {
             var rect = this.canvas.getBoundingClientRect();
             var world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
             var node = this.findNodeAt(world.x, world.y);
-            
+
             if (node !== this.hoveredNode) {
                 this.hoveredNode = node;
                 this.canvas.style.cursor = node ? 'pointer' : 'grab';
                 this._needsRender = true;
-                
+
                 if (node) {
                     self._showTooltip(node, e);
                 } else {
@@ -752,7 +780,7 @@ var CanvasRenderer = {
         
         this._needsRender = true;
         
-        var zoomEl = document.getElementById('zoom-level');
+        var zoomEl = this._zoomLevelEl || document.getElementById('zoom-level');
         if (zoomEl) zoomEl.textContent = Math.round(this.zoom * 100) + '%';
     },
     
@@ -1208,10 +1236,7 @@ var CanvasRenderer = {
         };
     },
     
-    _hexToRgba: function(hex, alpha) {
-        var rgb = this._hexToRgb(hex);
-        return 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + alpha + ')';
-    },
+    _hexToRgba: function(hex, alpha) { return hexToRgba(hex, alpha); },
     
     renderEdges: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
         var learningPathColor = this._learningPathColor || '#00ffff';
@@ -2261,7 +2286,7 @@ var CanvasRenderer = {
         this.rotation = 0;
         this._needsRender = true;
         
-        var zoomEl = document.getElementById('zoom-level');
+        var zoomEl = this._zoomLevelEl || document.getElementById('zoom-level');
         if (zoomEl) zoomEl.textContent = Math.round(this.zoom * 100) + '%';
     },
     
@@ -2269,7 +2294,7 @@ var CanvasRenderer = {
         this.zoom = Math.max(0.1, Math.min(5, z));
         this._needsRender = true;
         
-        var zoomEl = document.getElementById('zoom-level');
+        var zoomEl = this._zoomLevelEl || document.getElementById('zoom-level');
         if (zoomEl) zoomEl.textContent = Math.round(this.zoom * 100) + '%';
     },
     

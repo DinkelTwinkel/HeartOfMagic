@@ -165,7 +165,7 @@ function updateEasyPresetChips() {
     if (presetKeys.length === 0) {
         var msg = document.createElement('div');
         msg.className = 'easy-no-presets';
-        msg.textContent = 'No presets yet. Build will use current settings.';
+        msg.textContent = t('easyMode.noPresets');
         container.appendChild(msg);
         return;
     }

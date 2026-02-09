@@ -512,12 +512,7 @@ var TreePreviewFlat = {
     /**
      * Convert hex color to rgba string
      */
-    _hexToRgba: function(hex, alpha) {
-        var r = parseInt(hex.slice(1, 3), 16);
-        var g = parseInt(hex.slice(3, 5), 16);
-        var b = parseInt(hex.slice(5, 7), 16);
-        return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + alpha + ')';
-    },
+    _hexToRgba: function(hex, alpha) { return hexToRgba(hex, alpha); },
 
     /**
      * Return current settings for external consumption

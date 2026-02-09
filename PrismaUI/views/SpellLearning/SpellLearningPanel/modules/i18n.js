@@ -36,22 +36,34 @@
         locale = locale || 'en';
         _locale = locale;
 
+        // Prefer preloaded data from <script src="lang/en.js"> (avoids sync XHR issues in Ultralight/USVFS)
+        if (window._i18nPreload && typeof window._i18nPreload === 'object') {
+            _translations = window._i18nPreload;
+            _loaded = true;
+            console.log('[i18n] Loaded locale "' + locale + '" from preload (' + Object.keys(_translations).length + ' keys)');
+            return;
+        }
+
+        // Fallback: sync XHR (works in browsers, may truncate in Ultralight file://)
         var basePath = _detectBasePath();
         var url = basePath + 'lang/' + locale + '.json';
 
         try {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', url, false); // synchronous
-            xhr.setRequestHeader('Cache-Control', 'no-cache');
             xhr.send(null);
 
             if (xhr.status === 200 || xhr.status === 0) { // status 0 for file:// protocol
-                var data = JSON.parse(xhr.responseText);
-                _translations = data;
-                _loaded = true;
-                console.log('[i18n] Loaded locale "' + locale + '" (' + Object.keys(data).length + ' keys)');
+                var text = xhr.responseText;
+                if (!text || text.length < 2) {
+                    console.warn('[i18n] Empty response for "' + locale + '" (length=' + (text ? text.length : 0) + '). Using HTML fallback text.');
+                } else {
+                    var data = JSON.parse(text);
+                    _translations = data;
+                    _loaded = true;
+                    console.log('[i18n] Loaded locale "' + locale + '" via XHR (' + Object.keys(data).length + ' keys)');
+                }
             } else if (locale !== 'en') {
-                // Requested locale not found, fall back to English
                 console.warn('[i18n] Locale "' + locale + '" not found (HTTP ' + xhr.status + '), falling back to "en"');
                 initI18n('en');
                 return;

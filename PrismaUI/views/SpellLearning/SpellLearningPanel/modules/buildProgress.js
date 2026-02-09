@@ -62,7 +62,7 @@ var BuildProgress = (function() {
         if (!hasPRM) {
             _setStageIcon('prereqs', ICON_SKIPPED);
             _setStageState('prereqs', 'skipped');
-            _setStageDetail('prereqs', 'Pre Req Master disabled');
+            _setStageDetail('prereqs', t('buildProgress.prmDisabled'));
         }
 
         // Hide done button, reset progress bar
@@ -70,7 +70,7 @@ var BuildProgress = (function() {
         if (doneBtn) doneBtn.classList.add('hidden');
 
         _setProgressBar(0);
-        _setStatus('Preparing...');
+        _setStatus(t('modals.buildProgress.preparing'));
 
         // Immediately start tree stage
         setStage('tree');
@@ -104,9 +104,9 @@ var BuildProgress = (function() {
 
         // Update progress bar based on stage
         var stageLabels = {
-            tree: 'Analyzing spell relationships...',
-            prereqs: 'Scoring prerequisite candidates...',
-            finalize: 'Finalizing layout...'
+            tree: t('buildProgress.analyzingSpellRelationships'),
+            prereqs: t('buildProgress.scoringPrereqCandidates'),
+            finalize: t('buildProgress.finalizingLayout')
         };
         _setStatus(stageLabels[stageName] || stageName);
 
@@ -153,7 +153,7 @@ var BuildProgress = (function() {
         _setProgressBar(100);
 
         var totalElapsed = ((Date.now() - _totalStartTime) / 1000).toFixed(1);
-        _setStatus(summary || ('Complete in ' + totalElapsed + 's'));
+        _setStatus(summary || t('buildProgress.completeIn', {time: totalElapsed}));
 
         // Show done button
         var doneBtn = _getEl('build-progress-done-btn');
@@ -176,16 +176,16 @@ var BuildProgress = (function() {
         if (_currentStage) {
             _setStageIcon(_currentStage, ICON_FAILED);
             _setStageState(_currentStage, 'failed');
-            _setStageDetail(_currentStage, 'Failed');
+            _setStageDetail(_currentStage, t('buildProgress.failed'));
         }
 
         _setProgressBar(-1); // Error state
-        _setStatus(errorMsg || 'Build failed');
+        _setStatus(errorMsg || t('buildProgress.buildFailed'));
 
         // Show done button to close
         var doneBtn = _getEl('build-progress-done-btn');
         if (doneBtn) {
-            doneBtn.textContent = 'Close';
+            doneBtn.textContent = t('buildProgress.close');
             doneBtn.classList.remove('hidden');
         }
     }

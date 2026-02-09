@@ -151,7 +151,7 @@ var EditMode = {
         var btn = document.getElementById('edit-tree-btn');
         if (btn) {
             btn.textContent = '✓';
-            btn.title = 'Exit Edit Mode';
+            btn.title = t('editMode.exitEditMode');
             btn.classList.add('active');
         }
 
@@ -196,7 +196,7 @@ var EditMode = {
         var btn = document.getElementById('edit-tree-btn');
         if (btn) {
             btn.textContent = '✎';
-            btn.title = 'Edit Tree';
+            btn.title = t('editMode.editTree');
             btn.classList.remove('active');
         }
 
@@ -393,7 +393,7 @@ var EditMode = {
         if (this.undoStack.length === 0) {
             console.log('[EditMode] Nothing to undo');
             if (typeof setTreeStatus === 'function') {
-                setTreeStatus('Nothing to undo');
+                setTreeStatus(t('editMode.nothingToUndo'));
             }
             return;
         }
@@ -423,7 +423,7 @@ var EditMode = {
         }
 
         if (typeof setTreeStatus === 'function') {
-            setTreeStatus('Undo: ' + action.type);
+            setTreeStatus(t('editMode.undoAction', {action: action.type}));
         }
     },
 

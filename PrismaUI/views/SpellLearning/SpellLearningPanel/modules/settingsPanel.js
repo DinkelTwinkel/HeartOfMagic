@@ -43,7 +43,7 @@ function updateRetrySchoolUI() {
     needsAttention.forEach(function(info) {
         allProblemSchools.push({
             school: info.school,
-            reason: info.unreachableCount + ' unreachable nodes'
+            reason: t('settingsPanel.unreachableNodes', {count: info.unreachableCount})
         });
     });
     failedSchools.forEach(function(school) {
@@ -51,7 +51,7 @@ function updateRetrySchoolUI() {
         if (!allProblemSchools.some(function(p) { return p.school === school; })) {
             allProblemSchools.push({
                 school: school,
-                reason: 'generation failed'
+                reason: t('settingsPanel.generationFailed')
             });
         }
     });
@@ -64,7 +64,7 @@ function updateRetrySchoolUI() {
         var currentSelection = retrySchoolSelect.value;
         
         // Rebuild dropdown options
-        retrySchoolSelect.innerHTML = '<option value="">Select school...</option>';
+        retrySchoolSelect.innerHTML = '<option value="">' + t('settings.treeGen.selectSchool') + '</option>';
         allProblemSchools.forEach(function(info) {
             var option = document.createElement('option');
             option.value = info.school;
@@ -322,9 +322,9 @@ function initializeSettings() {
             var modeDesc = document.getElementById('tomeLearningModeDesc');
             if (modeDesc) {
                 if (this.checked) {
-                    modeDesc.textContent = 'Reading tomes grants XP and gives early access to weakened spells. Keep tomes to practice!';
+                    modeDesc.textContent = t('settings.tomeLearning.progressionModeDesc');
                 } else {
-                    modeDesc.textContent = 'Vanilla behavior: Reading tomes instantly teaches spells and consumes the book.';
+                    modeDesc.textContent = t('settings.tomeLearning.vanillaModeDesc');
                 }
             }
             // Show/hide progression-specific settings
@@ -796,7 +796,7 @@ function initializeSettings() {
         
         changeHotkeyBtn.addEventListener('click', function() {
             hotkeyInput.classList.add('listening');
-            hotkeyInput.value = 'Press a key...';
+            hotkeyInput.value = t('settingsPanel.pressAKey');
             
             function onKeyDown(e) {
                 e.preventDefault();
@@ -1272,7 +1272,7 @@ function resetSettings() {
     settings.xpAdept = 400;
     settings.xpExpert = 800;
     settings.xpMaster = 1500;
-    settings.revealName = 10;
+    settings.revealName = 0;
     settings.revealEffects = 25;
     settings.revealDescription = 50;
     
@@ -1357,7 +1357,7 @@ function resetSettings() {
     
     // Reset reveal sliders
     var revealSliderDefaults = [
-        { id: 'revealNameSlider', valueId: 'revealNameValue', val: 10 },
+        { id: 'revealNameSlider', valueId: 'revealNameValue', val: 0 },
         { id: 'revealEffectsSlider', valueId: 'revealEffectsValue', val: 25 },
         { id: 'revealDescSlider', valueId: 'revealDescValue', val: 50 }
     ];
@@ -1434,7 +1434,7 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         settings.xpExpert = data.xpExpert !== undefined ? data.xpExpert : 800;
         settings.xpMaster = data.xpMaster !== undefined ? data.xpMaster : 1500;
         // Progressive reveal thresholds
-        settings.revealName = data.revealName !== undefined ? data.revealName : 10;
+        settings.revealName = data.revealName !== undefined ? data.revealName : 0;
         settings.revealEffects = data.revealEffects !== undefined ? data.revealEffects : 25;
         settings.revealDescription = data.revealDescription !== undefined ? data.revealDescription : 50;
         
@@ -1501,7 +1501,7 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         // to avoid overwriting user's customized preset files on every load.
         
         // Discovery mode
-        settings.discoveryMode = data.discoveryMode !== undefined ? data.discoveryMode : false;
+        settings.discoveryMode = data.discoveryMode !== undefined ? data.discoveryMode : true;
         var discoveryModeToggle = document.getElementById('discoveryModeToggle');
         if (discoveryModeToggle) discoveryModeToggle.checked = settings.discoveryMode;
         
@@ -1968,7 +1968,7 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         
         // === Starfield Settings ===
         settings.starfieldEnabled = data.starfieldEnabled !== false;
-        settings.starfieldFixed = data.starfieldFixed !== false;
+        settings.starfieldFixed = data.starfieldFixed === true;
         settings.starfieldSeed = data.starfieldSeed !== undefined ? data.starfieldSeed : 42;
         settings.starfieldColor = data.starfieldColor || '#ffffff';
         settings.starfieldBgColor = data.starfieldBgColor || '#000000';
@@ -2774,7 +2774,7 @@ function initializeHeartSettings() {
     // Starfield fixed to screen toggle
     var starfieldFixed = document.getElementById('starfield-fixed');
     if (starfieldFixed) {
-        starfieldFixed.checked = settings.starfieldFixed !== false;
+        starfieldFixed.checked = settings.starfieldFixed === true;
         starfieldFixed.addEventListener('change', function() {
             settings.starfieldFixed = this.checked;
             applyHeartSettingsToRenderer();
@@ -4099,7 +4099,7 @@ function applyHeartSettingsToRenderer() {
         
         // Starfield settings
         CanvasRenderer._starfieldEnabled = settings.starfieldEnabled !== false;
-        CanvasRenderer._starfieldFixed = settings.starfieldFixed !== false;
+        CanvasRenderer._starfieldFixed = settings.starfieldFixed === true;
         CanvasRenderer._starfieldColor = settings.starfieldColor || '#ffffff';
         CanvasRenderer._starfieldDensity = settings.starfieldDensity || 200;
         CanvasRenderer._starfieldMaxSize = settings.starfieldMaxSize || 2.5;
