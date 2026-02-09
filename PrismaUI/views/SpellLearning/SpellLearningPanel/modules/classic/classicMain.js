@@ -493,15 +493,26 @@ var TreeGrowthClassic = {
                 var layoutChildren = childrenLookup[sn.formId] || [];
                 var layoutPrereqs = prereqLookup[sn.formId] || [];
 
+                // Prereq rework: regular prereqs = soft (need any 1 of N)
+                // Lock prereqs = hard (mandatory)
+                var lockHardPrereqs = [];
+                var lockData = [];
+                // Locks are stored directly on the node by PreReqMaster
+                if (sn.locks && sn.locks.length > 0) {
+                    lockData = sn.locks;
+                    lockHardPrereqs = sn.locks.map(function(l) { return l.nodeId; });
+                }
+
                 var outNode = {
                     formId: sn.formId,
                     children: layoutChildren,
                     prerequisites: layoutPrereqs,
-                    hardPrereqs: layoutPrereqs,
-                    softPrereqs: [],
-                    softNeeded: 0,
+                    hardPrereqs: lockHardPrereqs,
+                    softPrereqs: layoutPrereqs,
+                    softNeeded: layoutPrereqs.length > 0 ? 1 : 0,
                     tier: sn.tier || 1
                 };
+                if (lockData.length > 0) outNode.locks = lockData;
                 if (sn.skillLevel) outNode.skillLevel = sn.skillLevel;
                 if (sn.theme) outNode.theme = sn.theme;
                 if (sn.name) outNode.name = sn.name;
@@ -557,6 +568,25 @@ var TreeGrowthClassic = {
                 switchTab('spellTree');
             }, 300);
         }
+    },
+
+    /**
+     * Return the current layout position map (formId → {x, y}) for preview rendering.
+     * Returns null if no tree has been built yet.
+     */
+    getPositionMap: function () {
+        if (!this._layoutData || !this._layoutData.schools) return null;
+        var posMap = {};
+        var schools = this._layoutData.schools;
+        for (var name in schools) {
+            if (!schools.hasOwnProperty(name)) continue;
+            var nodes = schools[name].nodes || [];
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i];
+                if (n.formId) posMap[n.formId] = { x: n.x, y: n.y };
+            }
+        }
+        return Object.keys(posMap).length > 0 ? posMap : null;
     },
 
     /**

@@ -130,7 +130,9 @@ var TreeParser = {
                     // Preserve hard/soft prerequisite data
                     hardPrereqs: nd.hardPrereqs || [],
                     softPrereqs: nd.softPrereqs || [],
-                    softNeeded: nd.softNeeded || 0
+                    softNeeded: nd.softNeeded || 0,
+                    // Lock prerequisites (Pre Req Master)
+                    locks: nd.locks || []
                 });
                 self.schools[schoolName].nodeIds.push(id);
             });

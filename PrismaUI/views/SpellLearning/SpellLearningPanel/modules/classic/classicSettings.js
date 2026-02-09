@@ -66,19 +66,19 @@ var ClassicSettings = {
 
         // Toggle button styles
         var btnBase = 'display:inline-block; padding:3px 10px; font-size:10px; cursor:pointer; border:1px solid rgba(184,168,120,0.3); transition:background 0.15s;';
-        var btnActive = 'background:rgba(184,168,120,0.25); color:rgba(184,168,120,0.9);';
-        var btnInactive = 'background:transparent; color:rgba(184,168,120,0.4);';
-        var isSimple = spellMatching === 'simple';
+        var btnAct = 'background:rgba(184,168,120,0.25); color:rgba(184,168,120,0.9);';
+        var btnOff = 'background:transparent; color:rgba(184,168,120,0.4);';
 
         return '' +
             '<div class="tree-preview-settings-title">Classic Growth Settings</div>' +
 
-            // --- Spell Matching toggle ---
+            // --- Spell Matching toggle (3-way) ---
             '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; padding:0 4px;">' +
                 '<span style="font-size:10px; color:rgba(184,168,120,0.6); white-space:nowrap;">Spell Matching</span>' +
                 '<div style="display:flex;">' +
-                    '<div id="tgClassicMatchSimple" style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (isSimple ? btnActive : btnInactive) + '">Simple</div>' +
-                    '<div id="tgClassicMatchLayered" style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (!isSimple ? btnActive : btnInactive) + '">Layered</div>' +
+                    '<div id="tgClassicMatchSimple" style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (spellMatching === 'simple' ? btnAct : btnOff) + '">Simple</div>' +
+                    '<div id="tgClassicMatchLayered" style="' + btnBase + ' border-left:none; ' + (spellMatching === 'layered' ? btnAct : btnOff) + '">Layered</div>' +
+                    '<div id="tgClassicMatchSmart" style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (spellMatching === 'smart' ? btnAct : btnOff) + '">Smart</div>' +
                 '</div>' +
             '</div>' +
 
@@ -184,26 +184,35 @@ var ClassicSettings = {
             onChanged('centerMask', v);
         });
 
-        // Spell Matching toggle
-        var btnSimple = document.getElementById('tgClassicMatchSimple');
-        var btnLayered = document.getElementById('tgClassicMatchLayered');
-        if (btnSimple && btnLayered) {
-            var activeStyle = 'background:rgba(184,168,120,0.25); color:rgba(184,168,120,0.9);';
-            var inactiveStyle = 'background:transparent; color:rgba(184,168,120,0.4);';
-            var setActive = function (mode) {
-                btnSimple.style.cssText = btnSimple.style.cssText.replace(/background:[^;]+;/, (mode === 'simple' ? activeStyle : inactiveStyle).split(';')[0] + ';')
-                    .replace(/color:[^;]+;/, (mode === 'simple' ? activeStyle : inactiveStyle).split(';')[1] + ';');
-                btnLayered.style.cssText = btnLayered.style.cssText.replace(/background:[^;]+;/, (mode === 'layered' ? activeStyle : inactiveStyle).split(';')[0] + ';')
-                    .replace(/color:[^;]+;/, (mode === 'layered' ? activeStyle : inactiveStyle).split(';')[1] + ';');
-            };
-            btnSimple.addEventListener('click', function () {
-                setActive('simple');
-                onChanged('spellMatching', 'simple');
-            });
-            btnLayered.addEventListener('click', function () {
-                setActive('layered');
-                onChanged('spellMatching', 'layered');
-            });
+        // Spell Matching 3-way toggle
+        var matchBtns = {
+            simple: document.getElementById('tgClassicMatchSimple'),
+            layered: document.getElementById('tgClassicMatchLayered'),
+            smart: document.getElementById('tgClassicMatchSmart')
+        };
+        var actBg = 'background:rgba(184,168,120,0.25)';
+        var actCol = 'color:rgba(184,168,120,0.9)';
+        var offBg = 'background:transparent';
+        var offCol = 'color:rgba(184,168,120,0.4)';
+        var setMatchActive = function (mode) {
+            for (var mk in matchBtns) {
+                if (!matchBtns.hasOwnProperty(mk) || !matchBtns[mk]) continue;
+                var isAct = (mk === mode);
+                matchBtns[mk].style.cssText = matchBtns[mk].style.cssText
+                    .replace(/background:[^;]+/, isAct ? actBg : offBg)
+                    .replace(/color:[^;]+/, isAct ? actCol : offCol);
+            }
+        };
+        var modes = ['simple', 'layered', 'smart'];
+        for (var mi = 0; mi < modes.length; mi++) {
+            (function (mode) {
+                if (matchBtns[mode]) {
+                    matchBtns[mode].addEventListener('click', function () {
+                        setMatchActive(mode);
+                        onChanged('spellMatching', mode);
+                    });
+                }
+            })(modes[mi]);
         }
 
         // Tier zone drag

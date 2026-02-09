@@ -72,6 +72,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Growth style generator
         if (typeof initializeGrowthStyleGenerator === 'function') initializeGrowthStyleGenerator();
         
+        // Pre Req Master
+        if (typeof PreReqMaster !== 'undefined' && PreReqMaster.init) PreReqMaster.init();
+
+        // Easy Mode (scanner tab sub-mode)
+        if (typeof initializeEasyMode === 'function') initializeEasyMode();
+        
         // Textarea enter key handling
         if (typeof initializeTextareaEnterKey === 'function') initializeTextareaEnterKey();
         
@@ -112,7 +118,6 @@ document.addEventListener('DOMContentLoaded', function() {
 (function verifyModules() {
     var required = [
         'DEFAULT_TREE_RULES',
-        'DIFFICULTY_PROFILES', 
         'DEFAULT_COLOR_PALETTE',
         'KEY_CODES',
         'TREE_CONFIG',

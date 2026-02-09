@@ -264,15 +264,27 @@ var TreeGrowthTree = {
             for (var i = 0; i < srcNodes.length; i++) {
                 var sn = srcNodes[i];
                 var nodePrereqs = sn.prerequisites || [];
+
+                // Prereq rework: regular prereqs = soft (need any 1 of N)
+                // Lock prereqs = hard (mandatory)
+                var lockHardPrereqs = [];
+                var lockData = [];
+                // Locks are stored directly on the node by PreReqMaster
+                if (sn.locks && sn.locks.length > 0) {
+                    lockData = sn.locks;
+                    lockHardPrereqs = sn.locks.map(function(l) { return l.nodeId; });
+                }
+
                 var outNode = {
                     formId: sn.formId,
                     children: sn.children || [],
                     prerequisites: nodePrereqs,
-                    hardPrereqs: nodePrereqs, // All prereqs are hard — prevents fallback splitting
-                    softPrereqs: [],
-                    softNeeded: 0,
+                    hardPrereqs: lockHardPrereqs,
+                    softPrereqs: nodePrereqs,
+                    softNeeded: nodePrereqs.length > 0 ? 1 : 0,
                     tier: sn.tier || 1
                 };
+                if (lockData.length > 0) outNode.locks = lockData;
                 if (sn.skillLevel) outNode.skillLevel = sn.skillLevel;
                 if (sn.theme) outNode.theme = sn.theme;
                 if (sn.name) outNode.name = sn.name;
@@ -351,6 +363,14 @@ var TreeGrowthTree = {
                 switchTab('spellTree');
             }, 300);
         }
+    },
+
+    /**
+     * Return the current layout position map (formId → {x, y}) for preview rendering.
+     * Returns null if no tree has been built yet.
+     */
+    getPositionMap: function() {
+        return this._builtPlacements ? this._builtPlacements.posMap || null : null;
     },
 
     clearTree: function() {

@@ -67,6 +67,15 @@ var _getSpellTier = typeof getSpellTier === 'function'
     : function(spell) {
         if (!spell) return 0;
         var level = spell.skillLevel || spell.tier || 0;
+        // Handle string tier names (e.g. "Expert", "Novice")
+        if (typeof level === 'string') {
+            var lower = level.toLowerCase();
+            var tierNames = { 'novice': 0, 'apprentice': 1, 'adept': 2, 'expert': 3, 'master': 4 };
+            for (var name in tierNames) {
+                if (lower.indexOf(name) >= 0) return tierNames[name];
+            }
+        }
+        // Handle numeric skill levels
         if (typeof level === 'number') {
             if (level < 25) return 0;
             if (level < 50) return 1;

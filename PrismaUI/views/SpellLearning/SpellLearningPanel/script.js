@@ -18,7 +18,7 @@
  * 10. settingsPanel.js       - 1001 lines (settings UI)
  * 11. treeViewerUI.js        -  618 lines (tree viewer UI)
  * 12. progressionUI.js       -  547 lines (progression system)
- * 13. difficultyProfiles.js  -  429 lines (difficulty profiles)
+ * 13. settingsPresets.js     -  settings presets (chip-based)
  * 14. cppCallbacks.js        -  438 lines (C++ SKSE callbacks)
  * 15. llmIntegration.js      -  621 lines (LLM integration)
  * 16. llmApiSettings.js      -  245 lines (API configuration)
@@ -1061,7 +1061,7 @@ function initializeEarlyLearningSettings() {
             settings.earlySpellLearning.enabled = this.checked;
             updateEarlyLearningSettingsVisibility();
             console.log('[SpellLearning] Early learning enabled:', settings.earlySpellLearning.enabled);
-            onProgressionSettingChanged();
+
         });
     }
     
@@ -1090,7 +1090,7 @@ function initializeEarlyLearningSettings() {
         gameDisplayToggle.addEventListener('change', function() {
             settings.earlySpellLearning.modifyGameDisplay = this.checked;
             console.log('[SpellLearning] Modify game display:', this.checked);
-            onProgressionSettingChanged();
+
         });
     }
     
@@ -1254,14 +1254,14 @@ function onPowerStepInputChange(e) {
     renderPowerSteps();
     
     console.log('[SpellLearning] Power step updated:', settings.earlySpellLearning.powerSteps);
-    onProgressionSettingChanged();
+
 }
 
 function resetPowerStepsToDefaults() {
     settings.earlySpellLearning.powerSteps = JSON.parse(JSON.stringify(DEFAULT_POWER_STEPS));
     renderPowerSteps();
     console.log('[SpellLearning] Power steps reset to defaults');
-    onProgressionSettingChanged();
+
 }
 
 function setupEarlyLearningSlider(elementBaseName, settingName, suffix) {
@@ -1280,7 +1280,7 @@ function setupEarlyLearningSlider(elementBaseName, settingName, suffix) {
             if (valueEl) valueEl.textContent = value + suffix;
             // Update slider fill visual
             updateSliderFillGlobal(this);
-            onProgressionSettingChanged();
+
         });
     }
 }

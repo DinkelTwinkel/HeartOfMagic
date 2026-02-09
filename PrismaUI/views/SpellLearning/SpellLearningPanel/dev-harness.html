@@ -137,7 +137,21 @@
 
                 <!-- PANEL: Spell Scan (toggled from header) -->
                 <div class="tab-content" id="contentSpellScan">
-                    <!-- Sticky Action Bar -->
+                    <!-- Mode Toggle Bar -->
+                    <div class="scanner-mode-bar">
+                        <button class="scanner-mode-btn active" data-scanner-mode="easy">EASY</button>
+                        <button class="scanner-mode-btn" data-scanner-mode="complex">COMPLEX</button>
+                    </div>
+
+                    <!-- Shared Status Bar -->
+                    <div class="scan-status-bar" id="scanStatusBar">
+                        <span id="scanStatusText">Ready to scan</span>
+                    </div>
+
+                    <!-- EASY MODE -->
+                    <!-- ============================================================ -->
+                    <!-- SHARED: Scan Actions + Results/Filters (visible in both modes) -->
+                    <!-- ============================================================ -->
                     <div class="scan-actions-sticky">
                         <button id="scanBtn" class="btn btn-primary">
                             <span class="btn-icon">[*]</span> Scan Spells
@@ -145,11 +159,6 @@
                         <button id="saveBtn" class="btn btn-secondary" disabled>
                             <span class="btn-icon">[S]</span> Export Scan
                         </button>
-                    </div>
-
-                    <!-- Status Feedback Bar -->
-                    <div class="scan-status-bar" id="scanStatusBar">
-                        <span id="scanStatusText">Ready to scan</span>
                     </div>
 
                     <!-- Section 1: Scan Results + Filters (split layout) -->
@@ -197,12 +206,167 @@
                         </div>
                     </div>
 
+                    <!-- ============================================================ -->
+                    <!-- EASY MODE -->
+                    <!-- ============================================================ -->
+                    <div class="scanner-mode-content" id="scannerEasyContent">
+                        <div class="easy-presets-section">
+                            <div class="easy-presets-label">Choose a Preset</div>
+                            <div class="easy-preset-chips" id="easyPresetChips"></div>
+                        </div>
+                        <div class="easy-actions-section">
+                            <button id="easyBuildBtn" class="btn btn-success easy-action-btn" disabled>
+                                <span class="btn-icon">[B]</span> Build Tree
+                            </button>
+                            <button id="easyApplyBtn" class="btn btn-primary easy-action-btn" disabled>
+                                <span class="btn-icon">[A]</span> Apply Tree
+                            </button>
+                            <button id="easyClearBtn" class="btn btn-danger easy-action-btn" disabled>
+                                <span class="btn-icon">[X]</span> Clear Tree
+                            </button>
+                            <span class="easy-status-wrap">Status: <span id="easyStatus">Waiting for scan...</span></span>
+                        </div>
+                        <div class="easy-preview-placeholder" id="easyPreviewPlaceholder">
+                            <!-- PRM preview canvas is moved here when Easy mode is active -->
+                        </div>
+                    </div>
+
+                    <!-- COMPLEX MODE (all existing scanner content) -->
+                    <div class="scanner-mode-content" id="scannerComplexContent" style="display:none;">
+
                     <!-- Section 2: Tree Building -->
                     <div class="scan-section" id="treeBuildSection">
                     </div>
 
-                    <!-- Section 2a: Core Settings -->
-                    <div class="scan-section" id="treeCoreSection">
+                    <!-- Section 4: EXTRA SETTINGS (PRM + Core + Alternate Pathways) -->
+                    <div class="scan-section" id="prereqMasterSection" style="display:none;">
+                        <div class="settings-block prm-block">
+                            <div class="settings-block-header prm-header" id="prmToggleHeader">
+                                <span class="settings-block-icon">[+]</span>
+                                <span class="settings-block-title">Extra Settings</span>
+                                <span class="prm-collapse-icon">[-]</span>
+                            </div>
+                            <div class="settings-block-content prm-content" id="prmContent">
+                                <div class="setting-row prm-enable-row">
+                                    <div class="setting-info">
+                                        <span class="setting-label">Enable Lock Prerequisites</span>
+                                        <span class="setting-desc">Auto-generates lock prereqs when building tree</span>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="prmEnabled" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="prm-tabs">
+                                    <button class="prm-tab active" data-prm-tab="locks">Pre Req Master</button>
+                                    <button class="prm-tab" data-prm-tab="core">Core</button>
+                                    <button class="prm-tab" data-prm-tab="altpaths">Alternate Pathways</button>
+                                </div>
+                                <div class="prm-split">
+                                    <div class="prm-split-left">
+                                        <div class="prm-tab-content" id="prmTabLocks">
+                                            <div class="setting-row slider-row">
+                                                <div class="setting-info"><span class="setting-label">Global Lock %</span></div>
+                                                <div class="slider-container">
+                                                    <input type="range" id="prmGlobalLockSlider" min="0" max="100" value="30" step="5" class="setting-slider">
+                                                    <span id="prmGlobalLockValue" class="slider-value">30%</span>
+                                                </div>
+                                            </div>
+                                            <div class="settings-subsection"><span class="subsection-title">Lock % by Tier</span></div>
+                                            <div class="tier-xp-grid">
+                                                <div class="tier-xp-item"><label for="prmTierNovice">Novice</label><input type="number" id="prmTierNovice" class="tier-xp-input" value="0" min="0" max="100"><span class="tier-xp-unit">%</span></div>
+                                                <div class="tier-xp-item"><label for="prmTierApprentice">Apprentice</label><input type="number" id="prmTierApprentice" class="tier-xp-input" value="10" min="0" max="100"><span class="tier-xp-unit">%</span></div>
+                                                <div class="tier-xp-item"><label for="prmTierAdept">Adept</label><input type="number" id="prmTierAdept" class="tier-xp-input" value="25" min="0" max="100"><span class="tier-xp-unit">%</span></div>
+                                                <div class="tier-xp-item"><label for="prmTierExpert">Expert</label><input type="number" id="prmTierExpert" class="tier-xp-input" value="40" min="0" max="100"><span class="tier-xp-unit">%</span></div>
+                                                <div class="tier-xp-item"><label for="prmTierMaster">Master</label><input type="number" id="prmTierMaster" class="tier-xp-input" value="50" min="0" max="100"><span class="tier-xp-unit">%</span></div>
+                                            </div>
+                                            <div class="setting-row">
+                                                <div class="setting-info"><span class="setting-label">School Distribution</span></div>
+                                                <select id="prmSchoolDistribution" class="setting-select">
+                                                    <option value="proportional">Proportional</option>
+                                                    <option value="even">Even</option>
+                                                    <option value="random">Random</option>
+                                                </select>
+                                            </div>
+                                            <div class="settings-subsection"><span class="subsection-title">Selection Pool</span></div>
+                                            <div class="setting-row">
+                                                <div class="setting-info"><span class="setting-label">Pool Source</span></div>
+                                                <select id="prmPoolSource" class="setting-select">
+                                                    <option value="same_school" selected>Same School</option>
+                                                    <option value="any_school">Any School</option>
+                                                    <option value="nearby">Nearby (layout distance)</option>
+                                                </select>
+                                            </div>
+                                            <div class="setting-pair" id="prmNearbyControls">
+                                                <div class="setting-row slider-row">
+                                                    <div class="setting-info"><span class="setting-label">Distance</span></div>
+                                                    <div class="slider-container">
+                                                        <input type="range" id="prmDistanceSlider" min="50" max="500" value="200" step="25" class="setting-slider">
+                                                        <span id="prmDistanceValue" class="slider-value">200</span>
+                                                    </div>
+                                                </div>
+                                                <div class="setting-row slider-row">
+                                                    <div class="setting-info"><span class="setting-label">Proximity Bias</span></div>
+                                                    <div class="slider-container">
+                                                        <input type="range" id="prmProximityBiasSlider" min="0" max="100" value="50" step="5" class="setting-slider">
+                                                        <span id="prmProximityBiasValue" class="slider-value">50%</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="prm-tier-constraints">
+                                                <label class="prm-constraint-toggle"><input type="checkbox" id="prmSameTier" checked><span class="toggle-slider-mini"></span><span>Same</span></label>
+                                                <label class="prm-constraint-toggle"><input type="checkbox" id="prmPrevTier" checked><span class="toggle-slider-mini"></span><span>Prev</span></label>
+                                                <label class="prm-constraint-toggle"><input type="checkbox" id="prmHigherTier"><span class="toggle-slider-mini"></span><span>Higher</span></label>
+                                                <label class="prm-constraint-toggle"><input type="checkbox" id="prmAllowLockedLock"><span class="toggle-slider-mini"></span><span>Chain Locks</span></label>
+                                            </div>
+                                            <div class="prm-actions">
+                                                <button id="prmApplyBtn" class="btn btn-primary" disabled><span class="btn-icon">[L]</span> Apply Locks</button>
+                                                <button id="prmClearBtn" class="btn btn-secondary" disabled><span class="btn-icon">[X]</span> Clear</button>
+                                                <span id="prmStatus" class="prm-status">Build a tree first</span>
+                                            </div>
+                                        </div>
+                                        <div class="prm-tab-content" id="prmTabCore" style="display:none;">
+                                            <div class="settings-subsection"><span class="subsection-title">Globe Position</span></div>
+                                            <div class="setting-row slider-row">
+                                                <div class="setting-info"><span class="setting-label">H Offset</span></div>
+                                                <div class="slider-container">
+                                                    <input type="range" id="prmGlobeHOffset" min="-500" max="500" value="0" step="5" class="setting-slider">
+                                                    <span id="prmGlobeHValue" class="slider-value">0</span>
+                                                </div>
+                                            </div>
+                                            <div class="setting-row slider-row">
+                                                <div class="setting-info"><span class="setting-label">V Offset</span></div>
+                                                <div class="slider-container">
+                                                    <input type="range" id="prmGlobeVOffset" min="-500" max="500" value="0" step="5" class="setting-slider">
+                                                    <span id="prmGlobeVValue" class="slider-value">0</span>
+                                                </div>
+                                            </div>
+                                            <div class="setting-row slider-row">
+                                                <div class="setting-info"><span class="setting-label">Radius</span></div>
+                                                <div class="slider-container">
+                                                    <input type="range" id="prmGlobeRadius" min="10" max="200" value="45" step="5" class="setting-slider">
+                                                    <span id="prmGlobeRadiusValue" class="slider-value">45</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="prm-tab-content" id="prmTabAltPaths" style="display:none;">
+                                            <div class="setting-row">
+                                                <div class="setting-info">
+                                                    <span class="setting-label">Bidirectional Soft Prerequisites</span>
+                                                    <span class="setting-desc">Soft prereqs work both ways — mastering either side makes the other learnable</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" id="altPathsBidirectional" checked>
+                                                    <span class="toggle-slider"></span>
+                                                </label>
+                                            </div>
+                                            <div id="altPathsStats" class="prm-status" style="margin-top: 8px; font-size: 11px; color: var(--text-muted);"></div>
+                                        </div>
+                                    </div>
+                                    <div class="prm-split-right" id="prmPreviewWrap"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Section 2b: Tree Growth -->
@@ -242,6 +406,8 @@
                             <span style="margin-left:8px; font-size:11px;">Status: <span id="tgStatus" style="color:rgba(184,168,120,0.5);">Waiting for scan...</span></span>
                         </div>
                     </div>
+
+                    </div><!-- /scannerComplexContent -->
                 </div>
 
                 <!-- PANEL: Spell Tree (default view) -->
@@ -606,6 +772,24 @@
         </div>
     </div>
 
+    <!-- Preset Name Prompt Modal -->
+    <div id="preset-name-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content" style="width: 320px;">
+            <div class="modal-header">
+                <h3 id="preset-name-title">Save Preset</h3>
+                <button class="modal-close" id="preset-name-close">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 12px 16px;">
+                <input type="text" id="preset-name-input" class="spawn-search" placeholder="Enter preset name..." style="width: 100%; margin-bottom: 0;">
+            </div>
+            <div class="modal-footer">
+                <button id="preset-name-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="preset-name-confirm" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
     <div id="blacklist-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
         <div class="modal-content blacklist-modal">
@@ -706,8 +890,9 @@
     <script src="modules/settingsPanel.js"></script>
     <script src="modules/treeViewerUI.js"></script>
     <script src="modules/progressionUI.js"></script>
-    <script src="modules/difficultyProfiles.js"></script>
+    <script src="modules/settingsPresets.js"></script>
     <script src="modules/scannerPresets.js"></script>
+    <script src="modules/easyMode.js"></script>
     <script src="modules/llmApiSettings.js"></script>
     <script src="modules/buttonHandlers.js"></script>
     <script src="modules/treePreviewUtils.js"></script>

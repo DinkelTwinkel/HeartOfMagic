@@ -232,6 +232,37 @@ window.callCpp = function(method, data) {
             })();
             break;
 
+        case 'PreReqMasterScore':
+            // Pre Req Master NLP scoring - try Python dev server, fall back to JS
+            (function() {
+                console.log('[Bridge] PreReqMasterScore: sending to Python dev server');
+
+                fetch('http://localhost:5556/score', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: data
+                }).then(function(resp) {
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return resp.json();
+                }).then(function(result) {
+                    console.log('[Bridge] Python NLP scoring complete: ' + (result.count || 0) + ' scored');
+                    logCppCall('in', 'onPreReqMasterComplete', 'Python NLP: ' + (result.success ? 'OK' : 'FAIL'));
+                    if (typeof window.onPreReqMasterComplete === 'function') {
+                        window.onPreReqMasterComplete(JSON.stringify(result));
+                    }
+                }).catch(function(err) {
+                    console.log('[Bridge] Python server not available (' + err.message + '), signaling JS fallback');
+                    logCppCall('in', 'onPreReqMasterComplete', 'FAIL (server offline)');
+                    if (typeof window.onPreReqMasterComplete === 'function') {
+                        window.onPreReqMasterComplete(JSON.stringify({
+                            success: false,
+                            error: 'Python dev server not available: ' + err.message
+                        }));
+                    }
+                });
+            })();
+            break;
+
         case 'ClassicGrowthBuild':
             // Mock: use JS ProceduralTreeBuilder if available, otherwise build minimal mock
             setTimeout(function() {
@@ -464,6 +495,65 @@ window.callCpp = function(method, data) {
             }, 500);
             break;
 
+        case 'SavePreset':
+            // Save preset to localStorage
+            (function() {
+                try {
+                    var args = JSON.parse(data);
+                    var storageKey = 'preset_' + args.type + '_' + args.name;
+                    localStorage.setItem(storageKey, JSON.stringify(args.data));
+                    console.log('[Bridge] SavePreset: saved ' + args.type + '/' + args.name + ' to localStorage');
+                } catch(e) {
+                    console.error('[Bridge] SavePreset failed:', e);
+                }
+            })();
+            break;
+
+        case 'DeletePreset':
+            // Delete preset from localStorage
+            (function() {
+                try {
+                    var args = JSON.parse(data);
+                    var storageKey = 'preset_' + args.type + '_' + args.name;
+                    localStorage.removeItem(storageKey);
+                    console.log('[Bridge] DeletePreset: removed ' + args.type + '/' + args.name + ' from localStorage');
+                } catch(e) {
+                    console.error('[Bridge] DeletePreset failed:', e);
+                }
+            })();
+            break;
+
+        case 'LoadPresets':
+            // Load all presets of a type from localStorage
+            (function() {
+                try {
+                    var args = JSON.parse(data);
+                    var type = args.type;
+                    var prefix = 'preset_' + type + '_';
+                    var presets = [];
+                    for (var i = 0; i < localStorage.length; i++) {
+                        var key = localStorage.key(i);
+                        if (key.indexOf(prefix) === 0) {
+                            var name = key.substring(prefix.length);
+                            try {
+                                var presetData = JSON.parse(localStorage.getItem(key));
+                                presets.push({ key: name, data: presetData });
+                            } catch(pe) {}
+                        }
+                    }
+                    console.log('[Bridge] LoadPresets: found ' + presets.length + ' ' + type + ' presets in localStorage');
+                    setTimeout(function() {
+                        logCppCall('in', 'onPresetsLoaded', presets.length + ' ' + type + ' presets');
+                        if (typeof window.onPresetsLoaded === 'function') {
+                            window.onPresetsLoaded(JSON.stringify({ type: type, presets: presets }));
+                        }
+                    }, 50);
+                } catch(e) {
+                    console.error('[Bridge] LoadPresets failed:', e);
+                }
+            })();
+            break;
+
         default:
             console.log('[Bridge] Unhandled method:', method);
     }
@@ -566,7 +656,6 @@ function mockLoadConfig() {
         heartBgColor: '#0a0a14',
         heartRingColor: '#b8a878',
         learningPathColor: '#00ffff',
-        activeProfile: 'normal',
         learningMode: 'perSchool',
         xpGlobalMultiplier: 1,
         xpMultiplierDirect: 100,
@@ -615,8 +704,7 @@ function mockLoadConfig() {
         },
         notifications: { weakenedSpellNotifications: true, weakenedSpellInterval: 10.0 },
         llm: { apiKey: '', model: 'anthropic/claude-sonnet-4', maxTokens: 64000 },
-        schoolColors: {},
-        customProfiles: {}
+        schoolColors: {}
     };
 
     logCppCall('in', 'onUnifiedConfigLoaded', 'config loaded');

@@ -21,12 +21,16 @@
 // HOW-TO-LEARN PANEL
 // =============================================================================
 
+var _howToPanelInitialized = false;
+
 function initializeHowToPanel() {
     var panel = document.getElementById('howto-panel');
     var tab = document.getElementById('howto-tab');
     var closeBtn = document.getElementById('close-howto');
-    
+
     if (!panel || !tab) return;
+    if (_howToPanelInitialized) return;
+    _howToPanelInitialized = true;
     
     // Panel starts hidden - it's inside contentSpellTree which is already shown/hidden by tab switching
     // Only remove hidden when user is on the tree tab (which they are if this runs from initializeTreeViewer)

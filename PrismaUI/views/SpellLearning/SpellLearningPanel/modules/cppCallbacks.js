@@ -294,12 +294,12 @@ window.updateSpellData = function(jsonStr) {
         }
     }
 
-    // Show core settings section (globe position/size)
+    // Initialize core settings (globe position/size) - now lives in Extra Settings tab
     if (typeof TreeCore !== 'undefined') {
         try {
             TreeCore.show();
         } catch (tcErr) {
-            console.error('[TreeCore] Failed to show:', tcErr);
+            console.error('[TreeCore] Failed to init:', tcErr);
         }
     }
 
@@ -311,6 +311,10 @@ window.updateSpellData = function(jsonStr) {
             console.error('[TreeGrowth] Failed to show:', tgErr);
         }
     }
+
+    // Show Extra Settings section after scan (preview renders empty state until tree is built)
+    var prmSection = document.getElementById('prereqMasterSection');
+    if (prmSection) prmSection.style.display = '';
 
     // Notify growth modes that spells are available for building
     if (state.lastSpellData && state.lastSpellData.spells && state.lastSpellData.spells.length > 0) {
@@ -516,6 +520,12 @@ window.updateTreeData = function(json) {
         
         console.log('[SpellLearning] Loading tree with ' + Object.keys(data.schools).length + ' schools');
         loadTreeData(data);
+        
+        // Enable Pre Req Master now that tree is loaded
+        if (typeof PreReqMaster !== 'undefined' && PreReqMaster.setButtonsEnabled) {
+            PreReqMaster.setButtonsEnabled(true);
+            PreReqMaster.updateStatus('Tree loaded - ready');
+        }
         
         // Apply procedural prereq injection if enabled
         if (settings.proceduralPrereqInjection && typeof injectProceduralPrerequisites === 'function') {

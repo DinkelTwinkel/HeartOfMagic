@@ -49,6 +49,17 @@ var TreePreview = {
     registerMode: function(name, module) {
         this.modes[name] = module;
         console.log('[TreePreview] Registered mode: ' + name);
+
+        // If already initialized, dynamically add the tab
+        if (this._initialized) {
+            this._addTab(name, module);
+        }
+    },
+
+    /** Placeholder for modes that are coming soon (shown as disabled tab). */
+    registerPlaceholder: function(name) {
+        this._placeholders = this._placeholders || [];
+        this._placeholders.push(name);
     },
 
     // =========================================================================
@@ -89,14 +100,30 @@ var TreePreview = {
     },
 
     _buildHTML: function() {
+        // Build tabs dynamically from registered modes
+        var tabsHTML = '';
+        var modeNames = [];
+        for (var name in this.modes) {
+            if (this.modes.hasOwnProperty(name)) modeNames.push(name);
+        }
+        for (var i = 0; i < modeNames.length; i++) {
+            var m = modeNames[i];
+            var isActive = m === this.activeMode ? ' active' : '';
+            var label = this.modes[m].tabLabel || m.toUpperCase();
+            tabsHTML += '<button class="tree-preview-tab' + isActive + '" data-mode="' + m + '">' + label + '</button>';
+        }
+        // Placeholder tabs (coming soon)
+        var ph = this._placeholders || [];
+        for (var p = 0; p < ph.length; p++) {
+            tabsHTML += '<button class="tree-preview-tab disabled" data-mode="' + ph[p] + '" disabled>' + ph[p].toUpperCase() + '</button>';
+        }
+
         return '' +
             '<div class="tree-preview-header">' +
                 '<span class="tree-preview-title">Root Base Preview</span>' +
             '</div>' +
-            '<div class="tree-preview-tabs">' +
-                '<button class="tree-preview-tab active" data-mode="sun">SUN</button>' +
-                '<button class="tree-preview-tab" data-mode="flat">FLAT</button>' +
-                '<button class="tree-preview-tab disabled" data-mode="roguelike" disabled>ROGUELIKE</button>' +
+            '<div class="tree-preview-tabs" id="treePreviewTabs">' +
+                tabsHTML +
             '</div>' +
             '<div class="tree-preview-split">' +
                 '<div class="tree-preview-left" id="treePreviewSettings">' +
@@ -106,6 +133,31 @@ var TreePreview = {
                     '<!-- Canvas created dynamically -->' +
                 '</div>' +
             '</div>';
+    },
+
+    /** Add a tab button for a mode registered after init. */
+    _addTab: function(name, module) {
+        var tabsEl = document.getElementById('treePreviewTabs');
+        if (!tabsEl) return;
+
+        var label = module.tabLabel || name.toUpperCase();
+        var btn = document.createElement('button');
+        btn.className = 'tree-preview-tab';
+        btn.setAttribute('data-mode', name);
+        btn.textContent = label;
+
+        var self = this;
+        btn.addEventListener('click', function() {
+            self.switchMode(name);
+        });
+
+        // Insert before placeholder tabs
+        var placeholders = tabsEl.querySelectorAll('.tree-preview-tab.disabled');
+        if (placeholders.length > 0) {
+            tabsEl.insertBefore(btn, placeholders[0]);
+        } else {
+            tabsEl.appendChild(btn);
+        }
     },
 
     // =========================================================================
@@ -436,3 +488,6 @@ if (typeof TreePreviewSun !== 'undefined') {
 if (typeof TreePreviewFlat !== 'undefined') {
     TreePreview.registerMode('flat', TreePreviewFlat);
 }
+
+// Placeholder tabs for upcoming modes
+TreePreview.registerPlaceholder('roguelike');

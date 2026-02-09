@@ -3,8 +3,8 @@
  * Handles all settings UI initialization and config management
  * 
  * Depends on:
- * - modules/constants.js (KEY_CODES, DIFFICULTY_PROFILES)
- * - modules/state.js (settings, customProfiles, xpOverrides)
+ * - modules/constants.js (KEY_CODES)
+ * - modules/state.js (settings, settingsPresets, xpOverrides)
  * - modules/colorUtils.js (applySchoolColorsToCSS, updateSchoolColorPickerUI)
  * - modules/uiHelpers.js (updateStatus, updateSliderFillGlobal)
  * 
@@ -290,7 +290,6 @@ function initializeSettings() {
                     SmartRenderer.refresh();
                 }
             }
-            onProgressionSettingChanged();
         });
     }
     
@@ -305,7 +304,6 @@ function initializeSettings() {
             if (state.treeData) {
                 WheelRenderer.render();
             }
-            onProgressionSettingChanged();
         });
     }
     
@@ -775,8 +773,8 @@ function initializeSettings() {
     // Early Spell Learning Settings
     try { initializeEarlyLearningSettings(); } catch(e) { console.error('[SpellLearning] Early learning settings init error:', e); }
     
-    // Difficulty Profile System
-    try { initializeDifficultyProfiles(); } catch(e) { console.error('[SpellLearning] Difficulty profiles init error:', e); }
+    // Settings Presets
+    try { if (typeof initializeSettingsPresets === 'function') initializeSettingsPresets(); } catch(e) { console.error('[SpellLearning] Settings presets init error:', e); }
 
     // Scanner Presets
     try { if (typeof initializeScannerPresets === 'function') initializeScannerPresets(); } catch(e) { console.error('[SpellLearning] Scanner presets init error:', e); }
@@ -895,8 +893,7 @@ function initializeSettings() {
             // Save on change (when user releases slider)
             slider.addEventListener('change', function() {
                 console.log('[SpellLearning] ' + settingKey + ':', settings[settingKey]);
-                onProgressionSettingChanged();
-                autoSaveSettings();
+                    autoSaveSettings();
             });
         }
     }
@@ -917,7 +914,6 @@ function initializeSettings() {
         
         globalMultSlider.addEventListener('change', function() {
             console.log('[SpellLearning] Global XP multiplier:', settings.xpGlobalMultiplier);
-            onProgressionSettingChanged();
             autoSaveSettings();
         });
     }
@@ -944,8 +940,7 @@ function initializeSettings() {
                 this.value = val;
                 settings[settingKey] = val;
                 console.log('[SpellLearning] ' + settingKey + ':', settings[settingKey]);
-                onProgressionSettingChanged();
-                autoSaveSettings();
+                    autoSaveSettings();
             });
             
             // Also save on blur
@@ -954,8 +949,7 @@ function initializeSettings() {
                 val = Math.max(1, Math.min(99999, val));
                 this.value = val;
                 settings[settingKey] = val;
-                onProgressionSettingChanged();
-            });
+                });
         }
     }
     
@@ -1198,9 +1192,8 @@ function saveUnifiedConfig() {
         islXpPerHour: settings.islXpPerHour,
         islTomeBonus: settings.islTomeBonus,
         
-        // Difficulty profiles
-        activeProfile: settings.activeProfile,
-        customProfiles: customProfiles,
+        // Active preset names (preset data now in individual files)
+        activeSettingsPreset: typeof _activeSettingsPreset !== 'undefined' ? _activeSettingsPreset : 'Default',
         
         // Discovery mode
         discoveryMode: settings.discoveryMode,
@@ -1248,8 +1241,8 @@ function saveUnifiedConfig() {
         // Dynamic tree building settings
         treeGeneration: settings.treeGeneration,
 
-        // Scanner presets (user-saved tree building configurations)
-        scannerPresets: scannerPresets
+        // Active scanner preset name (preset data now in individual files)
+        activeScannerPreset: typeof _activeScannerPreset !== 'undefined' ? _activeScannerPreset : ''
     };
 
     console.log('[SpellLearning] Saving unified config');
@@ -1494,24 +1487,48 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         settings.islXpPerHour = data.islXpPerHour !== undefined ? data.islXpPerHour : 50;
         settings.islTomeBonus = data.islTomeBonus !== undefined ? data.islTomeBonus : 25;
         
-        // Difficulty profiles
-        settings.activeProfile = data.activeProfile || 'normal';
-        if (data.customProfiles && typeof data.customProfiles === 'object') {
-            customProfiles = data.customProfiles;
-            console.log('[SpellLearning] Loaded', Object.keys(customProfiles).length, 'custom profiles');
-        } else {
-            customProfiles = {};
+        // Active preset names (preset data now loaded from individual files)
+        if (data.activeSettingsPreset && typeof _activeSettingsPreset !== 'undefined') {
+            _activeSettingsPreset = data.activeSettingsPreset;
+        }
+        if (data.activeScannerPreset && typeof _activeScannerPreset !== 'undefined') {
+            _activeScannerPreset = data.activeScannerPreset;
         }
 
-        // Scanner presets
-        if (data.scannerPresets && typeof data.scannerPresets === 'object') {
-            scannerPresets = data.scannerPresets;
-            console.log('[SpellLearning] Loaded', Object.keys(scannerPresets).length, 'scanner presets');
-        } else {
-            scannerPresets = {};
+        // LEGACY MIGRATION: If old embedded presets exist in config, migrate them to files
+        if (data.settingsPresets && typeof data.settingsPresets === 'object') {
+            var spKeys = Object.keys(data.settingsPresets);
+            if (spKeys.length > 0) {
+                console.log('[SpellLearning] MIGRATING ' + spKeys.length + ' legacy settings presets to files...');
+                for (var spIdx = 0; spIdx < spKeys.length; spIdx++) {
+                    var spKey = spKeys[spIdx];
+                    var spPreset = data.settingsPresets[spKey];
+                    settingsPresets[spKey] = spPreset;
+                    if (window.callCpp) {
+                        window.callCpp('SavePreset', JSON.stringify({
+                            type: 'settings', name: spKey, data: spPreset
+                        }));
+                    }
+                }
+                if (typeof updateSettingsPresetsUI === 'function') updateSettingsPresetsUI();
+            }
         }
-        if (typeof updateScannerPresetsUI === 'function') {
-            updateScannerPresetsUI();
+        if (data.scannerPresets && typeof data.scannerPresets === 'object') {
+            var scKeys = Object.keys(data.scannerPresets);
+            if (scKeys.length > 0) {
+                console.log('[SpellLearning] MIGRATING ' + scKeys.length + ' legacy scanner presets to files...');
+                for (var scIdx = 0; scIdx < scKeys.length; scIdx++) {
+                    var scKey = scKeys[scIdx];
+                    var scPreset = data.scannerPresets[scKey];
+                    scannerPresets[scKey] = scPreset;
+                    if (window.callCpp) {
+                        window.callCpp('SavePreset', JSON.stringify({
+                            type: 'scanner', name: scKey, data: scPreset
+                        }));
+                    }
+                }
+                if (typeof updateScannerPresetsUI === 'function') updateScannerPresetsUI();
+            }
         }
         
         // Discovery mode
@@ -1782,15 +1799,10 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         }
         updateNotificationsUI();
         
-        // Update difficulty profile UI
-        var profileSelect = document.getElementById('difficultyProfileSelect');
-        if (profileSelect) {
-            updateProfileDropdown();
-            profileSelect.value = settings.activeProfile;
+        // Update settings presets UI
+        if (typeof updateSettingsPresetsUI === 'function') {
+            updateSettingsPresetsUI();
         }
-        updateProfileDescription();
-        updateProfileModifiedBadge();
-        updateCustomProfilesUI();
         
         if (verboseToggle) verboseToggle.checked = settings.verboseLogging;
         if (hotkeyInput) hotkeyInput.value = settings.hotkey;
@@ -2088,6 +2100,9 @@ window.onUnifiedConfigLoaded = function(dataStr) {
             stg.linkValidationPasses = tg.linkValidationPasses !== undefined ? tg.linkValidationPasses : 3;
             stg.warnOnDistanceViolation = tg.warnOnDistanceViolation !== false;
             stg.warnOnElementMismatch = tg.warnOnElementMismatch !== false;
+
+            // Bidirectional soft prereqs
+            stg.bidirectionalSoftPrereqs = tg.bidirectionalSoftPrereqs !== undefined ? tg.bidirectionalSoftPrereqs : true;
 
             // LLM Edge Case
             stg.llmEdgeCaseEnabled = tg.llmEdgeCaseEnabled || false;

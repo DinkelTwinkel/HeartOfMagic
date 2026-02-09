@@ -1438,6 +1438,103 @@ var CanvasRenderer = {
             }
         }
 
+        // === PASS 4: Chain edges for hardPrereqs on selected node ===
+        if (this.selectedNode && this.selectedNode.hardPrereqs && this.selectedNode.hardPrereqs.length > 0) {
+            var selNode = this.selectedNode;
+
+            for (var li = 0; li < selNode.hardPrereqs.length; li++) {
+                var hpId = selNode.hardPrereqs[li];
+                var hpNode = this._nodeMap ? this._nodeMap.get(hpId) : null;
+                if (!hpNode) continue;
+
+                // Chain goes FROM hardPrereq TO selected node
+                var fromNode = hpNode;
+                var toNode = selNode;
+
+                // Viewport culling
+                if (fromNode.x < viewLeft && toNode.x < viewLeft) continue;
+                if (fromNode.x > viewRight && toNode.x > viewRight) continue;
+                if (fromNode.y < viewTop && toNode.y < viewTop) continue;
+                if (fromNode.y > viewBottom && toNode.y > viewBottom) continue;
+
+                var dx = toNode.x - fromNode.x;
+                var dy = toNode.y - fromNode.y;
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 1) continue;
+
+                // Chain-link parameters
+                var linkW = 5;       // Link width (along chain)
+                var linkH = 3.2;     // Link height (perpendicular)
+                var linkThick = 1.8; // Stroke thickness of each link
+                var linkSpacing = linkW * 1.15; // Center-to-center distance
+                var numLinks = Math.max(3, Math.round(dist / linkSpacing));
+                var angle = Math.atan2(dy, dx);
+
+                ctx.globalAlpha = 0.8;
+
+                // Draw interlocking chain links (alternating orientation)
+                for (var cl = 0; cl < numLinks; cl++) {
+                    var t = (cl + 0.5) / numLinks;
+                    var cx = fromNode.x + dx * t;
+                    var cy = fromNode.y + dy * t;
+
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.rotate(angle);
+
+                    // Alternate: even links are horizontal (along chain), odd are rotated 90 degrees
+                    if (cl % 2 !== 0) {
+                        ctx.rotate(Math.PI / 2);
+                    }
+
+                    // Draw a rounded-rectangle chain link (pill shape)
+                    var hw = linkW * 0.5;
+                    var hh = linkH * 0.5;
+                    var r = Math.min(hw, hh) * 0.8; // corner radius
+
+                    ctx.beginPath();
+                    ctx.moveTo(-hw + r, -hh);
+                    ctx.lineTo(hw - r, -hh);
+                    ctx.arcTo(hw, -hh, hw, -hh + r, r);
+                    ctx.lineTo(hw, hh - r);
+                    ctx.arcTo(hw, hh, hw - r, hh, r);
+                    ctx.lineTo(-hw + r, hh);
+                    ctx.arcTo(-hw, hh, -hw, hh - r, r);
+                    ctx.lineTo(-hw, -hh + r);
+                    ctx.arcTo(-hw, -hh, -hw + r, -hh, r);
+                    ctx.closePath();
+
+                    // Gray fill + darker stroke = solid chain look
+                    ctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
+                    ctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
+                    ctx.lineWidth = linkThick;
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Inner cutout (hollow center of each link)
+                    var ihw = hw * 0.45;
+                    var ihh = hh * 0.35;
+                    var ir = Math.min(ihw, ihh) * 0.6;
+                    ctx.beginPath();
+                    ctx.moveTo(-ihw + ir, -ihh);
+                    ctx.lineTo(ihw - ir, -ihh);
+                    ctx.arcTo(ihw, -ihh, ihw, -ihh + ir, ir);
+                    ctx.lineTo(ihw, ihh - ir);
+                    ctx.arcTo(ihw, ihh, ihw - ir, ihh, ir);
+                    ctx.lineTo(-ihw + ir, ihh);
+                    ctx.arcTo(-ihw, ihh, -ihw, ihh - ir, ir);
+                    ctx.lineTo(-ihw, -ihh + ir);
+                    ctx.arcTo(-ihw, -ihh, -ihw + ir, -ihh, ir);
+                    ctx.closePath();
+
+                    ctx.fillStyle = 'rgba(20, 20, 30, 0.7)';
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+        }
+
         ctx.globalAlpha = 1.0;
     },
     
@@ -1549,6 +1646,9 @@ var CanvasRenderer = {
                                this._learningPathNodes.has(node.id);
         var isLearning = (node.state === 'learning' || node.state === 'Learning');
 
+        // Check if this node has hard prereqs (locks) - needs gray outline treatment
+        var hasLockPrereqs = node.hardPrereqs && node.hardPrereqs.length > 0;
+
         // During animation, hide learning path styling ONLY for nodes in the animating path
         // (other learning paths remain visible)
         var isBeingAnimated = this._animatingPathNodes && this._animatingPathNodes.has(node.id);
@@ -1595,6 +1695,19 @@ var CanvasRenderer = {
             strokeWidth = 1.5;
             alpha = 1.0;
         }
+
+        // Lock visual overrides for nodes with hardPrereqs
+        // Not-unlocked: gray fill + small school-colored center hole
+        // Unlocked: normal look + gray outline ring
+        var lockGrayFill = false;
+        var lockGrayOutline = false;
+        if (hasLockPrereqs) {
+            if (node.state === 'unlocked') {
+                lockGrayOutline = true;  // Unlocked but was locked: gray ring persists
+            } else {
+                lockGrayFill = true;     // Not yet unlocked: gray body + school color hole
+            }
+        }
         
         ctx.save();
         ctx.translate(node.x, node.y);
@@ -1623,29 +1736,76 @@ var CanvasRenderer = {
             ctx.rotate(angleToCenter + rotationOffset);
         }
         
-        ctx.scale(size, size);
-        ctx.globalAlpha = alpha;
-        
-        // Draw main shape using cached Path2D
-        ctx.fillStyle = fillColor;
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth / size;
-        
-        ctx.fill(path);
-        ctx.stroke(path);
-        
-        // Draw inner accent for unlocked nodes
-        if (node.state === 'unlocked') {
+        if (lockGrayFill) {
+            // === LOCKED NODE WITH HARD PREREQS ===
+            // Outer: gray filled shape (the "lock shell")
+            var outerSize = size + 2;
+            ctx.save();
+            ctx.scale(outerSize, outerSize);
+            ctx.globalAlpha = Math.min(alpha + 0.2, 0.75);
+            ctx.fillStyle = 'rgba(90, 90, 100, 0.7)';
+            ctx.strokeStyle = 'rgba(140, 140, 155, 0.8)';
+            ctx.lineWidth = 1.2 / outerSize;
+            ctx.fill(path);
+            ctx.stroke(path);
+            ctx.restore();
+
+            // Inner: small school-colored center hole
+            var holeSize = Math.max(size * 0.45, 3);
+            ctx.scale(holeSize, holeSize);
+            ctx.globalAlpha = Math.min(alpha + 0.15, 0.65);
+            ctx.fillStyle = schoolColor;
+            ctx.fill(path);
+        } else if (lockGrayOutline) {
+            // === UNLOCKED NODE WITH HARD PREREQS ===
+            // Gray outline ring behind the normal shape
+            var ringSize = size + 3;
+            ctx.save();
+            ctx.scale(ringSize, ringSize);
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = 'rgba(90, 90, 100, 0.25)';
+            ctx.strokeStyle = 'rgba(150, 150, 160, 0.7)';
+            ctx.lineWidth = 1.5 / ringSize;
+            ctx.fill(path);
+            ctx.stroke(path);
+            ctx.restore();
+
+            // Normal unlocked node on top
+            ctx.scale(size, size);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeWidth / size;
+            ctx.fill(path);
+            ctx.stroke(path);
+
+            // Inner accent
             ctx.scale(0.5, 0.5);
             ctx.fillStyle = this.getInnerAccentColor(schoolColor);
             ctx.fill(path);
-        }
-        
-        // Draw white center for learning node
-        if (isLearning) {
-            ctx.scale(0.4, 0.4);
-            ctx.fillStyle = '#ffffff';
+        } else {
+            // === NORMAL NODE (no lock prereqs) ===
+            ctx.scale(size, size);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeWidth / size;
             ctx.fill(path);
+            ctx.stroke(path);
+
+            // Draw inner accent for unlocked nodes
+            if (node.state === 'unlocked') {
+                ctx.scale(0.5, 0.5);
+                ctx.fillStyle = this.getInnerAccentColor(schoolColor);
+                ctx.fill(path);
+            }
+
+            // Draw white center for learning node
+            if (isLearning) {
+                ctx.scale(0.4, 0.4);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill(path);
+            }
         }
         
         ctx.restore();

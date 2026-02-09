@@ -58,6 +58,17 @@ var TreeGrowth = {
     registerMode: function(name, module) {
         this.modes[name] = module;
         console.log('[TreeGrowth] Registered mode: ' + name);
+
+        // If already initialized, dynamically add the tab
+        if (this._initialized) {
+            this._addTab(name, module);
+        }
+    },
+
+    /** Placeholder for modes that are coming soon (shown as disabled tab). */
+    registerPlaceholder: function(name) {
+        this._placeholders = this._placeholders || [];
+        this._placeholders.push(name);
     },
 
     // =========================================================================
@@ -101,14 +112,30 @@ var TreeGrowth = {
     },
 
     _buildHTML: function() {
+        // Build tabs dynamically from registered modes
+        var tabsHTML = '';
+        var modeNames = [];
+        for (var name in this.modes) {
+            if (this.modes.hasOwnProperty(name)) modeNames.push(name);
+        }
+        for (var i = 0; i < modeNames.length; i++) {
+            var m = modeNames[i];
+            var isActive = m === this.activeMode ? ' active' : '';
+            var label = this.modes[m].tabLabel || m.toUpperCase();
+            tabsHTML += '<button class="tree-growth-tab' + isActive + '" data-mode="' + m + '">' + label + '</button>';
+        }
+        // Placeholder tabs (coming soon)
+        var ph = this._placeholders || [];
+        for (var p = 0; p < ph.length; p++) {
+            tabsHTML += '<button class="tree-growth-tab disabled" data-mode="' + ph[p] + '" disabled>' + ph[p].toUpperCase() + '</button>';
+        }
+
         return '' +
             '<div class="tree-preview-header">' +
                 '<span class="tree-preview-title">Tree Growth Preview</span>' +
             '</div>' +
-            '<div class="tree-preview-tabs">' +
-                '<button class="tree-growth-tab active" data-mode="classic">CLASSIC</button>' +
-                '<button class="tree-growth-tab" data-mode="tree">TREE</button>' +
-                '<button class="tree-growth-tab disabled" data-mode="life" disabled>LIFE</button>' +
+            '<div class="tree-preview-tabs" id="treeGrowthTabs">' +
+                tabsHTML +
             '</div>' +
             // Shared action buttons now live in index.html scan-actions-bottom
             '<div class="tree-preview-split" style="height:800px;">' +
@@ -119,6 +146,31 @@ var TreeGrowth = {
                     '<!-- Canvas created dynamically -->' +
                 '</div>' +
             '</div>';
+    },
+
+    /** Add a tab button for a mode registered after init. */
+    _addTab: function(name, module) {
+        var tabsEl = document.getElementById('treeGrowthTabs');
+        if (!tabsEl) return;
+
+        var label = module.tabLabel || name.toUpperCase();
+        var btn = document.createElement('button');
+        btn.className = 'tree-growth-tab';
+        btn.setAttribute('data-mode', name);
+        btn.textContent = label;
+
+        var self = this;
+        btn.addEventListener('click', function() {
+            self.switchMode(name);
+        });
+
+        // Insert before placeholder tabs
+        var placeholders = tabsEl.querySelectorAll('.tree-growth-tab.disabled');
+        if (placeholders.length > 0) {
+            tabsEl.insertBefore(btn, placeholders[0]);
+        } else {
+            tabsEl.appendChild(btn);
+        }
     },
 
     // =========================================================================
@@ -453,6 +505,21 @@ var TreeGrowth = {
                 label += ' \u2014 ' + this._nodeCount + '/' + (this._totalPool || this._nodeCount) + ' nodes placed';
             }
             this.setStatusText(label, '#22c55e');
+
+            // Force the main tree growth preview canvas to re-render
+            this._needsRender = true;
+
+            // Auto-run Pre Req Master if enabled
+            if (typeof PreReqMaster !== 'undefined' && PreReqMaster.isEnabled && PreReqMaster.isEnabled()) {
+                setTimeout(function() {
+                    PreReqMaster.autoApplyLocks();
+                }, 100); // Small delay to let tree data settle
+            }
+
+            // Update PRM preview canvas (may be in Easy mode)
+            if (typeof PreReqMaster !== 'undefined' && PreReqMaster.renderPreview) {
+                setTimeout(function() { PreReqMaster.renderPreview(); }, 200);
+            }
         } else {
             if (applyBtn) applyBtn.disabled = true;
             if (clearBtn) clearBtn.disabled = true;
@@ -514,3 +581,6 @@ if (typeof TreeGrowthClassic !== 'undefined') {
 if (typeof TreeGrowthTree !== 'undefined') {
     TreeGrowth.registerMode('tree', TreeGrowthTree);
 }
+
+// Placeholder tabs for upcoming modes
+TreeGrowth.registerPlaceholder('life');

@@ -529,6 +529,21 @@ function _loadTrustedTree(data, switchToTreeTab) {
                            ', name=' + (nd.name || '?') + ', tier=' + nd.tier);
             }
 
+            // Compute hard/soft prereqs using same fallback as loadTreeData
+            var _hardPrereqs = nd.hardPrereqs || [];
+            var _softPrereqs = nd.softPrereqs || [];
+            var _softNeeded = nd.softNeeded || 0;
+            if (_hardPrereqs.length === 0 && _softPrereqs.length === 0) {
+                var _prereqs = nd.prerequisites || [];
+                if (_prereqs.length === 1) {
+                    _hardPrereqs = _prereqs.slice();
+                } else if (_prereqs.length > 1) {
+                    _hardPrereqs = [_prereqs[0]];
+                    _softPrereqs = _prereqs.slice(1);
+                    _softNeeded = 1;
+                }
+            }
+
             var node = {
                 id: id,
                 formId: id,
@@ -536,9 +551,9 @@ function _loadTrustedTree(data, switchToTreeTab) {
                 school: schoolName,
                 children: nd.children || [],
                 prerequisites: nd.prerequisites || [],
-                hardPrereqs: nd.hardPrereqs || nd.prerequisites || [],
-                softPrereqs: nd.softPrereqs || [],
-                softNeeded: nd.softNeeded || 0,
+                hardPrereqs: _hardPrereqs,
+                softPrereqs: _softPrereqs,
+                softNeeded: _softNeeded,
                 tier: nd.tier || 0,
                 depth: nd.tier || 0,
                 x: nx,
@@ -620,6 +635,9 @@ function _loadTrustedTree(data, switchToTreeTab) {
         switchTab('spellTree');
     }
 
+    // Mirror bidirectional soft prereqs before sending to C++
+    mirrorBidirectionalSoftPrereqs(nodes);
+
     // Send prereqs to C++ (already baked, no splitting needed)
     if (window.callCpp) {
         var prereqData = [];
@@ -653,6 +671,107 @@ function _loadTrustedTree(data, switchToTreeTab) {
 
     _logToSKSE('[_loadTrustedTree] === DONE ===');
     setTreeStatus('Loaded ' + nodes.length + ' spells (trusted tree)');
+}
+
+/**
+ * Mirror bidirectional soft prerequisites.
+ * When A is a soft prereq of B, makes B a soft prereq of A too.
+ * Skips nodes where softNeeded === softPrereqs.length (all required = effectively hard).
+ * Modifies nodes in-place. Returns count of mirrors added.
+ */
+function mirrorBidirectionalSoftPrereqs(nodes) {
+    if (!settings.treeGeneration.bidirectionalSoftPrereqs) return 0;
+
+    // Build nodeMap for O(1) lookup
+    var nodeMap = {};
+    for (var i = 0; i < nodes.length; i++) {
+        var fid = nodes[i].formId || nodes[i].id;
+        if (fid) nodeMap[fid] = nodes[i];
+    }
+
+    // Collect mirrors to apply (avoid cascading during iteration)
+    var mirrors = [];
+
+    for (var n = 0; n < nodes.length; n++) {
+        var node = nodes[n];
+        var softPrereqs = node.softPrereqs;
+        if (!softPrereqs || softPrereqs.length === 0) continue;
+
+        var nodeFormId = node.formId || node.id;
+
+        for (var s = 0; s < softPrereqs.length; s++) {
+            var targetNode = nodeMap[softPrereqs[s]];
+            if (!targetNode) continue;
+
+            // Don't mirror onto root/prereq-free nodes (would deadlock entry points)
+            if (targetNode.isRoot) continue;
+            var targetHasPrereqs = (targetNode.hardPrereqs && targetNode.hardPrereqs.length > 0) ||
+                                   (targetNode.softPrereqs && targetNode.softPrereqs.length > 0) ||
+                                   (targetNode.prerequisites && targetNode.prerequisites.length > 0);
+            if (!targetHasPrereqs) continue;
+
+            // Check if target already has this node in hard or soft prereqs
+            var alreadyExists = false;
+
+            var targetHard = targetNode.hardPrereqs || [];
+            for (var h = 0; h < targetHard.length; h++) {
+                if (targetHard[h] === nodeFormId) { alreadyExists = true; break; }
+            }
+
+            if (!alreadyExists) {
+                var targetSoft = targetNode.softPrereqs || [];
+                for (var ts = 0; ts < targetSoft.length; ts++) {
+                    if (targetSoft[ts] === nodeFormId) { alreadyExists = true; break; }
+                }
+            }
+
+            if (!alreadyExists) {
+                mirrors.push({ target: targetNode, addFormId: nodeFormId });
+            }
+        }
+    }
+
+    // Apply all mirrors
+    for (var m = 0; m < mirrors.length; m++) {
+        var target = mirrors[m].target;
+        var addId = mirrors[m].addFormId;
+
+        if (!target.hardPrereqs) target.hardPrereqs = [];
+        if (!target.softPrereqs) target.softPrereqs = [];
+        if (!target.prerequisites) target.prerequisites = [];
+
+        target.softPrereqs.push(addId);
+
+        // Ensure softNeeded is at least 1
+        if (!target.softNeeded || target.softNeeded < 1) {
+            target.softNeeded = 1;
+        }
+
+        // Add to legacy prerequisites array for compatibility
+        var inLegacy = false;
+        for (var lp = 0; lp < target.prerequisites.length; lp++) {
+            if (target.prerequisites[lp] === addId) { inLegacy = true; break; }
+        }
+        if (!inLegacy) {
+            target.prerequisites.push(addId);
+        }
+    }
+
+    if (mirrors.length > 0) {
+        console.log('[SpellLearning] Bidirectional soft prereqs: mirrored ' + mirrors.length + ' connections');
+        // Log first few for debugging
+        for (var d = 0; d < Math.min(5, mirrors.length); d++) {
+            var dbgTarget = mirrors[d].target;
+            console.log('[SpellLearning]   mirror: ' + mirrors[d].addFormId + ' -> ' +
+                        (dbgTarget.formId || dbgTarget.id) +
+                        ' (softPrereqs now: ' + (dbgTarget.softPrereqs ? dbgTarget.softPrereqs.length : 0) +
+                        ', softNeeded: ' + dbgTarget.softNeeded + ')');
+        }
+    } else {
+        console.log('[SpellLearning] Bidirectional soft prereqs: 0 mirrors (no eligible soft prereqs found)');
+    }
+
+    return mirrors.length;
 }
 
 function loadTreeData(jsonData, switchToTreeTab, isManualImport) {
@@ -859,56 +978,59 @@ function loadTreeData(jsonData, switchToTreeTab, isManualImport) {
         console.log('[SpellLearning] Tree loaded - switched to Spell Tree tab');
     }
     
+    // Compute hard/soft prereqs on each node (source of truth for all systems)
+    result.nodes.forEach(function(node) {
+        // Use new unified hard/soft prereq system if available
+        var hardPrereqs = node.hardPrereqs || [];
+        var softPrereqs = node.softPrereqs || [];
+        var softNeeded = node.softNeeded || 0;
+
+        // Fallback to old system: treat all prereqs as hard if no hard/soft data
+        if (hardPrereqs.length === 0 && softPrereqs.length === 0) {
+            if (node.prerequisites && node.prerequisites.length > 0) {
+                // Single prereq = hard, multiple = first is hard, rest are soft with softNeeded=1
+                if (node.prerequisites.length === 1) {
+                    hardPrereqs = node.prerequisites.slice();
+                } else {
+                    hardPrereqs = [node.prerequisites[0]];
+                    softPrereqs = node.prerequisites.slice(1);
+                    softNeeded = 1;
+                }
+            }
+        }
+
+        // Store computed hard/soft data back on the node so ALL systems
+        // (detail panel, recalculateNodeAvailability, C++ bridge) use the
+        // same source of truth. This prevents the "hidden prerequisites" bug
+        // where the detail panel says "complete" but availability disagrees.
+        node.hardPrereqs = hardPrereqs;
+        node.softPrereqs = softPrereqs;
+        node.softNeeded = softNeeded;
+    });
+
+    // Mirror bidirectional soft prereqs before sending to C++
+    mirrorBidirectionalSoftPrereqs(result.nodes);
+
     // Send tree prerequisites (hard/soft system) to C++ for tome learning validation
     if (window.callCpp) {
-        // Build prerequisite data: array of { formId, hardPrereqs, softPrereqs, softNeeded }
         var prereqData = [];
         var hardCount = 0;
         var softCount = 0;
-        
-        result.nodes.forEach(function(node) {
-            var formId = node.formId || node.id;
-            
-            // Use new unified hard/soft prereq system if available
-            var hardPrereqs = node.hardPrereqs || [];
-            var softPrereqs = node.softPrereqs || [];
-            var softNeeded = node.softNeeded || 0;
-            
-            // Fallback to old system: treat all prereqs as hard if no hard/soft data
-            if (hardPrereqs.length === 0 && softPrereqs.length === 0) {
-                if (node.prerequisites && node.prerequisites.length > 0) {
-                    // Single prereq = hard, multiple = first is hard, rest are soft with softNeeded=1
-                    if (node.prerequisites.length === 1) {
-                        hardPrereqs = node.prerequisites.slice();
-                    } else {
-                        hardPrereqs = [node.prerequisites[0]];
-                        softPrereqs = node.prerequisites.slice(1);
-                        softNeeded = 1;
-                    }
-                }
-            }
-            
-            hardCount += hardPrereqs.length;
-            softCount += softPrereqs.length;
-            
-            // Store computed hard/soft data back on the node so ALL systems
-            // (detail panel, recalculateNodeAvailability, C++ bridge) use the
-            // same source of truth. This prevents the "hidden prerequisites" bug
-            // where the detail panel says "complete" but availability disagrees.
-            node.hardPrereqs = hardPrereqs;
-            node.softPrereqs = softPrereqs;
-            node.softNeeded = softNeeded;
-            
+
+        for (var pi = 0; pi < result.nodes.length; pi++) {
+            var pNode = result.nodes[pi];
+            hardCount += (pNode.hardPrereqs ? pNode.hardPrereqs.length : 0);
+            softCount += (pNode.softPrereqs ? pNode.softPrereqs.length : 0);
             prereqData.push({
-                formId: formId,
-                hardPrereqs: hardPrereqs,
-                softPrereqs: softPrereqs,
-                softNeeded: softNeeded
+                formId: pNode.formId || pNode.id,
+                hardPrereqs: pNode.hardPrereqs || [],
+                softPrereqs: pNode.softPrereqs || [],
+                softNeeded: pNode.softNeeded || 0
             });
-        });
-        
+        }
+
         // First clear existing prerequisites, then set new ones
-        console.log('[SpellLearning] Sending ' + prereqData.length + ' spell prereqs (' + 
+        console.log('[SpellLearning] Sending ' + prereqData.length + ' spell prereqs (' +
                     hardCount + ' hard, ' + softCount + ' soft) to C++');
         window.callCpp('SetTreePrerequisites', JSON.stringify({ clear: true }));
         window.callCpp('SetTreePrerequisites', JSON.stringify(prereqData));
@@ -926,6 +1048,11 @@ function showSpellDetails(node) {
     var panel = document.getElementById('details-panel');
     if (!panel) return;
     panel.classList.remove('hidden');
+
+    // Reveal locks for this node (Pre Req Master)
+    if (typeof PreReqMaster !== 'undefined' && PreReqMaster.revealLocksForNode) {
+        PreReqMaster.revealLocksForNode(node.id);
+    }
 
     // Get progress data for progressive reveal
     // Debug: show what keys are in spellProgress
@@ -1271,6 +1398,35 @@ function showSpellDetails(node) {
         li.dataset.id = id;
         unlocksList.appendChild(li);
     });
+
+    // === LOCKS (Pre Req Master) ===
+    var locksSection = document.getElementById('locks-section');
+    var locksList = document.getElementById('locks-list');
+    if (locksSection && locksList) {
+        locksList.innerHTML = '';
+        var locks = (typeof PreReqMaster !== 'undefined' && PreReqMaster.getLocksForNode)
+            ? PreReqMaster.getLocksForNode(node.id)
+            : [];
+
+        if (locks.length > 0) {
+            locksSection.style.display = '';
+            locks.forEach(function(lock) {
+                var li = document.createElement('li');
+                li.className = 'lock-prereq-item';
+                var showName = lock.revealed && lock.name;
+                li.innerHTML = '<span class="lock-icon">\u{1F517}</span> ' +
+                    (showName ? lock.name : '???') +
+                    ' <span class="lock-label">LOCK</span>';
+                li.dataset.id = lock.nodeId;
+                if (lock.revealed && lock.name) {
+                    li.addEventListener('click', function() { selectNodeById(lock.nodeId); });
+                }
+                locksList.appendChild(li);
+            });
+        } else {
+            locksSection.style.display = 'none';
+        }
+    }
 
     var stateBadge = document.getElementById('spell-state');
     var stateText = node.state.charAt(0).toUpperCase() + node.state.slice(1);

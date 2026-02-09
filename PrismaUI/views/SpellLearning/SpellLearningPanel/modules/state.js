@@ -127,9 +127,6 @@ var settings = {
     islXpPerHour: 50,
     islTomeBonus: 25,
     islDetected: false,
-    // Difficulty profile system
-    activeProfile: 'normal',
-    profileModified: false,
     // Discovery mode
     discoveryMode: false,
     showRootSpellNames: true,  // Show root spell names even in discovery mode (helps players know what to look for)
@@ -261,6 +258,9 @@ var settings = {
         warnOnDistanceViolation: true,  // Warn if links too long
         warnOnElementMismatch: true,    // Warn on cross-element links
 
+        // === BIDIRECTIONAL SOFT PREREQS ===
+        bidirectionalSoftPrereqs: true,  // When A is soft prereq of B, B also soft prereq of A
+
         // === LLM EDGE CASE RESOLUTION (Legacy - use llm.edgeCases instead) ===
         llmEdgeCaseEnabled: false,      // Use LLM for low-confidence assignments
         llmEdgeCaseThreshold: 10,       // Score difference to trigger LLM
@@ -299,8 +299,8 @@ var settings = {
     }
 };
 
-// Custom difficulty profiles (user-created)
-var customProfiles = {};
+// Settings presets (user-saved progression/early spell/tome configurations)
+var settingsPresets = {};
 
 // Scanner presets (user-saved tree building configurations)
 var scannerPresets = {};

@@ -135,9 +135,17 @@ bool UIManager::Initialize()
     // Register JS callbacks - Procedural tree generation (Python)
     m_prismaUI->RegisterJSListener(m_view, "ProceduralPythonGenerate", OnProceduralPythonGenerate);
 
+    // Register JS callbacks - Pre Req Master NLP scoring (Python)
+    m_prismaUI->RegisterJSListener(m_view, "PreReqMasterScore", OnPreReqMasterScore);
+
     // Register JS callbacks - Python setup
     m_prismaUI->RegisterJSListener(m_view, "SetupPython", OnSetupPython);
     m_prismaUI->RegisterJSListener(m_view, "CancelPythonSetup", OnCancelPythonSetup);
+
+    // Register JS callbacks - Preset file I/O
+    m_prismaUI->RegisterJSListener(m_view, "SavePreset", OnSavePreset);
+    m_prismaUI->RegisterJSListener(m_view, "DeletePreset", OnDeletePreset);
+    m_prismaUI->RegisterJSListener(m_view, "LoadPresets", OnLoadPresets);
 
     // Register JS callbacks - Panel control
     m_prismaUI->RegisterJSListener(m_view, "HidePanel", OnHidePanel);
@@ -1792,6 +1800,178 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
 }
 
 // =============================================================================
+// PRESET FILE I/O
+// =============================================================================
+
+static std::filesystem::path GetPresetsBasePath()
+{
+    return "Data/SKSE/Plugins/SpellLearning/presets";
+}
+
+// Sanitize a preset name for use as a filename (remove dangerous chars)
+static std::string SanitizePresetFilename(const std::string& name)
+{
+    std::string safe;
+    safe.reserve(name.size());
+    for (char c : name) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<'  || c == '>' || c == '|') {
+            safe += '_';
+        } else {
+            safe += c;
+        }
+    }
+    // Trim trailing dots/spaces (Windows doesn't allow them in filenames)
+    while (!safe.empty() && (safe.back() == '.' || safe.back() == ' ')) {
+        safe.pop_back();
+    }
+    if (safe.empty()) safe = "_unnamed";
+    return safe;
+}
+
+void UIManager::OnSavePreset(const char* argument)
+{
+    if (!argument || strlen(argument) == 0) {
+        logger::warn("UIManager: SavePreset - no data provided");
+        return;
+    }
+
+    std::string argStr(argument);
+
+    SKSE::GetTaskInterface()->AddTask([argStr]() {
+        try {
+            json args = json::parse(argStr);
+            std::string type = args.value("type", "");
+            std::string name = args.value("name", "");
+            json data = args.value("data", json::object());
+
+            if (type.empty() || name.empty()) {
+                logger::warn("UIManager: SavePreset - missing type or name");
+                return;
+            }
+
+            std::string safeName = SanitizePresetFilename(name);
+            auto dir = GetPresetsBasePath() / type;
+            std::filesystem::create_directories(dir);
+
+            auto filePath = dir / (safeName + ".json");
+            std::ofstream file(filePath);
+            if (!file.is_open()) {
+                logger::error("UIManager: SavePreset - failed to open {}", filePath.string());
+                return;
+            }
+            file << data.dump(2);
+            file.close();
+
+            logger::info("UIManager: SavePreset - saved {}/{}.json", type, safeName);
+        } catch (const std::exception& e) {
+            logger::error("UIManager: SavePreset exception: {}", e.what());
+        }
+    });
+}
+
+void UIManager::OnDeletePreset(const char* argument)
+{
+    if (!argument || strlen(argument) == 0) {
+        logger::warn("UIManager: DeletePreset - no data provided");
+        return;
+    }
+
+    std::string argStr(argument);
+
+    SKSE::GetTaskInterface()->AddTask([argStr]() {
+        try {
+            json args = json::parse(argStr);
+            std::string type = args.value("type", "");
+            std::string name = args.value("name", "");
+
+            if (type.empty() || name.empty()) {
+                logger::warn("UIManager: DeletePreset - missing type or name");
+                return;
+            }
+
+            std::string safeName = SanitizePresetFilename(name);
+            auto filePath = GetPresetsBasePath() / type / (safeName + ".json");
+
+            if (std::filesystem::exists(filePath)) {
+                std::filesystem::remove(filePath);
+                logger::info("UIManager: DeletePreset - deleted {}/{}.json", type, safeName);
+            } else {
+                logger::warn("UIManager: DeletePreset - file not found: {}", filePath.string());
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: DeletePreset exception: {}", e.what());
+        }
+    });
+}
+
+void UIManager::OnLoadPresets(const char* argument)
+{
+    if (!argument || strlen(argument) == 0) {
+        logger::warn("UIManager: LoadPresets - no data provided");
+        return;
+    }
+
+    auto* instance = GetSingleton();
+
+    try {
+        json args = json::parse(argument);
+        std::string type = args.value("type", "");
+
+        if (type.empty()) {
+            logger::warn("UIManager: LoadPresets - missing type");
+            return;
+        }
+
+        auto dir = GetPresetsBasePath() / type;
+        json result;
+        result["type"] = type;
+        result["presets"] = json::array();
+
+        if (std::filesystem::exists(dir) && std::filesystem::is_directory(dir)) {
+            for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                if (!entry.is_regular_file()) continue;
+                auto ext = entry.path().extension().string();
+                // Case-insensitive .json check
+                if (ext != ".json" && ext != ".JSON") continue;
+
+                try {
+                    std::ifstream file(entry.path());
+                    json presetData = json::parse(file);
+
+                    // Use the filename (without extension) as key, but prefer "name" inside the JSON
+                    std::string key = entry.path().stem().string();
+                    if (presetData.contains("name") && presetData["name"].is_string()) {
+                        key = presetData["name"].get<std::string>();
+                    }
+
+                    json presetEntry;
+                    presetEntry["key"] = key;
+                    presetEntry["data"] = presetData;
+                    result["presets"].push_back(presetEntry);
+
+                    logger::info("UIManager: LoadPresets - loaded {}/{}", type, key);
+                } catch (const std::exception& e) {
+                    logger::warn("UIManager: LoadPresets - failed to parse {}: {}", 
+                                 entry.path().string(), e.what());
+                }
+            }
+        } else {
+            // Directory doesn't exist yet - that's fine, return empty array
+            logger::info("UIManager: LoadPresets - no presets directory for type '{}'", type);
+        }
+
+        std::string resultStr = result.dump();
+        logger::info("UIManager: LoadPresets - sending {} {} presets to UI", 
+                     result["presets"].size(), type);
+        instance->m_prismaUI->InteropCall(instance->m_view, "onPresetsLoaded", resultStr.c_str());
+
+    } catch (const std::exception& e) {
+        logger::error("UIManager: LoadPresets exception: {}", e.what());
+    }
+}
+
+// =============================================================================
 // CLIPBOARD FUNCTIONS (Windows API)
 // =============================================================================
 
@@ -2677,6 +2857,200 @@ void UIManager::OnProceduralPythonGenerate(const char* argument)
         response["error"] = e.what();
         
         instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
+    }
+}
+
+// =============================================================================
+// PRE REQ MASTER NLP SCORING (PYTHON)
+// =============================================================================
+
+void UIManager::OnPreReqMasterScore(const char* argument)
+{
+    logger::info("UIManager: PreReqMasterScore callback triggered");
+    
+    auto* instance = GetSingleton();
+    if (!instance || !instance->m_prismaUI) return;
+    
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    try {
+        // Get temp directory
+        std::filesystem::path tempDir;
+        if (const char* temp = std::getenv("TEMP")) {
+            tempDir = temp;
+        } else if (const char* tmp = std::getenv("TMP")) {
+            tempDir = tmp;
+        } else {
+            tempDir = std::filesystem::temp_directory_path();
+        }
+        auto dataPath = tempDir / "SpellLearning";
+        std::filesystem::create_directories(dataPath);
+
+        auto inputPath = dataPath / "prm_input.json";
+        auto outputPath = dataPath / "prm_output.json";
+        
+        // Write input file (the full PRM scoring payload)
+        {
+            std::ofstream inputFile(inputPath);
+            if (!inputFile.is_open()) {
+                throw std::runtime_error("Failed to create PRM input file");
+            }
+            inputFile << argument;
+        }
+        
+        logger::info("UIManager: PRM input written to {}", inputPath.string());
+
+        // Find Python and prereq_master_scorer.py using same search logic as ProceduralPythonGenerate
+        std::string realPythonPath;
+        std::string realScriptPath;
+
+        auto cwd = std::filesystem::current_path();
+
+        // MO2 Overwrite path
+        auto mo2Overwrite = cwd.parent_path() / "overwrite" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
+
+        std::vector<std::filesystem::path> pythonPaths = {
+            mo2Overwrite / "python" / "python.exe",
+            mo2Overwrite / ".venv" / "Scripts" / "python.exe"
+        };
+
+        std::vector<std::filesystem::path> scriptPaths = {
+            mo2Overwrite / "prereq_master_scorer.py"
+        };
+
+        // Search MO2 mods folder
+        auto modsFolder = cwd.parent_path() / "mods";
+        if (std::filesystem::exists(modsFolder) && std::filesystem::is_directory(modsFolder)) {
+            for (const auto& entry : std::filesystem::directory_iterator(modsFolder)) {
+                if (entry.is_directory()) {
+                    auto modSTB = entry.path() / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
+                    auto modPython = modSTB / "python" / "python.exe";
+                    auto modVenv = modSTB / ".venv" / "Scripts" / "python.exe";
+                    auto modScript = modSTB / "prereq_master_scorer.py";
+
+                    if (std::filesystem::exists(modPython)) pythonPaths.push_back(modPython);
+                    if (std::filesystem::exists(modVenv)) pythonPaths.push_back(modVenv);
+                    if (std::filesystem::exists(modScript)) scriptPaths.push_back(modScript);
+                }
+            }
+        }
+
+        // Fallback: real Data folder (Vortex / manual install)
+        auto realDataPath = cwd / "Data" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
+        pythonPaths.push_back(realDataPath / "python" / "python.exe");
+        pythonPaths.push_back(realDataPath / ".venv" / "Scripts" / "python.exe");
+        scriptPaths.push_back(realDataPath / "prereq_master_scorer.py");
+
+        // CWD relative
+        auto cwdRelative = cwd / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
+        pythonPaths.push_back(cwdRelative / "python" / "python.exe");
+        scriptPaths.push_back(cwdRelative / "prereq_master_scorer.py");
+
+        // Find Python
+        for (const auto& path : pythonPaths) {
+            if (std::filesystem::exists(path)) {
+                realPythonPath = path.string();
+                logger::info("UIManager: PRM found Python at: {}", realPythonPath);
+                break;
+            }
+        }
+
+        // Find script
+        for (const auto& path : scriptPaths) {
+            if (std::filesystem::exists(path)) {
+                realScriptPath = path.string();
+                logger::info("UIManager: PRM found prereq_master_scorer.py at: {}", realScriptPath);
+                break;
+            }
+        }
+
+        if (realPythonPath.empty() || realScriptPath.empty()) {
+            logger::warn("UIManager: PRM could not find Python or scorer script. Python: '{}', Script: '{}'",
+                realPythonPath, realScriptPath);
+            if (realPythonPath.empty()) realPythonPath = "python";
+            if (realScriptPath.empty()) {
+                throw std::runtime_error("prereq_master_scorer.py not found");
+            }
+        }
+
+        // Build command: python prereq_master_scorer.py -i input.json -o output.json
+        std::string innerCmd = "\"" + realPythonPath + "\" \"" + realScriptPath + "\"";
+        innerCmd += " -i \"" + inputPath.string() + "\"";
+        innerCmd += " -o \"" + outputPath.string() + "\"";
+
+        // Capture stderr
+        auto stderrPath = dataPath / "prm_stderr.txt";
+        innerCmd += " 2>\"" + stderrPath.string() + "\"";
+
+        std::string cmd = "cmd /c \"" + innerCmd + "\"";
+        logger::info("UIManager: PRM executing: {}", cmd);
+
+        // Execute Python
+        int result = std::system(cmd.c_str());
+
+        if (result != 0) {
+            std::string errorDetails = "PRM Python script failed with code " + std::to_string(result);
+            if (std::filesystem::exists(stderrPath)) {
+                std::ifstream stderrFile(stderrPath);
+                if (stderrFile.is_open()) {
+                    std::stringstream buffer;
+                    buffer << stderrFile.rdbuf();
+                    std::string stderrContent = buffer.str();
+                    if (!stderrContent.empty()) {
+                        if (stderrContent.length() > 500) {
+                            stderrContent = stderrContent.substr(0, 500) + "...";
+                        }
+                        logger::error("UIManager: PRM Python stderr: {}", stderrContent);
+                        errorDetails += ": " + stderrContent;
+                    }
+                }
+                std::filesystem::remove(stderrPath);
+            }
+            throw std::runtime_error(errorDetails);
+        }
+
+        // Clean up stderr
+        if (std::filesystem::exists(stderrPath)) {
+            std::filesystem::remove(stderrPath);
+        }
+        
+        // Read output
+        if (!std::filesystem::exists(outputPath)) {
+            throw std::runtime_error("PRM Python did not create output file");
+        }
+        
+        std::string resultJson;
+        {
+            std::ifstream outputFile(outputPath);
+            if (!outputFile.is_open()) {
+                throw std::runtime_error("Failed to read PRM output file");
+            }
+            std::stringstream buffer;
+            buffer << outputFile.rdbuf();
+            resultJson = buffer.str();
+        }
+        
+        // Calculate elapsed time
+        auto endTime = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
+        
+        // Clean up temp files
+        std::filesystem::remove(inputPath);
+        std::filesystem::remove(outputPath);
+        
+        logger::info("UIManager: PRM Python scoring completed in {:.2f}s", elapsed);
+        
+        // Send result directly (it's already valid JSON from the scorer)
+        instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", resultJson.c_str());
+        
+    } catch (const std::exception& e) {
+        logger::error("UIManager: PRM Python scoring failed: {}", e.what());
+        
+        nlohmann::json response;
+        response["success"] = false;
+        response["error"] = e.what();
+        
+        instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", response.dump().c_str());
     }
 }
 

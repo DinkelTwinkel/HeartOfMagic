@@ -238,8 +238,9 @@ revealDescription: 50        # % XP to reveal description
 # Learning Modes
 learningMode: 'perSchool'    # 'perSchool' or 'single'
 
-# Difficulty Profiles
-activeProfile: 'normal'      # easy, normal, hard, expert, master, custom
+# Settings Presets (chip-based, replaces old difficulty profiles)
+# Built-in: Default (undeletable), Easy, Hard
+# Users can save/load/rename/delete custom presets
 
 # Notifications
 weakenedSpellNotifications: true

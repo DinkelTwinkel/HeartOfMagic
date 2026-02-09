@@ -47,7 +47,14 @@ function initializeScannerPresets() {
     }
 
     _scannerPresetsInitialized = true;
-    updateScannerPresetsUI();
+
+    // Load presets from individual files (C++ enumerates presets/scanner/*.json)
+    if (window.callCpp) {
+        window.callCpp('LoadPresets', JSON.stringify({ type: 'scanner' }));
+    } else {
+        updateScannerPresetsUI();
+    }
+
     console.log('[ScannerPresets] Initialized');
 }
 
@@ -56,19 +63,10 @@ function initializeScannerPresets() {
 // =============================================================================
 
 function promptSaveScannerPreset() {
-    var name = prompt('Enter a name for this scanner preset:');
-    if (!name || name.trim() === '') return;
-
-    name = name.trim();
-
-    // Check for duplicate
-    if (scannerPresets[name]) {
-        if (!confirm('A preset named "' + name + '" already exists. Overwrite it?')) {
-            return;
-        }
-    }
-
-    saveScannerPreset(name);
+    showPresetNamePrompt('Save Scanner Preset', function(name) {
+        // Check for duplicate — overwrite without confirmation since user typed the name
+        saveScannerPreset(name);
+    });
 }
 
 function saveScannerPreset(name) {
@@ -110,16 +108,41 @@ function saveScannerPreset(name) {
         s.classicSettings = JSON.parse(JSON.stringify(TreeGrowthClassic.settings));
     }
 
+    // Tree Growth active mode (Classic, Tree, etc.)
+    if (typeof TreeGrowth !== 'undefined') {
+        s.treeGrowthActiveMode = TreeGrowth.activeMode;
+    }
+
+    // Tree Growth — Tree mode settings
+    if (typeof TreeGrowthTree !== 'undefined') {
+        s.treeGrowthTreeSettings = JSON.parse(JSON.stringify(TreeGrowthTree.settings));
+    }
+
+    // Pre Req Master (lock) settings
+    if (typeof PreReqMaster !== 'undefined') {
+        s.prmEnabled = PreReqMaster.isEnabled();
+        s.prmSettings = PreReqMaster.getSettings();
+    }
+
     scannerPresets[name] = preset;
     _activeScannerPreset = name;
 
-    updateScannerPresetsUI();
+    // Save as individual file via C++
+    if (window.callCpp) {
+        window.callCpp('SavePreset', JSON.stringify({
+            type: 'scanner',
+            name: name,
+            data: preset
+        }));
+    }
 
+    // Save active preset name to unified config
     if (typeof autoSaveSettings === 'function') {
         autoSaveSettings();
     }
 
-    console.log('[ScannerPresets] Saved preset:', name);
+    updateScannerPresetsUI();
+    console.log('[ScannerPresets] Saved preset file:', name);
 }
 
 // =============================================================================
@@ -202,6 +225,31 @@ function applyScannerPreset(name) {
         // Tier zones chart is visual-only; redrawn on next render
     }
 
+    // --- Tree Growth active mode ---
+    if (s.treeGrowthActiveMode && typeof TreeGrowth !== 'undefined' && TreeGrowth.switchMode) {
+        TreeGrowth.switchMode(s.treeGrowthActiveMode);
+    }
+
+    // --- Tree Growth — Tree mode settings ---
+    if (s.treeGrowthTreeSettings && typeof TreeGrowthTree !== 'undefined') {
+        _deepCopy(s.treeGrowthTreeSettings, TreeGrowthTree.settings);
+        _updateDragInputs({
+            'tgTreeOpacity': TreeGrowthTree.settings.ghostOpacity,
+            'tgTreeNodeSize': TreeGrowthTree.settings.nodeRadius,
+            'tgTreeTrunkThickness': TreeGrowthTree.settings.trunkThickness,
+            'tgTreeBranchSpread': TreeGrowthTree.settings.branchSpread,
+            'tgTreeRootSpread': TreeGrowthTree.settings.rootSpread,
+            'tgTreePctBranches': TreeGrowthTree.settings.pctBranches,
+            'tgTreePctTrunk': TreeGrowthTree.settings.pctTrunk,
+            'tgTreePctRoot': TreeGrowthTree.settings.pctRoot
+        });
+    }
+
+    // --- Pre Req Master (lock) settings ---
+    if (typeof PreReqMaster !== 'undefined' && s.prmSettings) {
+        _applyPrmSettings(s.prmSettings, s.prmEnabled);
+    }
+
     // --- Mark all canvases dirty ---
     if (typeof TreePreview !== 'undefined' && TreePreview._markDirty) {
         TreePreview._markDirty();
@@ -249,6 +297,11 @@ function deleteScannerPreset(name, deleteBtn) {
 
     delete scannerPresets[name];
 
+    // Delete the preset file via C++
+    if (window.callCpp) {
+        window.callCpp('DeletePreset', JSON.stringify({ type: 'scanner', name: name }));
+    }
+
     if (_activeScannerPreset === name) {
         _activeScannerPreset = '';
     }
@@ -259,7 +312,7 @@ function deleteScannerPreset(name, deleteBtn) {
         autoSaveSettings();
     }
 
-    console.log('[ScannerPresets] Deleted preset:', name);
+    console.log('[ScannerPresets] Deleted preset file:', name);
 }
 
 // =============================================================================
@@ -297,6 +350,12 @@ function renameScannerPreset(oldName, newName) {
     preset.name = newName;
     scannerPresets[newName] = preset;
     delete scannerPresets[oldName];
+
+    // Delete old file, save new file
+    if (window.callCpp) {
+        window.callCpp('DeletePreset', JSON.stringify({ type: 'scanner', name: oldName }));
+        window.callCpp('SavePreset', JSON.stringify({ type: 'scanner', name: newName, data: preset }));
+    }
 
     if (_activeScannerPreset === oldName) {
         _activeScannerPreset = newName;
@@ -405,6 +464,9 @@ function updateScannerPresetsUI() {
 
         chipsContainer.appendChild(chip);
     }
+
+    // Sync easy mode chips
+    if (typeof updateEasyPresetChips === 'function') updateEasyPresetChips();
 }
 
 // =============================================================================
@@ -554,6 +616,97 @@ function _updatePairButtons(activeId, inactiveId, firstIsActive) {
         btn2.style.color = 'rgba(184,168,120,0.9)';
         btn1.style.background = 'transparent';
         btn1.style.color = 'rgba(184,168,120,0.4)';
+    }
+}
+
+/**
+ * Restore PRM (Pre Req Master) settings to their UI controls.
+ * @param {Object} prmSettings - The saved PRM settings object
+ * @param {boolean} prmEnabled - Whether PRM was enabled
+ */
+function _applyPrmSettings(prmSettings, prmEnabled) {
+    // Enable toggle
+    var enableToggle = document.getElementById('prmEnabled');
+    if (enableToggle && prmEnabled !== undefined) {
+        enableToggle.checked = !!prmEnabled;
+    }
+
+    // Global lock %
+    var globalSlider = document.getElementById('prmGlobalLockSlider');
+    var globalValue = document.getElementById('prmGlobalLockValue');
+    if (globalSlider && prmSettings.globalLockPercent !== undefined) {
+        globalSlider.value = prmSettings.globalLockPercent;
+        if (globalValue) globalValue.textContent = prmSettings.globalLockPercent + '%';
+        if (typeof updateSliderFillGlobal === 'function') updateSliderFillGlobal(globalSlider);
+    }
+
+    // Tier %s
+    var tierMap = {
+        'prmTierNovice': 'novice',
+        'prmTierApprentice': 'apprentice',
+        'prmTierAdept': 'adept',
+        'prmTierExpert': 'expert',
+        'prmTierMaster': 'master'
+    };
+    if (prmSettings.tierPercents) {
+        for (var elId in tierMap) {
+            if (!tierMap.hasOwnProperty(elId)) continue;
+            var tierKey = tierMap[elId];
+            var slider = document.getElementById(elId);
+            if (slider && prmSettings.tierPercents[tierKey] !== undefined) {
+                slider.value = prmSettings.tierPercents[tierKey];
+                var valEl = document.getElementById(elId + 'Value');
+                if (valEl) valEl.textContent = prmSettings.tierPercents[tierKey] + '%';
+                if (typeof updateSliderFillGlobal === 'function') updateSliderFillGlobal(slider);
+            }
+        }
+    }
+
+    // School distribution
+    var schoolDist = document.getElementById('prmSchoolDistribution');
+    if (schoolDist && prmSettings.schoolDistribution) {
+        schoolDist.value = prmSettings.schoolDistribution;
+    }
+
+    // Pool source
+    var poolSource = document.getElementById('prmPoolSource');
+    if (poolSource && prmSettings.poolSource) {
+        poolSource.value = prmSettings.poolSource;
+    }
+
+    // Distance slider
+    var distSlider = document.getElementById('prmDistanceSlider');
+    var distValue = document.getElementById('prmDistanceValue');
+    if (distSlider && prmSettings.distance !== undefined) {
+        distSlider.value = prmSettings.distance;
+        if (distValue) distValue.textContent = prmSettings.distance;
+        if (typeof updateSliderFillGlobal === 'function') updateSliderFillGlobal(distSlider);
+    }
+
+    // Proximity bias slider
+    var proxSlider = document.getElementById('prmProximityBiasSlider');
+    var proxValue = document.getElementById('prmProximityBiasValue');
+    if (proxSlider && prmSettings.proximityBias !== undefined) {
+        var proxPercent = Math.round(prmSettings.proximityBias * 100);
+        proxSlider.value = proxPercent;
+        if (proxValue) proxValue.textContent = proxPercent + '%';
+        if (typeof updateSliderFillGlobal === 'function') updateSliderFillGlobal(proxSlider);
+    }
+
+    // Tier constraint checkboxes
+    var tierCheckboxes = {
+        'prmSameTier': 'sameTier',
+        'prmPrevTier': 'prevTier',
+        'prmHigherTier': 'higherTier',
+        'prmAllowLockedLock': 'allowLockedLock'
+    };
+    for (var cbId in tierCheckboxes) {
+        if (!tierCheckboxes.hasOwnProperty(cbId)) continue;
+        var settingKey = tierCheckboxes[cbId];
+        var cb = document.getElementById(cbId);
+        if (cb && prmSettings[settingKey] !== undefined) {
+            cb.checked = !!prmSettings[settingKey];
+        }
     }
 }
 

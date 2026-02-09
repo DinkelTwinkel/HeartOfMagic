@@ -156,6 +156,18 @@
                             // Hide empty state
                             var emptyState = document.getElementById('empty-state');
                             if (emptyState) emptyState.style.display = 'none';
+
+                            // Notify TreeGrowth that tree was built
+                            if (typeof TreeGrowth !== 'undefined') {
+                                TreeGrowth.setTreeBuilt(true, totalNodes, totalNodes);
+                            }
+
+                            // Enable PRM buttons and trigger preview
+                            if (typeof PreReqMaster !== 'undefined') {
+                                if (PreReqMaster.setButtonsEnabled) PreReqMaster.setButtonsEnabled(true);
+                                if (PreReqMaster.updateStatus) PreReqMaster.updateStatus('Tree built - ready');
+                                if (PreReqMaster.renderPreview) PreReqMaster.renderPreview();
+                            }
                         } else {
                             console.error('[Harness] TreeParser failed:', parsed);
                         }

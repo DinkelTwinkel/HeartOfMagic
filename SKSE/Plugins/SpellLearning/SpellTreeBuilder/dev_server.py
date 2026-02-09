@@ -31,6 +31,7 @@ if _script_dir not in sys.path:
 from tree_builder import build_spell_trees, SCHOOL_DEFAULT_SHAPES
 from validator import validate_tree, get_validation_summary, fix_unreachable_nodes
 from theme_discovery import extract_spell_text, discover_themes_per_school
+from prereq_master_scorer import process_request as prm_score
 
 PORT = 5556
 
@@ -45,12 +46,15 @@ class BuildHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if self.path != '/build':
+        if self.path not in ('/build', '/score'):
             self.send_error(404, 'Not found')
             return
 
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
+
+        if self.path == '/score':
+            return self._handle_score(body)
 
         try:
             request = json.loads(body)
@@ -84,6 +88,40 @@ class BuildHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Compact logging
         print(f"[DevServer] {args[0]}")
+
+    # ------------------------------------------------------------------
+    # Pre Req Master NLP scoring
+    # ------------------------------------------------------------------
+
+    def _handle_score(self, body):
+        """Handle POST /score - Pre Req Master NLP scoring."""
+        try:
+            start = time.time()
+            request = json.loads(body)
+            pairs_count = len(request.get('pairs', []))
+            print(f"\n[DevServer] SCORE REQUEST: {pairs_count} pairs")
+
+            result_json = prm_score(request)
+            result = json.loads(result_json)
+
+            elapsed = time.time() - start
+            print(f"[DevServer] Scored {result.get('count', 0)} pairs in {elapsed:.2f}s")
+
+            response = json.dumps(result, ensure_ascii=False)
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(response.encode('utf-8'))
+
+        except Exception as e:
+            traceback.print_exc()
+            error_result = json.dumps({'success': False, 'error': str(e)})
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(error_result.encode('utf-8'))
 
     # ------------------------------------------------------------------
     # Build pipeline (mirrors build_tree.py _main_impl logic)

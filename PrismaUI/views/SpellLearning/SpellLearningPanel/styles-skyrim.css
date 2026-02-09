@@ -2302,7 +2302,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow: visible;
-    z-index: 20;
+    z-index: 250;
     transform: translateX(-260px);
     transition: transform 0.25s ease;
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
@@ -3918,85 +3918,12 @@ body {
     border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Profile styles */
-.profile-select {
-    min-width: 130px;
-}
-
-.profile-actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    margin-top: 8px;
-    margin-bottom: 8px;
-}
-
-.profile-modified-badge {
-    font-size: 0.7em;
-    color: var(--accent-gold);
-    font-style: italic;
-}
-
-.profile-modified-badge.hidden {
-    display: none;
-}
-
-.custom-profiles-section {
-    margin-top: 10px;
-    padding: 8px;
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 0;
-}
-
-.custom-profiles-section.hidden {
-    display: none;
-}
-
-.custom-profiles-label {
-    font-size: 0.75em;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-    display: block;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.custom-profiles-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-}
-
-.custom-profile-chip {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 0;
-    font-size: 0.75em;
-    cursor: pointer;
-    transition: background 0.15s;
-}
-
-.custom-profile-chip:hover {
-    background: rgba(255, 255, 255, 0.12);
-}
-
-.custom-profile-chip.active {
-    background: rgba(120, 144, 168, 0.2);
-    border: 1px solid rgba(120, 144, 168, 0.3);
-}
-
-.custom-profile-delete {
-    font-size: 0.85em;
-    color: var(--text-muted);
-    cursor: pointer;
-    margin-left: 3px;
-}
-
-.custom-profile-delete:hover {
-    color: var(--accent-red);
+/* Settings presets header (above progression/early spell/tome blocks) */
+.settings-presets-header {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--divider);
 }
 
 /* Hidden info hint */
@@ -6039,4 +5966,139 @@ body {
     color: var(--accent-gold);
     border-color: var(--accent-gold);
     background: rgba(184, 168, 120, 0.1);
+}
+
+/* =============================================================================
+   SCANNER MODE TOGGLE (EASY / COMPLEX)
+   ============================================================================= */
+
+.scanner-mode-bar {
+    display: flex;
+    gap: 0;
+    padding: 0 16px;
+    background: var(--panel-bg-solid);
+    border-bottom: 1px solid var(--divider);
+}
+
+.scanner-mode-btn {
+    flex: 1;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+}
+
+.scanner-mode-btn:hover {
+    color: var(--text-primary);
+}
+
+.scanner-mode-btn.active {
+    color: var(--accent-gold);
+    border-bottom-color: var(--accent-gold);
+    background: rgba(184, 168, 120, 0.06);
+}
+
+/* =============================================================================
+   EASY MODE
+   ============================================================================= */
+
+.easy-presets-section {
+    padding: 16px;
+}
+
+.easy-presets-label {
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.easy-preset-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.easy-preset-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid rgba(184, 168, 120, 0.25);
+    background: rgba(184, 168, 120, 0.06);
+    color: rgba(184, 168, 120, 0.65);
+    transition: all 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    letter-spacing: 0.5px;
+}
+
+.easy-preset-chip:hover {
+    background: rgba(184, 168, 120, 0.15);
+    border-color: rgba(184, 168, 120, 0.4);
+    color: rgba(184, 168, 120, 0.9);
+}
+
+.easy-preset-chip.selected {
+    border-color: var(--accent-gold);
+    background: rgba(184, 168, 120, 0.2);
+    color: var(--accent-gold);
+    box-shadow: 0 0 8px rgba(184, 168, 120, 0.15);
+}
+
+.easy-no-presets {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    line-height: 1.5;
+}
+
+.easy-actions-section {
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--divider);
+    flex-wrap: wrap;
+}
+
+.easy-action-btn {
+    padding: 10px 20px !important;
+    font-size: 0.9em !important;
+}
+
+.easy-status-wrap {
+    margin-left: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.easy-preview-placeholder {
+    position: relative;
+    height: 400px;
+    margin: 12px 16px;
+    border: 1px solid var(--divider);
+    border-radius: 4px;
+    overflow: hidden;
+    background: #0a0a0f;
+}
+
+.easy-preview-placeholder .prm-split-right {
+    flex: none;
+    width: 100%;
+    height: 100%;
 }

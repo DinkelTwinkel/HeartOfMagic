@@ -318,6 +318,171 @@ function updatePrimedCount() {
 }
 
 // =============================================================================
+// PRESET NAME PROMPT (replaces native prompt() which doesn't work in Ultralight)
+// =============================================================================
+
+/**
+ * Show an in-page modal to ask the user for a preset name.
+ * @param {string} title  - Modal title (e.g. "Save Scanner Preset")
+ * @param {Function} onConfirm - Called with the trimmed name string
+ */
+function showPresetNamePrompt(title, onConfirm) {
+    var modal = document.getElementById('preset-name-modal');
+    var titleEl = document.getElementById('preset-name-title');
+    var input = document.getElementById('preset-name-input');
+    var confirmBtn = document.getElementById('preset-name-confirm');
+    var cancelBtn = document.getElementById('preset-name-cancel');
+    var closeBtn = document.getElementById('preset-name-close');
+    var backdrop = modal ? modal.querySelector('.modal-backdrop') : null;
+
+    if (!modal || !input) {
+        console.warn('[PresetPrompt] Modal elements not found');
+        return;
+    }
+
+    titleEl.textContent = title || 'Save Preset';
+    input.value = '';
+    modal.classList.remove('hidden');
+
+    // Focus input after brief delay for animation
+    setTimeout(function() { input.focus(); }, 50);
+
+    function cleanup() {
+        modal.classList.add('hidden');
+        confirmBtn.removeEventListener('click', onSave);
+        cancelBtn.removeEventListener('click', onCancel);
+        closeBtn.removeEventListener('click', onCancel);
+        backdrop.removeEventListener('click', onCancel);
+        input.removeEventListener('keydown', onKeydown);
+    }
+
+    function onSave() {
+        var name = input.value.trim();
+        if (!name) return;
+        cleanup();
+        onConfirm(name);
+    }
+
+    function onCancel() {
+        cleanup();
+    }
+
+    function onKeydown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            onSave();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+        }
+    }
+
+    confirmBtn.addEventListener('click', onSave);
+    cancelBtn.addEventListener('click', onCancel);
+    closeBtn.addEventListener('click', onCancel);
+    if (backdrop) backdrop.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKeydown);
+}
+
+// =============================================================================
+// PRESET FILE I/O — Shared callback from C++ preset handlers
+// =============================================================================
+
+/**
+ * Case-insensitive lookup for a preset key in a presets object.
+ * Returns the actual key if found, or null.
+ */
+function _findPresetKeyCaseInsensitive(presetsObj, name) {
+    if (!name || !presetsObj) return null;
+    if (presetsObj[name]) return name;
+    var lowerName = name.toLowerCase();
+    for (var key in presetsObj) {
+        if (presetsObj.hasOwnProperty(key) && key.toLowerCase() === lowerName) return key;
+    }
+    return null;
+}
+
+/**
+ * Callback invoked by C++ OnLoadPresets.
+ * Receives JSON: { type: "scanner"|"settings", presets: [{ key, data }, ...] }
+ * Dispatches to the appropriate preset module to populate its in-memory store.
+ */
+window.onPresetsLoaded = function(resultStr) {
+    try {
+        var result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
+        var type = result.type;
+        var presets = result.presets || [];
+
+        console.log('[Presets] Loaded ' + presets.length + ' ' + type + ' presets from files');
+
+        if (type === 'scanner') {
+            // Clear and repopulate
+            for (var k in scannerPresets) {
+                if (scannerPresets.hasOwnProperty(k)) delete scannerPresets[k];
+            }
+            for (var i = 0; i < presets.length; i++) {
+                var entry = presets[i];
+                scannerPresets[entry.key] = entry.data;
+            }
+            if (typeof updateScannerPresetsUI === 'function') {
+                updateScannerPresetsUI();
+            }
+            // Auto-apply saved scanner preset (or "Default" fallback)
+            var scannerTarget = (typeof _activeScannerPreset !== 'undefined') ? _activeScannerPreset : '';
+            var scannerKey = _findPresetKeyCaseInsensitive(scannerPresets, scannerTarget)
+                          || _findPresetKeyCaseInsensitive(scannerPresets, 'Default');
+            if (scannerKey && typeof applyScannerPreset === 'function') {
+                console.log('[Presets] Auto-applying scanner preset: ' + scannerKey);
+                applyScannerPreset(scannerKey);
+            }
+            // Sync Easy Mode chip selection
+            if (typeof _easySelectedPreset !== 'undefined' && typeof _activeScannerPreset !== 'undefined') {
+                _easySelectedPreset = _activeScannerPreset || scannerKey || '';
+                if (typeof updateEasyPresetChips === 'function') updateEasyPresetChips();
+            }
+        } else if (type === 'settings') {
+            // Clear and repopulate
+            for (var k2 in settingsPresets) {
+                if (settingsPresets.hasOwnProperty(k2)) delete settingsPresets[k2];
+            }
+            for (var j = 0; j < presets.length; j++) {
+                var entry2 = presets[j];
+                settingsPresets[entry2.key] = entry2.data;
+            }
+            // Seed built-in presets if they weren't in the files
+            if (typeof BUILT_IN_SETTINGS_PRESETS !== 'undefined') {
+                for (var biKey in BUILT_IN_SETTINGS_PRESETS) {
+                    if (BUILT_IN_SETTINGS_PRESETS.hasOwnProperty(biKey) && !settingsPresets[biKey]) {
+                        settingsPresets[biKey] = JSON.parse(JSON.stringify(BUILT_IN_SETTINGS_PRESETS[biKey]));
+                        // Auto-save the built-in to a file so it persists
+                        if (window.callCpp) {
+                            window.callCpp('SavePreset', JSON.stringify({
+                                type: 'settings',
+                                name: biKey,
+                                data: settingsPresets[biKey]
+                            }));
+                        }
+                    }
+                }
+            }
+            if (typeof updateSettingsPresetsUI === 'function') {
+                updateSettingsPresetsUI();
+            }
+            // Auto-apply saved settings preset (or "Default" fallback)
+            var settingsTarget = (typeof _activeSettingsPreset !== 'undefined') ? _activeSettingsPreset : '';
+            var settingsKey = _findPresetKeyCaseInsensitive(settingsPresets, settingsTarget)
+                           || _findPresetKeyCaseInsensitive(settingsPresets, 'Default');
+            if (settingsKey && typeof applySettingsPreset === 'function') {
+                console.log('[Presets] Auto-applying settings preset: ' + settingsKey);
+                applySettingsPreset(settingsKey);
+            }
+        }
+    } catch (e) {
+        console.error('[Presets] Failed to parse onPresetsLoaded:', e);
+    }
+};
+
+// =============================================================================
 // XP UTILITIES
 // =============================================================================
 

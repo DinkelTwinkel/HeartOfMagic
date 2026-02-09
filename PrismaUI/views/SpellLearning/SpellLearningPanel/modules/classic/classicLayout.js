@@ -41,8 +41,10 @@ var ClassicLayout = {
         // Direction score is ±1.0, so radialWeight of 3.0 at max fully overrides it.
         this._radialWeight = radialBias * 0.03;
 
-        // Spell Matching: 'simple' = no theme scoring, 'layered' = theme-aware
-        this._useThemeScoring = (ls.spellMatching || 'layered') === 'layered';
+        // Spell Matching: 'simple' = no theme scoring, 'layered'/'smart' = theme-aware
+        var matchMode = ls.spellMatching || 'layered';
+        this._useThemeScoring = (matchMode === 'layered' || matchMode === 'smart');
+        this._smartThemes = (matchMode === 'smart');
 
         var mode = baseData.mode || 'sun';
         var grid = baseData.grid;
@@ -256,7 +258,21 @@ var ClassicLayout = {
         var rootFormId = schoolTree.root;
         if (!nodeLookup[rootFormId]) return [];
 
-        // Compute theme angular sectors for this school (layered mode only)
+        // Smart mode: dynamically discover themes and override nodeLookup
+        if (this._smartThemes && typeof ClassicThemeEngine !== 'undefined') {
+            var smartSpells = this._getSpellData();
+            var refined = ClassicThemeEngine.discoverAndAssign(schoolTree.nodes, smartSpells);
+            for (var rfId in refined) {
+                if (refined.hasOwnProperty(rfId) && nodeLookup[rfId]) {
+                    nodeLookup[rfId].theme = refined[rfId];
+                }
+            }
+        }
+
+        // Sanitize tree: rescue orphans, cap fan-out
+        this._sanitizeTree(nodeLookup, rootFormId);
+
+        // Compute theme angular sectors for this school (layered/smart mode only)
         this._currentThemeSectors = null;
         if (this._useThemeScoring) {
             var growAngleDir = schoolRoots.length > 0
@@ -535,6 +551,16 @@ var ClassicLayout = {
         console.log('[ClassicLayout] Phase 2 complete: ' + waveNum + ' waves, ' +
             positioned.length + ' nodes placed');
 
+        // Build parent-child count for fan-out cap enforcement across phases 3-4
+        var FAN_OUT_CAP = 5;
+        var parentChildCount = {};
+        for (var pcci = 0; pcci < positioned.length; pcci++) {
+            var pccParent = positioned[pcci].parentFormId;
+            if (pccParent) {
+                parentChildCount[pccParent] = (parentChildCount[pccParent] || 0) + 1;
+            }
+        }
+
         // ==== Phase 3: Place deferred nodes ====
         // Nodes deferred from Phase 2: tier zone mismatch OR no adjacent slots.
         // Try to attach to placed nodes, preferring tier zone radius when available.
@@ -607,6 +633,12 @@ var ClassicLayout = {
                             }
                         }
 
+                        // Fan-out cap: strongly discourage parents already at limit
+                        var pnCC = parentChildCount[pn.formId] || 0;
+                        if (pnCC >= FAN_OUT_CAP) {
+                            dfScore -= 500;
+                        }
+
                         if (dfScore > bestScore) {
                             bestScore = dfScore;
                             bestAttachGridIdx = pn.gridIdx;
@@ -647,6 +679,7 @@ var ClassicLayout = {
                         isRoot: false,
                         gridIdx: dfIdx
                     });
+                    parentChildCount[bestAttachFormId] = (parentChildCount[bestAttachFormId] || 0) + 1;
 
                     // Enqueue children
                     if (dfNodeInfo && dfNodeInfo.children) {
@@ -738,6 +771,9 @@ var ClassicLayout = {
                         if (fpCandTheme === fpTheme) fpScore += 100;
                         else if (fpCandTheme && fpCandTheme !== '_none') fpScore -= 20;
                     }
+                    // Fan-out cap: strongly discourage parents already at limit
+                    var fpCandCC = parentChildCount[fpCandidate.formId] || 0;
+                    if (fpCandCC >= FAN_OUT_CAP) fpScore -= 500;
                     if (fpScore > fpBestScore) {
                         fpBestScore = fpScore;
                         fpBestGridIdx = fpOpenIdx;
@@ -776,6 +812,9 @@ var ClassicLayout = {
                     isRoot: false,
                     gridIdx: nearGridIdx
                 });
+                if (fpParentId) {
+                    parentChildCount[fpParentId] = (parentChildCount[fpParentId] || 0) + 1;
+                }
             }
 
             var stillUnplaced = 0;
@@ -1255,6 +1294,269 @@ var ClassicLayout = {
             hash = hash | 0;
         }
         return hash;
+    },
+
+    // ---- TREE SANITIZATION ---------------------------------------------------
+
+    /**
+     * Sanitize tree structure before layout: rescue orphans and cap fan-out.
+     *
+     * Phase A: BFS from root to find unreachable nodes. Attaches each orphan
+     *          to the best-scoring reachable parent (theme match, tier proximity,
+     *          load balance).
+     *
+     * Phase B: Iteratively reduces over-capacity nodes (>5 children) by
+     *          grouping excess children by theme, electing a leader per group,
+     *          and reparenting siblings under their leader.
+     *
+     * @param {Object} nodeLookup - formId -> node (mutated in place)
+     * @param {string} rootFormId - Root node's formId
+     */
+    _sanitizeTree: function (nodeLookup, rootFormId) {
+        var MAX_CHILDREN = 5;
+        var MAX_ITERATIONS = 10;
+
+        // ==== Phase A: Rescue orphans ====
+        // BFS from root to find all reachable nodes
+        var reachable = {};
+        var bfsQ = [rootFormId];
+        reachable[rootFormId] = true;
+        while (bfsQ.length > 0) {
+            var cur = bfsQ.shift();
+            var curNode = nodeLookup[cur];
+            if (!curNode) continue;
+            var curChildren = curNode.children || [];
+            for (var ci = 0; ci < curChildren.length; ci++) {
+                var cid = curChildren[ci];
+                if (!reachable[cid] && nodeLookup[cid]) {
+                    reachable[cid] = true;
+                    bfsQ.push(cid);
+                }
+            }
+        }
+
+        // Collect orphans
+        var allIds = Object.keys(nodeLookup);
+        var orphans = [];
+        for (var oi = 0; oi < allIds.length; oi++) {
+            if (!reachable[allIds[oi]] && allIds[oi] !== rootFormId) {
+                orphans.push(allIds[oi]);
+            }
+        }
+
+        if (orphans.length > 0) {
+            // Sort by tier ascending so lower-tier orphans are placed first
+            // and become available as parents for higher-tier orphans
+            orphans.sort(function (a, b) {
+                var ta = (nodeLookup[a] && nodeLookup[a].tier) || 1;
+                var tb = (nodeLookup[b] && nodeLookup[b].tier) || 1;
+                return ta - tb;
+            });
+
+            for (var orpi = 0; orpi < orphans.length; orpi++) {
+                var orphanId = orphans[orpi];
+                var orphanNode = nodeLookup[orphanId];
+                if (!orphanNode) continue;
+                var orphanTheme = orphanNode.theme || '';
+                var orphanTier = orphanNode.tier || 1;
+
+                // Score all reachable nodes as candidate parents
+                var bestParent = null;
+                var bestScore = -Infinity;
+                for (var rid in reachable) {
+                    if (!reachable.hasOwnProperty(rid)) continue;
+                    var rNode = nodeLookup[rid];
+                    if (!rNode) continue;
+
+                    var score = 0;
+                    var rTheme = rNode.theme || '';
+                    var rTier = rNode.tier || 1;
+                    var rChildCount = (rNode.children || []).length;
+
+                    // Theme match
+                    if (rTheme && orphanTheme && rTheme === orphanTheme) score += 50;
+
+                    // Tier proximity
+                    score -= Math.abs(rTier - orphanTier) * 5;
+
+                    // Penalize parent at higher tier than orphan (wrong direction)
+                    if (rTier > orphanTier) score -= 20;
+
+                    // Load balance: prefer less-loaded nodes
+                    score -= rChildCount * 3;
+
+                    // Heavy penalty if already at cap
+                    if (rChildCount >= MAX_CHILDREN) score -= 100;
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestParent = rid;
+                    }
+                }
+
+                if (bestParent) {
+                    if (!nodeLookup[bestParent].children) nodeLookup[bestParent].children = [];
+                    nodeLookup[bestParent].children.push(orphanId);
+                    reachable[orphanId] = true;
+                    console.log('[Sanitize] Rescued orphan "' +
+                        (orphanNode.name || orphanId) + '" → parent "' +
+                        (nodeLookup[bestParent].name || bestParent) + '"');
+                }
+            }
+
+            console.log('[Sanitize] Rescued ' + orphans.length + ' orphan(s)');
+        }
+
+        // ==== Phase B: Cap fan-out (iterative) ====
+        for (var iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+            // Find over-capacity nodes
+            var overCap = [];
+            for (var fid in nodeLookup) {
+                if (!nodeLookup.hasOwnProperty(fid)) continue;
+                var nd = nodeLookup[fid];
+                if (nd.children && nd.children.length > MAX_CHILDREN) {
+                    overCap.push(fid);
+                }
+            }
+
+            if (overCap.length === 0) {
+                if (iteration > 0) {
+                    console.log('[Sanitize] Fan-out resolved after ' + iteration + ' iteration(s)');
+                }
+                break;
+            }
+
+            for (var oci = 0; oci < overCap.length; oci++) {
+                var parentId = overCap[oci];
+                var parentNode = nodeLookup[parentId];
+                var children = parentNode.children;
+                if (!children || children.length <= MAX_CHILDREN) continue;
+
+                var origCount = children.length;
+
+                // Group children by theme
+                var themeGroups = {};
+                for (var gi = 0; gi < children.length; gi++) {
+                    var gChildId = children[gi];
+                    var gChild = nodeLookup[gChildId];
+                    var gTheme = (gChild && gChild.theme) ? gChild.theme : '_none';
+                    if (!themeGroups[gTheme]) themeGroups[gTheme] = [];
+                    themeGroups[gTheme].push(gChildId);
+                }
+
+                // Sort theme groups by size descending
+                var themeKeys = Object.keys(themeGroups);
+                themeKeys.sort(function (a, b) {
+                    return themeGroups[b].length - themeGroups[a].length;
+                });
+
+                // Elect leader per group and build reparent operations
+                var keepDirect = [];
+                var reparentOps = [];
+
+                for (var ti = 0; ti < themeKeys.length; ti++) {
+                    var tKey = themeKeys[ti];
+                    var group = themeGroups[tKey];
+
+                    if (group.length <= 1) {
+                        keepDirect.push(group[0]);
+                        continue;
+                    }
+
+                    // Elect leader: lowest tier, fewest existing children
+                    var leaderId = group[0];
+                    var leaderTier = (nodeLookup[leaderId] && nodeLookup[leaderId].tier) || 99;
+                    var leaderCC = (nodeLookup[leaderId] && nodeLookup[leaderId].children)
+                        ? nodeLookup[leaderId].children.length : 0;
+
+                    for (var li = 1; li < group.length; li++) {
+                        var lCand = group[li];
+                        var lNode = nodeLookup[lCand];
+                        var lTier = (lNode && lNode.tier) || 99;
+                        var lCC = (lNode && lNode.children) ? lNode.children.length : 0;
+
+                        if (lTier < leaderTier || (lTier === leaderTier && lCC < leaderCC)) {
+                            leaderId = lCand;
+                            leaderTier = lTier;
+                            leaderCC = lCC;
+                        }
+                    }
+
+                    // Leader stays direct
+                    keepDirect.push(leaderId);
+
+                    // Siblings reparent under leader
+                    for (var si = 0; si < group.length; si++) {
+                        if (group[si] !== leaderId) {
+                            reparentOps.push({ childId: group[si], newParentId: leaderId });
+                        }
+                    }
+                }
+
+                // If still too many leaders, merge smallest groups
+                if (keepDirect.length > MAX_CHILDREN) {
+                    // Sort by group size ascending (smallest first for merging)
+                    var leaderSizes = {};
+                    for (var lsi = 0; lsi < keepDirect.length; lsi++) {
+                        leaderSizes[keepDirect[lsi]] = 0;
+                    }
+                    for (var rsi = 0; rsi < reparentOps.length; rsi++) {
+                        var rpId = reparentOps[rsi].newParentId;
+                        if (leaderSizes[rpId] !== undefined) leaderSizes[rpId]++;
+                    }
+                    keepDirect.sort(function (a, b) {
+                        return (leaderSizes[a] || 0) - (leaderSizes[b] || 0);
+                    });
+
+                    while (keepDirect.length > MAX_CHILDREN) {
+                        var mergeId = keepDirect.shift();
+                        var mergeTheme = (nodeLookup[mergeId] && nodeLookup[mergeId].theme) || '_none';
+
+                        // Find best target among remaining leaders
+                        var bestTarget = keepDirect[0];
+                        var bestTScore = -Infinity;
+                        for (var bti = 0; bti < keepDirect.length; bti++) {
+                            var targId = keepDirect[bti];
+                            var targTheme = (nodeLookup[targId] && nodeLookup[targId].theme) || '_none';
+                            var tsc = 0;
+                            if (targTheme === mergeTheme) tsc += 20;
+                            tsc -= (leaderSizes[targId] || 0) * 2;
+                            if (tsc > bestTScore) {
+                                bestTScore = tsc;
+                                bestTarget = targId;
+                            }
+                        }
+
+                        // Reparent the merged leader under the best target
+                        reparentOps.push({ childId: mergeId, newParentId: bestTarget });
+                    }
+                }
+
+                // Apply: rebuild parent's children array
+                parentNode.children = keepDirect.slice();
+
+                // Apply reparent operations
+                for (var rpi = 0; rpi < reparentOps.length; rpi++) {
+                    var op = reparentOps[rpi];
+                    var newParent = nodeLookup[op.newParentId];
+                    if (!newParent) continue;
+                    if (!newParent.children) newParent.children = [];
+                    // Avoid self-loops and duplicates
+                    if (op.childId !== op.newParentId &&
+                        newParent.children.indexOf(op.childId) < 0) {
+                        newParent.children.push(op.childId);
+                    }
+                }
+
+                console.log('[Sanitize] Capped "' + (parentNode.name || parentId) +
+                    '": ' + origCount + ' → ' + keepDirect.length + ' children (' +
+                    reparentOps.length + ' reparented)');
+            }
+        }
+
+        if (iteration >= MAX_ITERATIONS) {
+            console.log('[Sanitize] WARNING: hit iteration limit, some nodes may still exceed cap');
+        }
     },
 
     /**

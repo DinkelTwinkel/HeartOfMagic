@@ -2,7 +2,7 @@
 
 **Purpose:** Concise reference for LLMs to understand system structure and implementation status.
 
-**Version:** 1.9 (Updated February 7, 2026 - Per-school shapes, LLM keyword classification, plugin whitelist, module inventory)
+**Version:** 2.0 (Updated February 8, 2026 - Settings presets replace difficulty profiles, scanner presets, module cleanup)
 
 ---
 
@@ -15,7 +15,8 @@
 - Displays interactive tree UI (PrismaUI) with configurable hotkey (default F8)
 - Progressive revelation system (names/effects/descriptions unlock with XP)
 - Discovery Mode: progressive tree reveal based on XP progress
-- Difficulty profile system with 6 presets and custom profiles
+- Chip-based settings presets (Default/Easy/Hard + user-created) for progression, early spell, and tome settings
+- Chip-based scanner presets for tree building configurations
 - **Early Spell Learning:** Spells granted early but nerfed, scaling with progress
 - **Progressive Effectiveness:** Runtime spell magnitude scaling via C++ hooks
 - **Spell Tome Hook:** Intercepts tome reading to grant XP instead of instant learning
@@ -379,8 +380,8 @@ SpellLearning.GetVersion()    ; Version string
 | Module | Purpose |
 |--------|---------|
 | **Configuration** | |
-| `constants.js` | Default prompts, difficulty profiles, color palettes, power steps |
-| `state.js` | `settings`, `state`, `customProfiles`, `xpOverrides`, `pluginWhitelist` |
+| `constants.js` | Default prompts, color palettes, power steps |
+| `state.js` | `settings`, `state`, `settingsPresets`, `scannerPresets`, `xpOverrides`, `pluginWhitelist` |
 | `config.js` | `TREE_CONFIG` layout and visual configuration |
 | **Tree building (user-facing)** | |
 | `edgeScoring.js` | Unified edge scoring (element, tier, keyword); used by SettingsAwareBuilder |
@@ -401,7 +402,8 @@ SpellLearning.GetVersion()    ; Version string
 | `settingsPanel.js` | Settings UI, config persistence, retry school UI, plugin whitelist modal |
 | `treeViewerUI.js` | Tree viewer, spell details, node selection |
 | `progressionUI.js` | How-to-Learn panel, learning status badges |
-| `difficultyProfiles.js` | Profile management, presets, custom profiles |
+| `settingsPresets.js` | Settings presets (chip-based): save/load/delete/rename for progression, early spell, tome settings. Ships with Default/Easy/Hard |
+| `scannerPresets.js` | Scanner presets (chip-based): save/load/delete/rename for tree building configurations |
 | `generationModeUI.js` | Generation UI (seed, LLM options); dev-only rows |
 | `cppCallbacks.js` | C++ ↔ JS (e.g. ProceduralPythonGenerate, GetProgress); enables Complex/Simple buttons when spells loaded |
 | `llmIntegration.js` | LLM tree generation (AUTO AI), validation, retry |
@@ -424,17 +426,17 @@ SpellLearning.GetVersion()    ; Version string
 | `unificationTest.js` | Module unification tests |
 | `main.js` | Entry point, initialization |
 
-**Module load order:** See `index.html`. Order is: constants/state/config → edgeScoring/shapeProfiles/layoutEngine → spellCache/colorUtils/uiHelpers → growthDSL/treeParser → wheel/starfield/globe/canvas/editMode → colorPicker/settingsPanel/treeViewerUI/… → cppCallbacks/pythonSetup/llmIntegration/proceduralTreeBuilder → layoutGenerator/growthBehaviors/visualFirstBuilder/llmTreeFeatures/settingsAwareTreeBuilder → generationModeUI → script.js → autoTest/unificationTest → main.js.
+**Module load order:** See `index.html`. Order is: constants/state/config → edgeScoring/shapeProfiles/layoutEngine → spellCache/colorUtils/uiHelpers → growthDSL/treeParser → wheel/starfield/globe/canvas/editMode → colorPicker/settingsPanel/treeViewerUI/progressionUI/settingsPresets/scannerPresets → cppCallbacks/pythonSetup/llmIntegration/proceduralTreeBuilder → layoutGenerator/growthBehaviors/visualFirstBuilder/llmTreeFeatures/settingsAwareTreeBuilder → generationModeUI → script.js → autoTest/unificationTest → main.js.
 
 **Tabs:**
 1. **Spell Scan** - Scan spells, LLM API settings, output field toggles, Growth Style Generator
 2. **Tree Rules** - Custom rules for tree generation
 3. **Spell Tree** - Interactive radial visualization with zoom/pan/rotate, How-to-Learn panel
-4. **Settings** - Difficulty profiles, progression settings, display options, early learning, mod integrations
+4. **Settings** - Settings presets (chip-based), progression settings, display options, early learning, mod integrations
 
 **Key JavaScript Objects:**
 - `TREE_CONFIG` - Layout and visual configuration (in `config.js`)
-- `DIFFICULTY_PROFILES` - 6 preset difficulty profiles (in `constants.js`)
+- `BUILT_IN_SETTINGS_PRESETS` - 3 starter presets: Default, Easy, Hard (in `settingsPresets.js`)
 - `settings` - All user settings, persisted (in `state.js`)
 - `state` - Runtime state: scan results, tree data, etc. (in `state.js`)
 - `WheelRenderer` - SVG tree rendering engine (in `wheelRenderer.js`)
@@ -451,8 +453,8 @@ SpellLearning.GetVersion()    ; Version string
 - Collision resolution for dense trees
 - LLM-suggested layout styles per school
 - **Growth Style Generator** - LLM-driven visual tree customization
-- Difficulty profiles: Easy, Normal, Hard, Brutal, True Master, Legendary
-- Custom profile creation and persistence
+- Settings presets: Default (undeletable), Easy, Hard + user-created presets
+- Scanner presets: user-saved tree building configurations
 - School color customization
 - **Configurable divider colors** (school-based or custom)
 - Configurable hotkey
@@ -685,8 +687,6 @@ All settings stored in single config file, managed through UI:
   "hotkey": "F8",
   "hotkeyCode": 66,
   "cheatMode": false,
-  "activeProfile": "normal",
-  
   "learningMode": "perSchool",
   "xpGlobalMultiplier": 1,
   "xpMultiplierDirect": 100,
@@ -732,7 +732,8 @@ All settings stored in single config file, managed through UI:
   "pluginWhitelist": [],
 
   "schoolColors": {...},
-  "customProfiles": {...},
+  "settingsPresets": {"Default": {...}, "Easy": {...}, "Hard": {...}},
+  "scannerPresets": {...},
   "treeGeneration": {
     "llm": {
       "enabled": false,

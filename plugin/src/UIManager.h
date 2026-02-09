@@ -122,12 +122,20 @@ private:
     // Procedural tree generation (Python)
     static void OnProceduralPythonGenerate(const char* argument);
 
+    // Pre Req Master NLP scoring (Python)
+    static void OnPreReqMasterScore(const char* argument);
+
     // Python setup callbacks
     static void OnSetupPython(const char* argument);
     static void OnCancelPythonSetup(const char* argument);
 
     // Panel control callbacks
     static void OnHidePanel(const char* argument);
+
+    // Preset file I/O callbacks
+    static void OnSavePreset(const char* argument);
+    static void OnDeletePreset(const char* argument);
+    static void OnLoadPresets(const char* argument);
 
     // Auto-test callbacks
     static void OnLoadTestConfig(const char* argument);

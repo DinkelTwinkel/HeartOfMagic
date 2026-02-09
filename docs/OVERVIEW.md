@@ -18,7 +18,7 @@ A Skyrim SKSE mod that creates an AI-generated spell learning tree with an activ
 - Gain XP by casting prerequisite spells and reading tomes
 - Spells granted **early but weakened** at 25% progress, scaling to full power at mastery
 - Progressive revelation: spell details hidden until XP thresholds reached
-- 6 difficulty presets + custom profiles
+- Chip-based settings presets (Default/Easy/Hard + user-created) and scanner presets
 - FormID persistence ensures trees survive load order changes
 
 ---
