@@ -599,6 +599,12 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
         int scannedCount = 0;
         int skippedCount = 0;
         int filteredCount = 0;
+        
+        // Diagnostic counters for debugging scan failures
+        int skipType = 0;       // Failed spellType check
+        int skipNoName = 0;     // Empty name
+        int skipNoSchool = 0;   // No magic school
+        int diagSamples = 0;    // How many diagnostic samples logged
 
         // Helper function to check if editorId indicates a non-player spell
         auto isNonPlayerSpell = [](const std::string& editorId) -> bool {
@@ -655,19 +661,72 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             return false;
         };
 
+        // Log a sample of the first few forms for diagnostics
+        {
+            int sampleCount = 0;
+            for (auto* spell : allSpells) {
+                if (!spell || sampleCount >= 5) break;
+                const char* sName = spell->GetFullName();
+                const char* sEdId = spell->GetFormEditorID();
+                logger::info("SpellScanner DIAG: sample[{}] formId=0x{:08X} type={} name='{}' editorId='{}'",
+                    sampleCount, spell->GetFormID(),
+                    static_cast<int>(spell->data.spellType),
+                    sName ? sName : "(null)",
+                    sEdId ? sEdId : "(null)");
+                sampleCount++;
+            }
+        }
+
+        // First pass: count how many spells have spellType == kSpell.
+        // On SE 1.5.97 the SpellItem::Data struct layout may differ from AE,
+        // causing spell->data.spellType to read garbage.  If ZERO spells pass
+        // the type check we disable it and rely on other heuristics instead.
+        bool useTypeFilter = true;
+        {
+            int kSpellCount = 0;
+            for (auto* spell : allSpells) {
+                if (spell && spell->data.spellType == RE::MagicSystem::SpellType::kSpell) {
+                    kSpellCount++;
+                }
+            }
+            if (kSpellCount == 0 && allSpells.size() > 0) {
+                logger::warn("SpellScanner: 0/{} spells have spellType==kSpell — likely SE struct layout mismatch. Disabling type filter.",
+                    allSpells.size());
+                useTypeFilter = false;
+            } else {
+                logger::info("SpellScanner: {}/{} spells have spellType==kSpell", kSpellCount, allSpells.size());
+            }
+        }
+
         for (auto* spell : allSpells) {
             if (!spell) continue;
 
-            if (spell->data.spellType != RE::MagicSystem::SpellType::kSpell) {
+            if (useTypeFilter && spell->data.spellType != RE::MagicSystem::SpellType::kSpell) {
+                skipType++;
                 skippedCount++;
+                // Log first few non-kSpell types for diagnosis
+                if (diagSamples < 3) {
+                    const char* dn = spell->GetFullName();
+                    logger::info("SpellScanner DIAG: skip type={} for '{}' (0x{:08X})",
+                        static_cast<int>(spell->data.spellType),
+                        dn ? dn : "(unnamed)",
+                        spell->GetFormID());
+                    diagSamples++;
+                }
                 continue;
             }
 
-            const char* editorId = spell->GetFormEditorID();
+            const char* rawEditorId = spell->GetFormEditorID();
             std::string name = spell->GetFullName();
             RE::FormID formId = spell->GetFormID();
 
-            if (name.empty() || !editorId || strlen(editorId) == 0) {
+            // EditorID may be empty on SE 1.5.97 without po3's Tweaks — that's OK
+            bool hasEditorId = (rawEditorId && strlen(rawEditorId) > 0);
+            std::string editorIdStr = hasEditorId ? std::string(rawEditorId) : "";
+
+            // Name is required — skip truly unnamed forms
+            if (name.empty()) {
+                skipNoName++;
                 skippedCount++;
                 continue;
             }
@@ -675,7 +734,6 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             // Filter out spells where name looks like a FormID (broken/missing data)
             // These show up as "0x000A26FF" or similar hex strings
             if (name.length() >= 2 && (name.substr(0, 2) == "0x" || name.substr(0, 2) == "0X")) {
-                logger::info("SpellScanner: Filtering FormID-named spell: {}", name);
                 filteredCount++;
                 continue;
             }
@@ -689,16 +747,25 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 }
             }
             if (allHex && name.length() >= 6) {
-                logger::info("SpellScanner: Filtering hex-named spell: {}", name);
                 filteredCount++;
                 continue;
             }
 
-            // Filter out non-player spells based on editorId patterns
-            std::string editorIdStr(editorId);
-            if (isNonPlayerSpell(editorIdStr)) {
+            // Filter out non-player spells based on editorId patterns (only when available)
+            if (hasEditorId && isNonPlayerSpell(editorIdStr)) {
                 filteredCount++;
                 continue;
+            }
+
+            // When no EditorID available, use name-based heuristics to filter junk
+            if (!hasEditorId) {
+                std::string lowerName = name;
+                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+                
+                // Skip obvious non-player spells by name patterns
+                if (lowerName.find("فخ") != std::string::npos) { filteredCount++; continue; }  // trap (Arabic)
+                // Skip spells with very generic/system names
+                if (lowerName == "yourspellname" || lowerName == "yourspell") { filteredCount++; continue; }
             }
 
             RE::ActorValue school = RE::ActorValue::kNone;
@@ -713,6 +780,7 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             }
 
             if (school == RE::ActorValue::kNone) {
+                skipNoSchool++;
                 skippedCount++;
                 continue;
             }
@@ -720,7 +788,6 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             // Filter out spells with absurdly high magicka costs (usually NPC-only)
             float magickaCost = spell->CalculateMagickaCost(nullptr);
             if (magickaCost > 1000.0f) {
-                logger::info("SpellScanner: Filtering high-cost spell: {} ({} magicka)", editorIdStr, magickaCost);
                 filteredCount++;
                 continue;
             }
@@ -739,7 +806,6 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 }
             }
             if (!hasValidEffect) {
-                logger::info("SpellScanner: Filtering spell with no valid effects: {}", name);
                 filteredCount++;
                 continue;
             }
@@ -754,8 +820,10 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             spellJson["skillLevel"] = GetSkillLevelName(minimumSkill);
 
             // Optional fields
-            if (fields.editorId) {
-                spellJson["editorId"] = editorId;
+            if (fields.editorId && hasEditorId) {
+                spellJson["editorId"] = editorIdStr;
+            } else if (fields.editorId) {
+                spellJson["editorId"] = "";  // Empty string when not available (SE 1.5.97)
             }
             if (fields.magickaCost) {
                 spellJson["magickaCost"] = spell->CalculateMagickaCost(nullptr);
@@ -823,8 +891,21 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             scannedCount++;
         }
 
-        logger::info("SpellScanner: Scanned {} player spells, skipped {} (non-spell), filtered {} (non-player)", 
-                     scannedCount, skippedCount, filteredCount);
+        // Check if any spells had EditorIDs (diagnostic for SE 1.5.97 compatibility)
+        int editorIdCount = 0;
+        for (const auto& s : spellArray) {
+            if (s.contains("editorId") && !s["editorId"].get<std::string>().empty()) {
+                editorIdCount++;
+            }
+        }
+        
+        logger::info("SpellScanner: Scanned {} spells, skipped {} (type:{}, noName:{}, noSchool:{}), filtered {}", 
+                     scannedCount, skippedCount, skipType, skipNoName, skipNoSchool, filteredCount);
+        if (scannedCount > 0 && editorIdCount == 0) {
+            logger::warn("SpellScanner: No EditorIDs available — SE 1.5.97 without po3 Tweaks? Name-based filtering active.");
+        } else if (scannedCount > 0) {
+            logger::info("SpellScanner: EditorIDs available for {}/{} spells", editorIdCount, scannedCount);
+        }
         return spellArray;
     }
 
