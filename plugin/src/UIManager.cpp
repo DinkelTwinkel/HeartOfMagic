@@ -10,6 +10,7 @@
 #include "PapyrusAPI.h"
 #include "PythonInstaller.h"
 #include "PythonBridge.h"
+#include "WineDetect.h"
 
 // =============================================================================
 // JSON HELPER - Safe value accessor that handles null values
@@ -2865,6 +2866,8 @@ void UIManager::CheckPythonAddonStatus()
         // Check for Python: venv > embedded > system (but don't assume system)
         // For embedded, also verify install completed (marker file) to catch partial installs
         std::string venvPython = toolDir + "/.venv/Scripts/python.exe";
+        std::string venvPythonLinux = toolDir + "/.venv/bin/python";       // Linux venv
+        std::string venvPythonLinux3 = toolDir + "/.venv/bin/python3";     // Linux venv
         std::string embeddedPython = toolDir + "/python/python.exe";
         std::string embeddedMarker = toolDir + "/python/.install_complete";
 
@@ -2872,10 +2875,26 @@ void UIManager::CheckPythonAddonStatus()
         // which is only visible via absolute path resolution
         auto absMarker = std::filesystem::absolute(std::filesystem::path(embeddedMarker));
 
+        // On Wine, Linux-native Python (ELF binary) can't be used by CreateProcess.
+        // Only report Windows .exe Python as usable.
+        bool wineMode = IsRunningUnderWine();
+
         if (std::filesystem::exists(venvPython)) {
             hasPython = true;
             pythonSource = "venv";
-            logger::info("UIManager: Python addon check - venv Python found");
+            logger::info("UIManager: Python addon check - Windows venv Python found");
+        } else if (!wineMode && (std::filesystem::exists(venvPythonLinux) ||
+                                  std::filesystem::exists(venvPythonLinux3))) {
+            hasPython = true;
+            pythonSource = "venv";
+            logger::info("UIManager: Python addon check - Linux venv Python found");
+        } else if (wineMode && (std::filesystem::exists(venvPythonLinux) ||
+                                 std::filesystem::exists(venvPythonLinux3))) {
+            // Linux Python exists but can't be used with CreateProcess on Wine
+            hasPython = false;
+            pythonSource = "none";
+            logger::warn("UIManager: Python addon check - Linux venv found but not usable on Wine/Proton. "
+                "Use Auto-Setup to install Windows Python.");
         } else if (std::filesystem::exists(embeddedPython) &&
                    (std::filesystem::exists(embeddedMarker) || std::filesystem::exists(absMarker))) {
             hasPython = true;

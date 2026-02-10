@@ -1,9 +1,12 @@
 // CommonLib must come FIRST, then Windows headers
 #include "PCH.h"
 #include "PythonInstaller.h"
+#include "WineDetect.h"
 
 // WinHTTP - included AFTER CommonLib per v4.2.0 requirements
 #include <winhttp.h>
+
+#include <miniz.h>
 
 #include <thread>
 #include <atomic>
@@ -35,6 +38,13 @@ void PythonInstaller::StartInstall(PRISMA_UI_API::IVPrismaUI1* prismaUI, PrismaV
     m_view = view;
     m_cancelRequested.store(false);
     m_installing.store(true);
+
+    // Detect Wine/Proton — log a warning but proceed.
+    // WinHTTP download works under Wine. PowerShell extraction may fail,
+    // but we have a Linux Python fallback for ZIP extraction on Wine.
+    if (IsRunningUnderWine()) {
+        logger::warn("PythonInstaller: Wine/Proton detected — will attempt auto-setup with fallback extraction");
+    }
 
     // Resolve tool directory
     m_toolDir = "Data/SKSE/Plugins/SpellLearning/SpellTreeBuilder";
@@ -610,23 +620,64 @@ bool PythonInstaller::ExtractZip(const std::filesystem::path& zipPath, const std
 {
     logger::info("PythonInstaller: Extracting {} -> {}", zipPath.string(), destDir.string());
 
-    // Use PowerShell Expand-Archive
-    std::string cmd = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Expand-Archive -Path '";
-    cmd += zipPath.string();
-    cmd += "' -DestinationPath '";
-    cmd += destDir.string();
-    cmd += "' -Force\"";
+    // Ensure destination exists
+    std::filesystem::create_directories(destDir);
 
-    int result = std::system(cmd.c_str());
+    // Native C++ ZIP extraction using miniz — works on all platforms
+    // including Wine/Proton where PowerShell and shell tools are unavailable.
+    mz_zip_archive zip = {};
+    auto zipPathStr = zipPath.string();
 
-    if (result != 0) {
-        logger::error("PythonInstaller: ExtractZip failed with code {}", result);
+    if (!mz_zip_reader_init_file(&zip, zipPathStr.c_str(), 0)) {
+        logger::error("PythonInstaller: Failed to open ZIP file: {}", zipPathStr);
         return false;
     }
+
+    int numFiles = static_cast<int>(mz_zip_reader_get_num_files(&zip));
+    logger::info("PythonInstaller: ZIP contains {} entries", numFiles);
+
+    bool extractOk = true;
+    for (int i = 0; i < numFiles; i++) {
+        mz_zip_archive_file_stat fileStat;
+        if (!mz_zip_reader_file_stat(&zip, i, &fileStat)) {
+            logger::error("PythonInstaller: Failed to stat ZIP entry {}", i);
+            extractOk = false;
+            break;
+        }
+
+        auto outPath = destDir / fileStat.m_filename;
+
+        if (mz_zip_reader_is_file_a_directory(&zip, i)) {
+            std::filesystem::create_directories(outPath);
+        } else {
+            // Ensure parent directory exists
+            std::filesystem::create_directories(outPath.parent_path());
+
+            if (!mz_zip_reader_extract_to_file(&zip, i, outPath.string().c_str(), 0)) {
+                logger::error("PythonInstaller: Failed to extract: {}", fileStat.m_filename);
+                extractOk = false;
+                break;
+            }
+        }
+    }
+
+    mz_zip_reader_end(&zip);
+
+    if (!extractOk) {
+        logger::error("PythonInstaller: Native ZIP extraction failed");
+        return false;
+    }
+
+    logger::info("PythonInstaller: Extracted {} entries successfully", numFiles);
 
     // Verify python.exe exists (may be in a subdirectory)
     auto pythonExe = destDir / "python.exe";
     if (!std::filesystem::exists(pythonExe)) {
+        // Guard: directory may not exist if extraction failed (e.g. on Linux/Proton)
+        if (!std::filesystem::exists(destDir) || !std::filesystem::is_directory(destDir)) {
+            logger::error("PythonInstaller: Extraction directory does not exist: {}", destDir.string());
+            return false;
+        }
         // Check if it extracted into a subdirectory (common with ZIP archives)
         for (auto& entry : std::filesystem::directory_iterator(destDir)) {
             if (entry.is_directory()) {
@@ -666,6 +717,12 @@ bool PythonInstaller::EnableSitePackages(const std::filesystem::path& pythonDir)
             s.pop_back();
         }
     };
+
+    // Guard: directory may not exist if extraction failed
+    if (!std::filesystem::exists(pythonDir) || !std::filesystem::is_directory(pythonDir)) {
+        logger::error("PythonInstaller: Python directory does not exist: {}", pythonDir.string());
+        return false;
+    }
 
     // Find the ._pth file (e.g., python312._pth) by filename pattern
     // extension() check can be unreliable for "._pth", so use filename search

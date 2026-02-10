@@ -74,7 +74,7 @@ except ImportError:
     AVAILABLE_SHAPES = ['organic', 'radial', 'grid']
 
 
-def compute_fuzzy_relationships(spells: list, top_n: int = 5) -> Dict[str, Any]:
+def compute_fuzzy_relationships(spells: list, top_n: int = 5, similarity_threshold: float = 0.1) -> Dict[str, Any]:
     """
     Compute fuzzy (semantic) relationships between spells using TF-IDF cosine similarity.
     
@@ -137,14 +137,14 @@ def compute_fuzzy_relationships(spells: list, top_n: int = 5) -> Dict[str, Any]:
         # Get top N related spells (above threshold)
         related = []
         for j, score in scores[:top_n]:
-            if score > 0.1:  # Minimum similarity threshold
+            if score > similarity_threshold:  # Minimum similarity threshold
                 related.append(form_ids[j])
                 # Store pairwise score
                 key = f"{form_id}:{form_ids[j]}"
                 similarity_scores[key] = round(float(score), 3)
-        
+
         relationships[form_id] = related
-    
+
     # Discover themes per school and group spells
     themes_per_school = discover_themes_per_school(spells, top_n=5, fallback=True)
     
@@ -376,7 +376,8 @@ def build_tree_from_data(spells, config_dict):
     fuzzy_data = None
     if config.get('run_fuzzy_analysis', False) or config.get('return_fuzzy_data', False):
         try:
-            fuzzy_data = compute_fuzzy_relationships(spells, top_n=5)
+            fuzzy_threshold = config.get('similarity_threshold', 0.1)
+            fuzzy_data = compute_fuzzy_relationships(spells, top_n=5, similarity_threshold=fuzzy_threshold)
         except Exception as e:
             log_to_file(f"[Fuzzy] Error: {e}")
             fuzzy_data = {'relationships': {}, 'similarity_scores': {}, 'groups': {}, 'themes': {}}
@@ -832,7 +833,8 @@ Examples:
         log_to_file("[Fuzzy] Starting fuzzy analysis...")
         
         try:
-            fuzzy_data = compute_fuzzy_relationships(spells, top_n=5)
+            fuzzy_threshold = config.get('similarity_threshold', 0.1)
+            fuzzy_data = compute_fuzzy_relationships(spells, top_n=5, similarity_threshold=fuzzy_threshold)
             print(f"[Fuzzy] Found relationships for {len(fuzzy_data.get('relationships', {}))} spells")
             print(f"[Fuzzy] Found {len(fuzzy_data.get('groups', {}))} themed groups")
         except Exception as e:

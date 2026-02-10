@@ -1,4 +1,5 @@
 #include "PythonBridge.h"
+#include "WineDetect.h"
 
 PythonBridge* PythonBridge::GetSingleton()
 {
@@ -149,6 +150,8 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
         auto stb = owFolder / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
         pythonPaths.push_back(stb / "python" / "python.exe");
         pythonPaths.push_back(stb / ".venv" / "Scripts" / "python.exe");
+        pythonPaths.push_back(stb / ".venv" / "bin" / "python");       // Linux venv
+        pythonPaths.push_back(stb / ".venv" / "bin" / "python3");      // Linux venv
         scriptDirs.push_back(stb);
     }
 
@@ -165,6 +168,12 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
             if (std::filesystem::exists(stb / ".venv" / "Scripts" / "python.exe", ec)) {
                 pythonPaths.push_back(stb / ".venv" / "Scripts" / "python.exe");
             }
+            if (std::filesystem::exists(stb / ".venv" / "bin" / "python", ec)) {
+                pythonPaths.push_back(stb / ".venv" / "bin" / "python");   // Linux venv
+            }
+            if (std::filesystem::exists(stb / ".venv" / "bin" / "python3", ec)) {
+                pythonPaths.push_back(stb / ".venv" / "bin" / "python3");  // Linux venv
+            }
             if (std::filesystem::exists(stb / "build_tree.py", ec)) {
                 scriptDirs.push_back(stb);
                 logger::info("PythonBridge: Found SpellTreeBuilder in mod: {}", entry.path().filename().string());
@@ -176,24 +185,68 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
     auto realData = cwd / "Data" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
     pythonPaths.push_back(realData / "python" / "python.exe");
     pythonPaths.push_back(realData / ".venv" / "Scripts" / "python.exe");
+    pythonPaths.push_back(realData / ".venv" / "bin" / "python");      // Linux venv
+    pythonPaths.push_back(realData / ".venv" / "bin" / "python3");     // Linux venv
     scriptDirs.push_back(realData);
 
     // 4. CWD relative
     auto cwdRel = cwd / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
     pythonPaths.push_back(cwdRel / "python" / "python.exe");
+    pythonPaths.push_back(cwdRel / ".venv" / "bin" / "python");        // Linux venv
     scriptDirs.push_back(cwdRel);
 
     PythonPaths result;
 
-    // Find python.exe
+    bool isWine = IsRunningUnderWine();
+    if (isWine) {
+        logger::info("PythonBridge: Wine/Proton detected — only Windows python.exe is usable with CreateProcess");
+    }
+
+    // Find python executable
     for (const auto& path : pythonPaths) {
         std::error_code ec;
-        if (std::filesystem::exists(path, ec)) {
-            result.pythonExe = ResolvePhysicalPath(path);
-            logger::info("PythonBridge: Found Python at: {}", result.pythonExe.string());
-            break;
+        if (!std::filesystem::exists(path, ec)) continue;
+
+        // On Wine, CreateProcess can only run PE (.exe) files.
+        // Skip Linux-native Python (e.g. .venv/bin/python -> /usr/bin/python3.9)
+        // because it's an ELF binary that CreateProcess can't execute.
+        if (isWine) {
+            auto ext = path.extension().string();
+            if (ext != ".exe" && ext != ".EXE") {
+                logger::info("PythonBridge: Skipping non-.exe Python on Wine: {}", path.string());
+                continue;
+            }
+        }
+
+        result.pythonExe = ResolvePhysicalPath(path);
+        logger::info("PythonBridge: Found Python at: {}", result.pythonExe.string());
+        break;
+    }
+
+    // Wine fallback: if no .exe found, log the Linux Python for diagnostics
+    if (isWine && result.pythonExe.empty()) {
+        for (const auto& path : pythonPaths) {
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec)) {
+                logger::warn("PythonBridge: Linux Python found at {} but cannot be used by CreateProcess. "
+                    "Use Auto-Setup to install Windows Python, or manually extract the Windows embedded Python ZIP "
+                    "to SpellTreeBuilder/python/", path.string());
+                break;
+            }
         }
     }
+
+    // Sort script dirs: prefer _RELEASE folders (deploy target) over old copies
+    std::stable_sort(scriptDirs.begin(), scriptDirs.end(),
+        [](const std::filesystem::path& a, const std::filesystem::path& b) {
+            // Walk up from SpellTreeBuilder -> SpellLearning -> Plugins -> SKSE -> mod root
+            auto modNameA = a.parent_path().parent_path().parent_path().parent_path().filename().string();
+            auto modNameB = b.parent_path().parent_path().parent_path().parent_path().filename().string();
+            bool aRelease = modNameA.find("_RELEASE") != std::string::npos;
+            bool bRelease = modNameB.find("_RELEASE") != std::string::npos;
+            if (aRelease != bRelease) return aRelease;  // _RELEASE first
+            return false;  // preserve order otherwise
+        });
 
     // Find script directory — prefer directories with server.py (persistent mode)
     // over those with only build_tree.py (old versions without server.py)
@@ -202,8 +255,11 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
         std::error_code ec;
         if (std::filesystem::exists(dir / "server.py", ec)) {
             result.scriptDir = ResolvePhysicalPath(dir);
-            result.serverScript = result.scriptDir / "server.py";
+            // Resolve server.py independently — under MO2 USVFS, the directory
+            // may resolve to Overwrite/ while server.py is in the mod folder.
+            result.serverScript = ResolvePhysicalPath(dir / "server.py");
             logger::info("PythonBridge: Found script dir (server.py) at: {}", result.scriptDir.string());
+            logger::info("PythonBridge: Resolved server.py at: {}", result.serverScript.string());
             break;
         } else if (fallbackDir.empty() && std::filesystem::exists(dir / "build_tree.py", ec)) {
             fallbackDir = dir;
@@ -211,7 +267,7 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
     }
     if (result.scriptDir.empty() && !fallbackDir.empty()) {
         result.scriptDir = ResolvePhysicalPath(fallbackDir);
-        result.serverScript = result.scriptDir / "server.py";
+        result.serverScript = ResolvePhysicalPath(fallbackDir / "server.py");
         logger::warn("PythonBridge: No server.py found, using build_tree.py dir: {}", result.scriptDir.string());
     }
 
@@ -294,27 +350,39 @@ bool PythonBridge::SpawnProcess()
     SetHandleInformation(m_hStdinWrite, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(m_hStdoutRead, HANDLE_FLAG_INHERIT, 0);
 
-    // Build environment block with PYTHONHOME
+    // Build environment block
+    // On Wine, don't set PYTHONHOME — it breaks Linux Python and embedded Python
+    // relies on its ._pth file for path resolution, not PYTHONHOME.
+    bool isWine = IsRunningUnderWine();
     auto pythonHome = paths.pythonExe.parent_path().wstring();
 
-    // Copy current environment and add/override PYTHONHOME
     std::wstring envBlock;
     wchar_t* currentEnv = GetEnvironmentStringsW();
     if (currentEnv) {
         for (wchar_t* p = currentEnv; *p; p += wcslen(p) + 1) {
-            // Skip existing PYTHONHOME/PYTHONPATH to avoid conflicts
+            // Skip existing Python env vars to avoid conflicts
             if (_wcsnicmp(p, L"PYTHONHOME=", 11) == 0) continue;
             if (_wcsnicmp(p, L"PYTHONPATH=", 11) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONIOENCODING=", 17) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONUNBUFFERED=", 17) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONDONTWRITEBYTECODE=", 24) == 0) continue;
             envBlock += p;
             envBlock += L'\0';
         }
         FreeEnvironmentStringsW(currentEnv);
     }
-    envBlock += L"PYTHONHOME=" + pythonHome + L'\0';
+    if (!isWine) {
+        envBlock += L"PYTHONHOME=" + pythonHome + L'\0';
+    }
+    // Force UTF-8 encoding for piped stdout/stderr — prevents silent crashes
+    // on Wine where locale/encoding detection fails with redirected stdio
+    envBlock += L"PYTHONIOENCODING=utf-8\0";
+    envBlock += L"PYTHONUNBUFFERED=1\0";
+    envBlock += L"PYTHONDONTWRITEBYTECODE=1\0";
     envBlock += L'\0';  // Double null terminator
 
-    // Build command line
-    std::wstring cmdLine = L"\"" + paths.pythonExe.wstring() + L"\" \"" + paths.serverScript.wstring() + L"\"";
+    // Build command line — use -u for unbuffered binary stdout/stderr
+    std::wstring cmdLine = L"\"" + paths.pythonExe.wstring() + L"\" -u \"" + paths.serverScript.wstring() + L"\"";
 
     STARTUPINFOW si = {};
     si.cb = sizeof(si);
@@ -328,13 +396,20 @@ bool PythonBridge::SpawnProcess()
 
     logger::info("PythonBridge: Spawning: {}", std::filesystem::path(cmdLine).string());
 
+    // On Wine, CREATE_NO_WINDOW can interfere with console subsystem init
+    // and break pipe inheritance. Use only CREATE_UNICODE_ENVIRONMENT.
+    DWORD createFlags = CREATE_UNICODE_ENVIRONMENT;
+    if (!isWine) {
+        createFlags |= CREATE_NO_WINDOW;
+    }
+
     BOOL ok = CreateProcessW(
         nullptr,
         cmdLine.data(),
         nullptr,
         nullptr,
         TRUE,  // Inherit handles (for pipes)
-        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+        createFlags,
         envBlock.data(),
         paths.scriptDir.wstring().c_str(),
         &si,
@@ -346,7 +421,14 @@ bool PythonBridge::SpawnProcess()
     CloseHandle(hStdoutWrite);
 
     if (!ok) {
-        logger::error("PythonBridge: CreateProcess failed ({})", GetLastError());
+        DWORD err = GetLastError();
+        logger::error("PythonBridge: CreateProcess failed ({})", err);
+        if (isWine) {
+            logger::error("PythonBridge: Wine/Proton detected — CreateProcess cannot run Linux-native Python. "
+                "The tree builder requires a Windows python.exe. Use the Auto-Setup button in the mod panel, "
+                "or manually download 'python-3.12.8-embed-amd64.zip' from python.org and extract it to "
+                "SpellTreeBuilder/python/ inside your mod folder.");
+        }
         CloseHandle(m_hStdinWrite);
         CloseHandle(m_hStdoutRead);
         m_hStdinWrite = nullptr;
@@ -508,6 +590,19 @@ void PythonBridge::ReaderThread()
                 // Not JSON — treat as debug/log output from Python
                 logger::info("PythonBridge [python]: {}", line.substr(0, 200));
             }
+        }
+    }
+
+    // Process any remaining data in the buffer (partial lines from crash output)
+    if (!lineBuffer.empty()) {
+        logger::info("PythonBridge [python-final]: {}", lineBuffer.substr(0, 500));
+    }
+
+    // Log exit code for diagnostics
+    if (m_hProcess) {
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(m_hProcess, &exitCode)) {
+            logger::info("PythonBridge: Process exit code: {} (0x{:X})", exitCode, exitCode);
         }
     }
 

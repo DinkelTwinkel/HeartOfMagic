@@ -503,13 +503,15 @@
                                     <input type="range" id="popup-globe-particle-radius" min="10" max="150" step="5" value="50">
                                     <span id="popup-globe-particle-radius-val">50</span></div>
                             </div>
-                            <div class="popup-row-3">
+                            <div class="popup-row-4">
                                 <div class="popup-cell"><label data-i18n="settings.render.animate">Animate</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.bgFill">Bg Fill</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-globe-bg-fill" checked><span class="toggle-slider"></span></label></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.trail">Trail</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-trail" checked><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Core</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-core"><span class="toggle-slider"></span></label></div>
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.speed">Speed</label>
@@ -847,8 +849,8 @@
                             <span class="btn-icon">[AI]</span> <span data-i18n="footer.llm">LLM</span>
                         </button>
                         <span class="spell-count">
-                            <span id="total-count">0</span> spells | 
-                            <span id="unlocked-count">0</span> unlocked
+                            <span id="total-count">0</span> <span data-i18n="footer.spellsLabel">spells</span> |
+                            <span id="unlocked-count">0</span> <span data-i18n="footer.unlockedLabel">unlocked</span>
                         </span>
                     </div>
                     <div class="footer-center">

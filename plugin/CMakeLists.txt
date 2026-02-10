@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.21)
 # ============================================================================
 project(
     SpellLearning
-    VERSION 2.1.0
+    VERSION 2.2.0
     DESCRIPTION "AI-Generated Spell Learning Tree System"
     LANGUAGES CXX
 )
@@ -35,6 +35,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 find_package(spdlog CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(xbyak CONFIG REQUIRED)
+find_package(miniz CONFIG REQUIRED)
 
 # CommonLib configuration - use shared library from workspace
 set(COMMONLIB_PATH "${CMAKE_SOURCE_DIR}/../../../shared/CommonLibSSE-NG" CACHE PATH "Path to CommonLibSSE-NG")
@@ -100,6 +101,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     spdlog::spdlog
     nlohmann_json::nlohmann_json
     xbyak::xbyak
+    miniz::miniz
 )
 
 # Unity build - combines .cpp files to reduce redundant header parsing

@@ -1027,6 +1027,7 @@
             _prmLog('CYCLE DETECTION: Found ' + cycleLocks.length + ' lock edges in cycles, removing...');
             var removedCount = _removeLockEdges(cycleLocks, allNodesAfter);
             lockCount -= removedCount;
+            if (lockCount < 0) lockCount = 0;
             _prmLog('Removed ' + removedCount + ' deadlock-causing locks, ' + lockCount + ' locks remain');
         } else {
             _prmLog('Cycle detection passed - no deadlocks in combined tree+lock graph');
@@ -1219,6 +1220,7 @@
                 _prmLog('CYCLE DETECTION: Found ' + cycleLocks.length + ' lock edges in cycles, removing...');
                 var removedCount = _removeLockEdges(cycleLocks, nlpNodes);
                 lockCount -= removedCount;
+                if (lockCount < 0) lockCount = 0;
                 skippedCount += removedCount;
                 _prmLog('Removed ' + removedCount + ' deadlock-causing locks, ' + lockCount + ' locks remain');
             } else {
@@ -2193,6 +2195,16 @@
         if (applyBtn) {
             applyBtn.addEventListener('click', function() {
                 _prmLog('Apply Locks button clicked');
+
+                // Clear existing locks before reapplying (same as autoApplyLocks)
+                var clrNodes = _getAllNodes();
+                if (clrNodes) {
+                    clrNodes.forEach(function(node) {
+                        if (node.locks) node.locks = [];
+                    });
+                }
+                _cachedPosMap = null;
+
                 var request = buildLockRequest();
                 if (!request || request.eligible.length === 0) {
                     _prmLog('No eligible spells found - aborting apply');

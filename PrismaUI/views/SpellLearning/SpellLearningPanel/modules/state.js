@@ -47,6 +47,7 @@ var settings = {
     particleTrailEnabled: true,
     globeBgFill: true,
     globeParticleRadius: 50,  // Separate control for globe particle area radius
+    particleCoreEnabled: false,  // Replace center text with vibrating particle core
     
     heartBgColor: '#000000',
     heartRingColor: '#b8a878',

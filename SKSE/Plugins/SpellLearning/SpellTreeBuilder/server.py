@@ -32,16 +32,35 @@ if _script_dir not in sys.path:
 # Add PrismaUI module python dirs to sys.path so each growth mode's
 # bundled Python builder can be imported (modularity: each module
 # bundles its own builder alongside its JS files).
+# Dynamic discovery: any modules/*/python/ dir is auto-added.
 _prisma_modules = Path(__file__).resolve().parent.parent.parent.parent.parent / \
     "PrismaUI" / "views" / "SpellLearning" / "SpellLearningPanel" / "modules"
 
-for _subdir in ['classic/python', 'tree/python']:
-    _mod_path = str(_prisma_modules / _subdir)
-    if _mod_path not in sys.path:
-        sys.path.insert(0, _mod_path)
+if _prisma_modules.is_dir():
+    for _subdir in _prisma_modules.glob('*/python'):
+        if _subdir.is_dir():
+            _mod_path = str(_subdir)
+            if _mod_path not in sys.path:
+                sys.path.insert(0, _mod_path)
+else:
+    # Fallback to hardcoded paths if parent dir not found
+    for _subdir in ['classic/python', 'tree/python']:
+        _mod_path = str(_prisma_modules / _subdir)
+        if os.path.isdir(_mod_path) and _mod_path not in sys.path:
+            sys.path.insert(0, _mod_path)
 
 # Log file for debug output (NOT stdout)
 LOG_FILE = Path(__file__).parent / "server.log"
+
+# Command registry: builders self-register so server.py doesn't need
+# hardcoded if/elif chains for each mode. Built-in commands (ping,
+# shutdown, prm_score) are handled directly in main().
+COMMAND_HANDLERS = {}
+
+
+def register_command(name, handler):
+    """Register a command handler. Called by builder modules on import."""
+    COMMAND_HANDLERS[name] = handler
 
 
 def log(msg):
@@ -85,27 +104,28 @@ def main():
     _build_tree_import_error = None
     try:
         from tree_build_tree import build_tree_from_data
-        log("Imported build_tree_from_data from tree module")
+        register_command('build_tree', build_tree_from_data)
+        log("Imported + registered build_tree_from_data from tree module")
     except Exception:
         try:
             from build_tree import build_tree_from_data
-            log("Imported build_tree_from_data from local fallback")
+            register_command('build_tree', build_tree_from_data)
+            log("Imported + registered build_tree_from_data from local fallback")
         except Exception as e:
             _build_tree_import_error = f"{type(e).__name__}: {e}"
             log(f"WARNING: Could not import build_tree_from_data: {_build_tree_import_error}")
             log(f"Traceback:\n{traceback.format_exc()}")
-            build_tree_from_data = None
 
     # Classic Growth builder (tier-first)
     _classic_build_import_error = None
     try:
         from classic_build_tree import classic_build_tree_from_data
-        log("Imported classic_build_tree_from_data from classic module")
+        register_command('build_tree_classic', classic_build_tree_from_data)
+        log("Imported + registered classic_build_tree_from_data from classic module")
     except Exception as e:
         _classic_build_import_error = f"{type(e).__name__}: {e}"
         log(f"WARNING: Could not import classic_build_tree_from_data: {_classic_build_import_error}")
         log(f"Traceback:\n{traceback.format_exc()}")
-        classic_build_tree_from_data = None
 
     try:
         from prereq_master_scorer import process_request as prm_process
@@ -114,6 +134,8 @@ def main():
         log(f"WARNING: Could not import prereq_master_scorer: {e}")
         log(f"Traceback:\n{traceback.format_exc()}")
         prm_process = None
+
+    log(f"Registered commands: {list(COMMAND_HANDLERS.keys())}")
 
     # Pre-import sklearn so first build_tree call doesn't pay the cost
     try:
@@ -142,6 +164,7 @@ def main():
 
             log(f"Received command: {command} (id: {request_id})")
 
+            # Built-in commands (not in registry)
             if command == "shutdown":
                 log("Shutdown requested")
                 send_response(request_id, True, {"status": "shutting_down"})
@@ -149,57 +172,6 @@ def main():
 
             elif command == "ping":
                 send_response(request_id, True, {"status": "alive", "pid": os.getpid()})
-
-            elif command == "build_tree":
-                if build_tree_from_data is None:
-                    error_msg = "build_tree module failed to load"
-                    if _build_tree_import_error:
-                        error_msg += f": {_build_tree_import_error}"
-                    error_msg += ". Please report this error on the mod page."
-                    send_response(request_id, False, error=error_msg)
-                    continue
-
-                spells = data.get("spells", [])
-                config = data.get("config", {})
-
-                # Pass fallback flag from request into config for theme discovery
-                if data.get("fallback"):
-                    config["fallback"] = True
-
-                log(f"build_tree: {len(spells)} spells, config keys: {list(config.keys())}")
-                start = datetime.now()
-
-                result = build_tree_from_data(spells, config)
-
-                elapsed = (datetime.now() - start).total_seconds()
-                log(f"build_tree completed in {elapsed:.2f}s")
-
-                send_response(request_id, True, result)
-
-            elif command == "build_tree_classic":
-                if classic_build_tree_from_data is None:
-                    error_msg = "classic_build_tree module failed to load"
-                    if _classic_build_import_error:
-                        error_msg += f": {_classic_build_import_error}"
-                    error_msg += ". Please report this error on the mod page."
-                    send_response(request_id, False, error=error_msg)
-                    continue
-
-                spells = data.get("spells", [])
-                config = data.get("config", {})
-
-                if data.get("fallback"):
-                    config["fallback"] = True
-
-                log(f"build_tree_classic: {len(spells)} spells, config keys: {list(config.keys())}")
-                start = datetime.now()
-
-                result = classic_build_tree_from_data(spells, config)
-
-                elapsed = (datetime.now() - start).total_seconds()
-                log(f"build_tree_classic completed in {elapsed:.2f}s")
-
-                send_response(request_id, True, result)
 
             elif command == "prm_score":
                 if prm_process is None:
@@ -216,6 +188,26 @@ def main():
                 log(f"prm_score completed in {elapsed:.2f}s")
 
                 send_response(request_id, result.get("success", False), result)
+
+            elif command in COMMAND_HANDLERS:
+                # Registry-based command dispatch (tree builders, etc.)
+                handler = COMMAND_HANDLERS[command]
+
+                spells = data.get("spells", [])
+                config = data.get("config", {})
+
+                if data.get("fallback"):
+                    config["fallback"] = True
+
+                log(f"{command}: {len(spells)} spells, config keys: {list(config.keys())}")
+                start = datetime.now()
+
+                result = handler(spells, config)
+
+                elapsed = (datetime.now() - start).total_seconds()
+                log(f"{command} completed in {elapsed:.2f}s")
+
+                send_response(request_id, True, result)
 
             else:
                 send_response(request_id, False, error=f"Unknown command: {command}")

@@ -1,8 +1,15 @@
 Scriptname DEST_ISL_PlayerSpellLearningScript extends ReferenceAlias
 ; =============================================================================
-; PATCHED by Heart of Magic — adds SpellLearning_ISL study progress callbacks
-; Original: ISL - DESTified v1.4.5 by IAmNotSimon
-; Changes marked with "; [HoM]"
+; MERGED COMPATIBILITY PATCH — Heart of Magic + Sit Down and Read + GTS Traits
+; Base: ISL - DESTified v1.4.5 by IAmNotSimon
+;
+; Merged features:
+;   [HoM]   SpellLearning_ISL study progress + completion callbacks
+;   [SDR]   GPMA/OAR animation system, ImprovedCameraSE + TDM compat
+;   [GTS]   Bookworm Trait study speed bonus
+;   [FIX]   OnPlayerLoadGame save-load re-registration
+;
+; All features degrade gracefully if the respective mod is not installed.
 ; =============================================================================
 
 import DEST_AliasExt
@@ -40,6 +47,7 @@ Location Property WinterholdCollegeArcanaeumLocation auto
 
 MagicEffect Property RestedSkillEffect auto
 MagicEffect Property RestedWellSkillEffect auto
+MagicEffect Property BookwormTraitEffect auto		; [GTS] None if GTS CE not installed
 
 Keyword Property LocTypeInn auto
 Keyword Property LocTypePlayerHouse auto
@@ -61,6 +69,7 @@ GlobalVariable Property extraBonuses auto
 GlobalVariable Property MagSkillReq auto
 GlobalVariable Property timeMod auto
 GlobalVariable Property forgetSpell auto
+GlobalVariable Property BookwormTraitStudyBoost auto	; [GTS] None if GTS CE not installed
 
 GlobalVariable Property baseMagReq auto
 GlobalVariable Property baseSchoolReq auto
@@ -72,6 +81,14 @@ string person = "You"
 
 Event OnInit()
 	PlayerRef = Game.GetPlayer()
+	RegisterForSpellTomeReadEvent(self)
+EndEvent
+
+; [FIX] Re-register spell tome event on save load (prevents silent breakage)
+Event OnPlayerLoadGame()
+	PlayerRef = Game.GetPlayer()
+	UnregisterForSpellTomeReadEvent(self)
+	Utility.Wait(0.3)
 	RegisterForSpellTomeReadEvent(self)
 EndEvent
 
@@ -188,11 +205,15 @@ function CalculatehoursToMaster(Spell akSpell) ;D&D = 2 hours per level, check 1
 	endif
 ;	float exp = SpellLevel / (math.pow(playerSchoolLevel, 1.3))
 	float exp = math.sqrt(SpellLevel / playerSchoolLevel)
-;	debug.notification("exp is:" + exp)
 ;	Int baseHours = Round(math.pow(SpellLevel, exp) * math.sqrt(SpellLevel))
 	float baseHours = math.sqrt(math.pow(SpellLevel, exp)) * 2
-;	debug.notification("base hour is:" + baseHours)
-	hoursToMaster.setValue(Round(baseHours / mult * timeMod.GetValue()) as int);add here multipliers
+	hoursToMaster.setValue(Round(baseHours / mult * timeMod.GetValue()) as int)
+;	[GTS] Bookworm Trait — reduces study time. Property is None if GTS CE not installed.
+	if BookwormTraitEffect && PlayerRef.hasMagicEffect(BookwormTraitEffect)
+		if BookwormTraitStudyBoost && BookwormTraitStudyBoost.GetValue() > 0
+			hoursToMaster.setValue(Round(baseHours / mult * timeMod.GetValue() / BookwormTraitStudyBoost.GetValue()) as int)
+		endif
+	endif
 	if hoursToMaster.getValue() < 1
 		hoursToMaster.setValue(1)
 	endif
@@ -215,20 +236,46 @@ function Study(int hoursStudied, Spell akSpell)
 		Utility.Wait(1.5)
 	endif
 
-	int iCameraState = Game.GetCameraState()
+	; [SDR] Camera state tracking — only force back to 1st person if WE forced 3rd
+	int iCameraState
+	int iCameraPluginVersion = SKSE.GetPluginVersion("ImprovedCameraSE")
+	; [SDR] TDM detection for head-tracking disable
+	int iTDMVersion = SKSE.GetPluginVersion("TrueDirectionalMovement")
 
 	if playAnim.GetValue()
-		if iCameraState == 0
-			Game.ForceThirdPerson()
+		; [SDR] Disable TDM head-tracking during study (safe no-op if TDM not installed)
+		if iTDMVersion >= 0
+			TrueDirectionalMovement.ToggleDisableHeadtracking("DEST_ISL.esp", True)
 		endif
+
 		if (PlayerRef.GetSitState() >= 3)		; choose and begin animation
-			PlayerRef.PlayIdle(IdleBookSitting_Reading)
+			; [SDR] Only force 3rd person if in 1st person AND ImprovedCameraSE not present
+			If PlayerRef.GetAnimationVariableInt("i1stPerson") == 1 && iCameraPluginVersion < 0
+				iCameraState = 1
+				Game.ForceThirdPerson()
+			EndIf
+
+			; [SDR] GPMA animation system (works with OAR if installed, vanilla idle fallback otherwise)
+			PlayerRef.SetAnimationVariableInt("iGPMAOffsetType", 10)
+			Debug.SendAnimationEvent(PlayerRef, "OffsetGPMA")
 			Utility.Wait(3)
-			PlayerRef.PlayIdle(IdleBookSitting_TurnManyPages)
+			PlayerRef.SetAnimationVariableInt("iGPMAOffsetType", 11)
 		else
-			PlayerRef.PlayIdle(IdleBook_Reading)
-			Utility.Wait(3)
-			PlayerRef.PlayIdle(IdleBook_TurnManyPages)
+			; [SDR] Standing: use GPMA in 1st person, classic idle in 3rd person
+			If PlayerRef.GetAnimationVariableInt("i1stPerson") == 1
+				PlayerRef.SetAnimationVariableInt("iGPMAOffsetType", 10)
+				Debug.SendAnimationEvent(PlayerRef, "OffsetGPMA")
+				Utility.Wait(3)
+			else
+				PlayerRef.PlayIdle(IdleBook_Reading)
+				Utility.Wait(3)
+				PlayerRef.PlayIdle(IdleBook_TurnManyPages)
+			EndIf
+		endif
+
+		; [SDR] Re-enable TDM head-tracking
+		if iTDMVersion >= 0
+			TrueDirectionalMovement.ToggleDisableHeadtracking("DEST_ISL.esp", False)
 		endif
 	endif
 
@@ -255,6 +302,9 @@ function Study(int hoursStudied, Spell akSpell)
 			Utility.Wait(1)
 		endwhile
 	endif
+
+	; [SDR] Reset GPMA animation state after fade
+	PlayerRef.SetAnimationVariableInt("iGPMAOffsetType", 10)
 
 	Utility.Wait(2)
 
@@ -297,11 +347,15 @@ function Study(int hoursStudied, Spell akSpell)
 		hoursStudiedTotal.setValue(0)
 	endif
 
+	; [SDR] Stop GPMA animation and reset
 	PlayerRef.playIdle(IdleStop_Loose)
+	Debug.SendAnimationEvent(PlayerRef, "OffsetGPMAStop")
+	PlayerRef.SetAnimationVariableInt("iGPMAOffsetType", 0)
 
 	Utility.Wait(1)
 
-	if playAnim.GetValue() && iCameraState == 0
+	; [SDR] Only restore 1st person if we were the ones that forced 3rd
+	if playAnim.GetValue() && iCameraState == 1
 		Game.ForceFirstPerson()
 	endif
 

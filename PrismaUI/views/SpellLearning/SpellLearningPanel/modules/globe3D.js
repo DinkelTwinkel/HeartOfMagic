@@ -434,6 +434,8 @@ var Globe3D = {
         this.project();
 
         var rgb = this.color;
+        var centerZ = this.globeCenterZ;
+        var radius = this.radius;
         var minScale = this._minScale || 0.5;
         var maxScale = this._maxScale || 1.5;
         var scaleRange = maxScale - minScale;
@@ -454,11 +456,19 @@ var Globe3D = {
             if (depthNorm < 0) depthNorm = 0;
             if (depthNorm > 1) depthNorm = 1;
 
+            // Fresnel: edge particles brighter, center particles dimmer
+            // Surface normal Z component vs camera view direction (0,0,-1)
+            var normalZ = (p.z - centerZ) / radius;
+            if (normalZ > 1) normalZ = 1;
+            if (normalZ < -1) normalZ = -1;
+            var fresnel = 1 - Math.abs(normalZ);  // 0 at front/back poles, 1 at silhouette edge
+            var fresnelFactor = 0.35 + 0.65 * fresnel;  // 0.35 center, 1.0 edge
+
             // Size with projection, using lifecycle currentSize
             var size = (p.currentSize || p.size) * p.projScale;
 
-            // Alpha: back particles very dim, front particles bright
-            var alpha = p.alpha * (0.15 + 0.85 * depthNorm);
+            // Alpha: combine depth, lifecycle, and fresnel
+            var alpha = p.alpha * (0.15 + 0.85 * depthNorm) * fresnelFactor;
             if (alpha > 1) alpha = 1;
 
             if (i >= glowStart && size > 1.5) {

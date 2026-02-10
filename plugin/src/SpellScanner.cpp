@@ -785,13 +785,6 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 continue;
             }
             
-            // Filter out spells with absurdly high magicka costs (usually NPC-only)
-            float magickaCost = spell->CalculateMagickaCost(nullptr);
-            if (magickaCost > 1000.0f) {
-                filteredCount++;
-                continue;
-            }
-            
             // Filter out spells with no effects or broken effect data
             bool hasValidEffect = false;
             for (auto* effect : spell->effects) {

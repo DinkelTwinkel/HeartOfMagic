@@ -32,6 +32,10 @@ from typing import Dict, List, Any, Optional, Tuple
 from core.node import TreeNode, link_nodes
 from theme_discovery import extract_spell_text, discover_themes_per_school
 from validator import validate_tree, get_validation_summary, fix_unreachable_nodes
+from prereq_master_scorer import tokenize, build_text, compute_tfidf
+from prereq_master_scorer import cosine_similarity as _cosine_sim
+from prereq_master_scorer import char_ngram_similarity
+from spell_grouper import get_spell_primary_theme
 
 # Log to SpellTreeBuilder's log directory
 LOG_FILE = Path(__file__).resolve().parent.parent.parent.parent.parent.parent.parent / \
@@ -78,6 +82,24 @@ def classic_build_tree_from_data(spells: list, config_dict: dict) -> dict:
     config.setdefault('auto_fix_unreachable', True)
     config.setdefault('prefer_vanilla_roots', True)
 
+    # Adapt max_children based on grid layout hint from JS
+    grid_hint = config.get('grid_hint')
+    if grid_hint:
+        mode = grid_hint.get('mode', 'sun')
+        avg_pts = grid_hint.get('avgPointsPerSchool', 0)
+        _log(f"Grid hint: mode={mode}, schools={grid_hint.get('schoolCount')}, avgPts={avg_pts}")
+
+        # SUN mode has narrower wedges per school — fewer children keeps tree thin
+        # FLAT mode has wider horizontal space — more children fills it out
+        if mode == 'sun' and config['max_children_per_node'] > 2:
+            if avg_pts < 40:
+                config['max_children_per_node'] = 2
+                _log(f"  SUN + tight grid → max_children reduced to 2")
+        elif mode == 'flat' and config['max_children_per_node'] < 4:
+            if avg_pts > 60:
+                config['max_children_per_node'] = 4
+                _log(f"  FLAT + spacious grid → max_children increased to 4")
+
     # Group spells by school
     school_spells: Dict[str, List[dict]] = defaultdict(list)
     for spell in spells:
@@ -97,8 +119,16 @@ def classic_build_tree_from_data(spells: list, config_dict: dict) -> dict:
         _log(f"Theme discovery failed: {e}")
         themes_per_school = {}
 
-    # Build NLP similarity data for parent matching
-    nlp_data = _build_nlp_data(spells)
+    # Merge with vanilla hints to ensure coverage for known schools
+    try:
+        from theme_discovery import merge_with_hints
+        themes_per_school = merge_with_hints(themes_per_school,
+                                              max_themes=config.get('top_themes_per_school', 8) + 4)
+    except Exception as e:
+        _log(f"merge_with_hints failed (non-critical): {e}")
+
+    # Build TF-IDF similarity matrix for parent matching
+    similarities = _compute_similarity_matrix(spells)
 
     # Build each school's tree
     tree_data = {'version': '1.0', 'schools': {}}
@@ -110,7 +140,7 @@ def classic_build_tree_from_data(spells: list, config_dict: dict) -> dict:
         school_themes = themes_per_school.get(school_name, [])
         result = _build_school_tree(
             school_spell_list, school_name, school_themes,
-            nlp_data, max_children, config
+            similarities, max_children, config
         )
         if result:
             tree_data['schools'][school_name] = result
@@ -159,7 +189,7 @@ def _build_school_tree(
     spells: List[dict],
     school_name: str,
     themes: List[str],
-    nlp_data: dict,
+    similarities: dict,
     max_children: int,
     config: dict
 ) -> Optional[dict]:
@@ -237,7 +267,7 @@ def _build_school_tree(
 
             # Find best parent from available nodes at LOWER tiers
             parent = _find_best_parent(
-                node, available, tier_idx, max_children, nlp_data, themes
+                node, available, tier_idx, max_children, similarities, themes
             )
 
             if parent:
@@ -264,7 +294,7 @@ def _build_school_tree(
     unconnected = [fid for fid in nodes if fid not in connected]
     if unconnected:
         _log(f"  {school_name}: {len(unconnected)} unconnected, force-attaching")
-        _force_connect(unconnected, nodes, connected, available, max_children)
+        _force_connect(unconnected, nodes, connected, available, max_children, similarities)
 
     # Serialize
     node_dicts = [n.to_dict() for n in nodes.values()]
@@ -312,7 +342,7 @@ def _is_vanilla(form_id: str) -> bool:
 
 
 def _assign_themes(nodes: Dict[str, TreeNode], spells: List[dict], themes: List[str]):
-    """Assign theme tags to nodes based on spell text matching."""
+    """Assign theme tags to nodes based on fuzzy spell-theme matching."""
     if not themes:
         return
 
@@ -321,46 +351,117 @@ def _assign_themes(nodes: Dict[str, TreeNode], spells: List[dict], themes: List[
         node = nodes.get(fid)
         if not node:
             continue
-
-        text = extract_spell_text(spell).lower()
-        best_theme = None
-        best_count = 0
-
-        for theme in themes:
-            # Count theme keyword occurrences in spell text
-            count = text.count(theme.lower())
-            if count > best_count:
-                best_count = count
-                best_theme = theme
-
-        if best_theme:
-            node.theme = best_theme
+        theme, score = get_spell_primary_theme(spell, themes)
+        node.theme = theme if score > 30 else None
 
 
-def _build_nlp_data(spells: List[dict]) -> dict:
-    """Build spell text data for NLP similarity matching."""
-    texts = {}
-    for spell in spells:
-        fid = spell.get('formId', '')
-        texts[fid] = extract_spell_text(spell).lower()
-    return {'texts': texts}
+def _compute_similarity_matrix(spells: List[dict]) -> dict:
+    """Pre-compute pairwise TF-IDF, name, and effect-name similarity for all spells.
 
+    Effect-name similarity is the key element-grouping signal: spells with
+    matching effect names (e.g. both "Fire Damage") score 1.0, while
+    mismatched effects ("Fire Damage" vs "Frost Damage") score ~0.36.
+    This groups spells by element without any hardcoded element lists —
+    the game's own effect names provide the classification.
+    """
+    # Build documents
+    form_ids = []
+    documents = []
+    spell_names = {}
+    spell_effect_names: Dict[str, List[str]] = {}
 
-def _text_similarity(text_a: str, text_b: str) -> float:
-    """Simple word overlap similarity (no sklearn needed)."""
-    if not text_a or not text_b:
-        return 0.0
+    for s in spells:
+        fid = s.get('formId', '')
+        if not fid:
+            continue
+        form_ids.append(fid)
+        spell_names[fid] = s.get('name', '')
 
-    words_a = set(text_a.split())
-    words_b = set(text_b.split())
+        # Extract effect names for element affinity
+        raw_effects = s.get('effects', []) or s.get('effectNames', []) or []
+        effect_names = []
+        for e in raw_effects:
+            if isinstance(e, dict):
+                ename = e.get('name', '')
+            elif isinstance(e, str):
+                ename = e
+            else:
+                continue
+            if ename:
+                effect_names.append(ename)
+        spell_effect_names[fid] = effect_names
 
-    if not words_a or not words_b:
-        return 0.0
+        effects_flat = [e if isinstance(e, str) else e.get('name', '') for e in raw_effects]
+        doc_text = build_text({
+            'name': s.get('name', ''),
+            'desc': s.get('description', '') or s.get('desc', ''),
+            'effects': effects_flat
+        })
+        documents.append(doc_text)
 
-    intersection = words_a & words_b
-    union = words_a | words_b
+    # Tokenize and compute TF-IDF
+    tokenized = [tokenize(doc) for doc in documents]
+    tfidf_vectors = compute_tfidf(tokenized)
 
-    return len(intersection) / len(union) if union else 0.0
+    n = len(form_ids)
+
+    # Pre-compute pairwise cosine similarity (text)
+    text_sims = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            sim = _cosine_sim(tfidf_vectors[i], tfidf_vectors[j])
+            if sim > 0.05:
+                key_ab = f"{form_ids[i]}:{form_ids[j]}"
+                key_ba = f"{form_ids[j]}:{form_ids[i]}"
+                text_sims[key_ab] = sim
+                text_sims[key_ba] = sim
+
+    # Pre-compute pairwise char n-gram similarity (names)
+    name_sims = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            name_a = spell_names.get(form_ids[i], '')
+            name_b = spell_names.get(form_ids[j], '')
+            if name_a and name_b:
+                nsim = char_ngram_similarity(name_a, name_b)
+                if nsim > 0.1:
+                    key_ab = f"{form_ids[i]}:{form_ids[j]}"
+                    key_ba = f"{form_ids[j]}:{form_ids[i]}"
+                    name_sims[key_ab] = nsim
+                    name_sims[key_ba] = nsim
+
+    # Pre-compute effect-name affinity (element grouping signal)
+    # Uses char n-gram on effect names: "Fire Damage" ↔ "Fire Damage" = 1.0
+    # "Fire Damage" ↔ "Frost Damage" ≈ 0.36. Data-driven, no hardcoded lists.
+    effect_sims = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            fid_a = form_ids[i]
+            fid_b = form_ids[j]
+            effs_a = spell_effect_names.get(fid_a, [])
+            effs_b = spell_effect_names.get(fid_b, [])
+
+            if not effs_a or not effs_b:
+                continue
+
+            # Best-match: max similarity across all effect-name pairs
+            best_sim = 0.0
+            for ea in effs_a:
+                for eb in effs_b:
+                    sim = char_ngram_similarity(ea, eb)
+                    if sim > best_sim:
+                        best_sim = sim
+
+            if best_sim > 0.3:
+                key_ab = f"{fid_a}:{fid_b}"
+                key_ba = f"{fid_b}:{fid_a}"
+                effect_sims[key_ab] = best_sim
+                effect_sims[key_ba] = best_sim
+
+    _log(f"  Similarity matrix: {len(text_sims)//2} text, {len(name_sims)//2} name, "
+         f"{len(effect_sims)//2} effect pairs")
+
+    return {'text_sims': text_sims, 'name_sims': name_sims, 'effect_sims': effect_sims}
 
 
 def _find_best_parent(
@@ -368,72 +469,87 @@ def _find_best_parent(
     available: Dict[int, List[TreeNode]],
     tier_idx: int,
     max_children: int,
-    nlp_data: dict,
+    similarities: dict,
     themes: List[str]
 ) -> Optional[TreeNode]:
     """Find the best parent for a node from available parents at lower tiers."""
 
-    # Collect candidates: parents from LOWER tiers, and same tier if tier_idx == 0
+    # Gradual candidate search: widen one tier at a time
     candidates = []
-    for d in range(max(0, tier_idx - 1), tier_idx):
-        candidates.extend(available.get(d, []))
+    for tier_distance in range(1, tier_idx + 2):
+        target_d = tier_idx - tier_distance
+        if target_d < 0:
+            break
+        tier_cands = available.get(target_d, [])
+        valid_cands = [c for c in tier_cands if len(c.children) < max_children]
+        for c in valid_cands:
+            candidates.append((c, tier_distance))
+        if candidates:
+            break  # Found candidates at this distance
 
-    # Also allow same-tier parents if no lower-tier candidates
-    if not candidates and tier_idx > 0:
-        # Try all lower tiers
-        for d in range(0, tier_idx):
-            candidates.extend(available.get(d, []))
+    # For tier_idx == 0 (Novice), check same tier (other Novice nodes that are roots)
+    if not candidates and tier_idx == 0:
+        tier_cands = available.get(0, [])
+        valid_cands = [c for c in tier_cands if len(c.children) < max_children and c.form_id != node.form_id]
+        for c in valid_cands:
+            candidates.append((c, 0))
 
-    # Last resort: any available parent
+    # Last resort: expand capacity
     if not candidates:
         for d in sorted(available.keys()):
-            candidates.extend(available.get(d, []))
+            for p in available.get(d, []):
+                if len(p.children) < max_children + 2:
+                    candidates.append((p, abs(tier_idx - d) + 5))
+            if candidates:
+                break
 
     if not candidates:
         return None
 
-    # Filter by capacity
-    candidates = [c for c in candidates if len(c.children) < max_children]
-    if not candidates:
-        # Expand capacity as last resort
-        for d in sorted(available.keys()):
-            for p in available.get(d, []):
-                if len(p.children) < max_children + 2:
-                    candidates.append(p)
-        if not candidates:
-            return None
-
     # Score candidates
-    node_text = nlp_data['texts'].get(node.form_id, '')
     scored = []
 
-    for candidate in candidates:
+    for candidate, tier_distance in candidates:
         score = 0.0
 
-        # Theme match: strong bonus for same theme
+        # Tier distance penalty (adjacent = 0 penalty, further = increasing penalty)
+        score -= max(0, (tier_distance - 1)) * 5.0
+
+        key = f"{node.form_id}:{candidate.form_id}"
+
+        # Effect-name affinity: strongest element-grouping signal.
+        # Data-driven from the game's own effect names (no hardcoded element lists).
+        # "Fire Damage" ↔ "Fire Damage" = 1.0, "Fire Damage" ↔ "Frost Damage" ≈ 0.36
+        effect_sim = similarities['effect_sims'].get(key, 0.0)
+        score += effect_sim * 40.0
+
+        # Theme match: moderate bonus (reduced — effect affinity is more precise)
         if node.theme and candidate.theme:
             if node.theme == candidate.theme:
-                score += 10.0
+                # Reduce theme bonus when effect names disagree (cross-element)
+                theme_bonus = 25.0 if effect_sim > 0.5 else 15.0
+                score += theme_bonus
             else:
-                score -= 2.0
+                score -= 10.0
 
-        # NLP text similarity
-        cand_text = nlp_data['texts'].get(candidate.form_id, '')
-        sim = _text_similarity(node_text, cand_text)
-        score += sim * 5.0
+        # Combined NLP similarity: text TF-IDF + name morphology
+        text_sim = similarities['text_sims'].get(key, 0.0)
+        name_sim = similarities['name_sims'].get(key, 0.0)
+        combined_sim = text_sim * 0.4 + name_sim * 0.6
+        score += combined_sim * 30.0
 
         # Prefer parents with fewer children (balance the tree)
         child_count = len(candidate.children)
-        score -= child_count * 1.5
+        score -= child_count * 8.0
 
         # Slight preference for parents at depth = tier_idx - 1 (immediate predecessor)
         if candidate.depth == tier_idx - 1:
-            score += 2.0
+            score += 10.0
         elif candidate.depth == tier_idx - 2:
-            score += 1.0
+            score += 5.0
 
         # Small random jitter for variety
-        score += random.uniform(-0.5, 0.5)
+        score += random.uniform(-2.0, 2.0)
 
         scored.append((score, candidate))
 
@@ -446,30 +562,68 @@ def _force_connect(
     nodes: Dict[str, TreeNode],
     connected: set,
     available: Dict[int, List[TreeNode]],
-    max_children: int
+    max_children: int,
+    similarities: dict = None
 ):
-    """Force-connect remaining unconnected nodes to any available parent."""
+    """Force-connect remaining unconnected nodes to any available parent.
+
+    Respects tier ordering: prefers parents at lower or equal tier.
+    Uses effect-name affinity to group same-element spells together.
+    """
+    if similarities is None:
+        similarities = {'text_sims': {}, 'name_sims': {}, 'effect_sims': {}}
+
     for fid in unconnected:
         node = nodes.get(fid)
         if not node or fid in connected:
             continue
 
-        # Find least-loaded connected node
+        node_tier_idx = TIER_INDEX.get(node.tier, 0)
+
+        # Score connected nodes: strongly prefer correct tier ordering
         best_parent = None
-        best_load = float('inf')
+        best_score = -float('inf')
 
         for cid in connected:
             cnode = nodes.get(cid)
-            if cnode and len(cnode.children) < best_load:
-                best_load = len(cnode.children)
+            if not cnode:
+                continue
+            cnode_tier_idx = TIER_INDEX.get(cnode.tier, 0)
+            child_count = len(cnode.children)
+
+            score = 0.0
+
+            # Tier ordering: parent should be at lower or equal tier
+            if cnode_tier_idx <= node_tier_idx:
+                score += 100.0  # Correct direction
+                # Prefer immediate predecessor tier
+                tier_diff = node_tier_idx - cnode_tier_idx
+                score -= tier_diff * 5.0
+            else:
+                score -= 200.0  # Wrong direction — heavy penalty
+
+            key = f"{fid}:{cid}"
+
+            # Effect-name affinity (data-driven element grouping)
+            effect_sim = similarities['effect_sims'].get(key, 0.0)
+            score += effect_sim * 30.0
+
+            # Theme match (reduced weight — effect affinity is more precise)
+            if node.theme and cnode.theme and node.theme == cnode.theme:
+                score += 15.0
+
+            # Load balance
+            score -= child_count * 8.0
+
+            if score > best_score:
+                best_score = score
                 best_parent = cnode
 
         if best_parent:
             link_nodes(best_parent, node)
             # Set depth based on tier
-            tier_idx = TIER_INDEX.get(node.tier, 0)
-            node.depth = tier_idx
+            node.depth = node_tier_idx
             connected.add(fid)
 
             if len(node.children) < max_children:
-                available.setdefault(tier_idx, []).append(node)
+                available.setdefault(node_tier_idx, []).append(node)

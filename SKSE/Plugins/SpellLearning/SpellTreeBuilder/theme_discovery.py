@@ -26,7 +26,7 @@ SPELL_STOP_WORDS = [
     'spell', 'magic', 'magical', 'target', 'targets', 'effect', 'effects',
     'damage', 'point', 'points', 'second', 'seconds', 'per', 'for', 'the',
     'does', 'causes', 'cast', 'caster', 'casting', 'level', 'levels',
-    'health', 'magicka', 'stamina', 'restore', 'restores', 'drain', 'drains',
+    'health', 'magicka', 'stamina', 'drain', 'drains',
     # Skill level words (we use skillLevel field, not text)
     'novice', 'apprentice', 'adept', 'expert', 'master',
     # Common prepositions and articles

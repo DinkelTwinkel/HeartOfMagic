@@ -41,46 +41,46 @@ var TreePreviewFlat = {
         var isHoriz = s.direction === 'horizontal';
         var H = TreePreviewUtils.settingHTML;
         return '' +
-            '<div class="tree-preview-settings-title">Root Line Settings</div>' +
+            '<div class="tree-preview-settings-title">' + t('preview.flat.title') + '</div>' +
 
             // --- Toggles at top ---
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Direction</label>' +
+                '<label class="tree-preview-label">' + t('preview.flat.direction') + '</label>' +
                 '<div class="tree-preview-toggle-row">' +
                     '<button class="tree-preview-toggle-btn' + (isHoriz ? ' active' : '') + '" ' +
-                        'id="tpFlatDirH" data-dir="horizontal">Horizontal</button>' +
+                        'id="tpFlatDirH" data-dir="horizontal">' + t('preview.flat.horizontal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (!isHoriz ? ' active' : '') + '" ' +
-                        'id="tpFlatDirV" data-dir="vertical">Vertical</button>' +
+                        'id="tpFlatDirV" data-dir="vertical">' + t('preview.flat.vertical') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Section Split</label>' +
+                '<label class="tree-preview-label">' + t('preview.sectionSplit') + '</label>' +
                 '<div class="tree-preview-toggle-row">' +
                     '<button class="tree-preview-toggle-btn' + (!s.proportional ? ' active' : '') + '" ' +
-                        'id="tpFlatSplitEqual">Equal</button>' +
+                        'id="tpFlatSplitEqual">' + t('preview.equal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.proportional ? ' active' : '') + '" ' +
-                        'id="tpFlatSplitProp">Proportional</button>' +
+                        'id="tpFlatSplitProp">' + t('preview.proportional') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Growth Direction</label>' +
+                '<label class="tree-preview-label">' + t('preview.growthDirection') + '</label>' +
                 '<div class="tree-preview-toggle-row tree-preview-toggle-wrap">' +
                     '<button class="tree-preview-toggle-btn' + (!s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpFlatGrowNormal">Normal</button>' +
+                        'id="tpFlatGrowNormal">' + t('preview.flat.normal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpFlatGrowInvert">Invert</button>' +
+                        'id="tpFlatGrowInvert">' + t('preview.flat.invert') + '</button>' +
                 '</div>' +
             '</div>' +
 
             // --- Numeric inputs in responsive grid ---
             '<div class="tree-preview-settings-grid">' +
-                H('Line Length', 'tpFlatLength', 5, 9999, 5, s.linePoints) +
-                H('Node Size', 'tpFlatNodeSize', 1, 9999, 1, s.nodeSize) +
-                H('Roots / School', 'tpFlatRoots', 1, 9999, 1, s.rootsPerSchool) +
-                H('Clumping', 'tpFlatClump', 0, 100, 1, s.rootClumping, '%') +
-                H('Randomness', 'tpFlatRand', 0, 100, 1, s.rootRandomness, '%') +
+                H(t('preview.flat.lineLength'), 'tpFlatLength', 5, 9999, 5, s.linePoints) +
+                H(t('preview.nodeSize'), 'tpFlatNodeSize', 1, 9999, 1, s.nodeSize) +
+                H(t('preview.rootsPerSchool'), 'tpFlatRoots', 1, 9999, 1, s.rootsPerSchool) +
+                H(t('preview.clumping'), 'tpFlatClump', 0, 100, 1, s.rootClumping, '%') +
+                H(t('preview.randomness'), 'tpFlatRand', 0, 100, 1, s.rootRandomness, '%') +
             '</div>';
     },
 

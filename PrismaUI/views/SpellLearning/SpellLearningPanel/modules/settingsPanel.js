@@ -3049,6 +3049,20 @@ function initializeHeartSettings() {
         });
     }
 
+    // Particle core toggle (replaces center text with vibrating particles)
+    var particleCoreToggle = document.getElementById('popup-particle-core');
+    if (particleCoreToggle) {
+        particleCoreToggle.checked = settings.particleCoreEnabled === true;
+        particleCoreToggle.addEventListener('change', function() {
+            settings.particleCoreEnabled = this.checked;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._particleCoreEnabled = this.checked;
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
     // Show node names toggle
     var showNodeNamesPopup = document.getElementById('popup-show-node-names');
     if (showNodeNamesPopup) {
@@ -4088,6 +4102,7 @@ function applyHeartSettingsToRenderer() {
         CanvasRenderer._magicTextColor = settings.magicTextColor || settings.heartRingColor || '#ffecb3';
         CanvasRenderer._globeText = settings.globeText || 'HEART';
         CanvasRenderer._globeTextSize = settings.globeTextSize || 16;
+        CanvasRenderer._particleCoreEnabled = settings.particleCoreEnabled === true;
         
         // Starfield settings
         CanvasRenderer._starfieldEnabled = settings.starfieldEnabled !== false;

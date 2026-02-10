@@ -214,12 +214,19 @@ def validate_school_tree(
     
     # Convert nodes list to dictionary for easier lookup
     nodes: Dict[str, Dict[str, Any]] = {}
+    duplicate_ids = []
     for node in nodes_list:
         form_id = node.get('formId')
         if form_id:
+            if form_id in nodes:
+                duplicate_ids.append(form_id)
             nodes[form_id] = node
-    
+
     result.total_nodes = len(nodes)
+
+    # Check for duplicate formIds
+    if duplicate_ids:
+        result.add_warning(f"{school_name}: {len(duplicate_ids)} duplicate formId(s): {duplicate_ids[:5]}")
     
     # Check root exists
     if root_id not in nodes:

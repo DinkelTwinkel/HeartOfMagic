@@ -181,7 +181,7 @@ var BuildProgress = (function() {
     /**
      * Mark current stage as failed.
      */
-    function fail(errorMsg) {
+    function fail(errorMsg, retryCallback) {
         if (!_active) return;
 
         if (_currentStage) {
@@ -198,6 +198,23 @@ var BuildProgress = (function() {
         if (doneBtn) {
             doneBtn.textContent = t('buildProgress.close');
             doneBtn.classList.remove('hidden');
+        }
+
+        // Show retry-with-fallback button if callback provided
+        var retryBtn = _getEl('build-progress-retry-btn');
+        if (retryBtn) retryBtn.remove();
+        if (retryCallback && doneBtn && doneBtn.parentNode) {
+            retryBtn = document.createElement('button');
+            retryBtn.id = 'build-progress-retry-btn';
+            retryBtn.className = doneBtn.className;
+            retryBtn.textContent = 'Retry with Fallback';
+            retryBtn.style.marginLeft = '8px';
+            retryBtn.onclick = function() {
+                retryBtn.remove();
+                close();
+                retryCallback();
+            };
+            doneBtn.parentNode.appendChild(retryBtn);
         }
     }
 

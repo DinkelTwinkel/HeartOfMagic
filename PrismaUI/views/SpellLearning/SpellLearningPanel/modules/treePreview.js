@@ -122,7 +122,7 @@ var TreePreview = {
 
         return '' +
             '<div class="tree-preview-header">' +
-                '<span class="tree-preview-title">Root Base Preview</span>' +
+                '<span class="tree-preview-title">' + t('preview.title') + '</span>' +
             '</div>' +
             '<div class="tree-preview-tabs" id="treePreviewTabs">' +
                 tabsHTML +

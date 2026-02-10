@@ -657,6 +657,18 @@ var ClassicLayout = {
                             }
                         }
 
+                        // Tier ordering: parent should be at lower or equal tier
+                        var dfTierOrdMap = { 'Novice': 1, 'Apprentice': 2, 'Adept': 3, 'Expert': 4, 'Master': 5 };
+                        var defTierVal = dfTierOrdMap[def.skillLevel] || 3;
+                        var pnTierVal = dfTierOrdMap[pn.skillLevel] || 3;
+                        if (pnTierVal > defTierVal) {
+                            // Parent tier higher than child — wrong direction
+                            dfScore -= 300;
+                        } else if (pnTierVal === defTierVal - 1) {
+                            // Ideal: immediate predecessor tier
+                            dfScore += 30;
+                        }
+
                         // Fan-out cap: strongly discourage parents already at limit
                         var pnCC = parentChildCount[pn.formId] || 0;
                         if (pnCC >= FAN_OUT_CAP) {
@@ -797,6 +809,16 @@ var ClassicLayout = {
                         if (fpCandTheme === fpTheme) fpScore += 100;
                         else if (fpCandTheme && fpCandTheme !== '_none') fpScore -= 20;
                     }
+                    // Tier ordering: parent should be at lower or equal tier
+                    var fpTierMap = { 'Novice': 1, 'Apprentice': 2, 'Adept': 3, 'Expert': 4, 'Master': 5 };
+                    var fpNodeTier = fpTierMap[fpNode ? (fpNode.skillLevel || '') : ''] || 3;
+                    var fpCandTier = fpTierMap[fpCandidate.skillLevel || ''] || 3;
+                    if (fpCandTier > fpNodeTier) {
+                        fpScore -= 300; // Wrong direction
+                    } else if (fpCandTier === fpNodeTier - 1) {
+                        fpScore += 30; // Ideal predecessor tier
+                    }
+
                     // Fan-out cap: strongly discourage parents already at limit
                     var fpCandCC = parentChildCount[fpCandidate.formId] || 0;
                     if (fpCandCC >= FAN_OUT_CAP) fpScore -= 500;
@@ -1502,7 +1524,8 @@ var ClassicLayout = {
                     score -= Math.abs(rTier - orphanTier) * 5;
 
                     // Penalize parent at higher tier than orphan (wrong direction)
-                    if (rTier > orphanTier) score -= 20;
+                    // Must be strong enough to override theme match (+50)
+                    if (rTier > orphanTier) score -= 200;
 
                     // Load balance: prefer less-loaded nodes
                     score -= rChildCount * 3;

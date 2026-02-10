@@ -1175,7 +1175,7 @@ function renderPowerSteps() {
         // Stage label
         var labelSpan = document.createElement('span');
         labelSpan.className = 'power-step-label';
-        labelSpan.textContent = 'Stage ' + (index + 1);
+        labelSpan.textContent = t('progression.stageN', {n: index + 1});
         
         // XP threshold input
         var xpInput = document.createElement('input');
@@ -1190,7 +1190,7 @@ function renderPowerSteps() {
         
         var xpUnit = document.createElement('span');
         xpUnit.className = 'power-step-unit';
-        xpUnit.textContent = '% XP';
+        xpUnit.textContent = t('progression.xpUnit');
         
         // Power level input
         var powerInput = document.createElement('input');
@@ -1205,14 +1205,14 @@ function renderPowerSteps() {
         
         var powerUnit = document.createElement('span');
         powerUnit.className = 'power-step-unit';
-        powerUnit.textContent = '% Power';
+        powerUnit.textContent = t('progression.powerUnit');
         
         // Name input
         var nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.className = 'power-step-name';
         nameInput.value = step.label;
-        nameInput.placeholder = 'Stage name';
+        nameInput.placeholder = t('progression.stageNamePlaceholder');
         nameInput.dataset.index = index;
         nameInput.dataset.field = 'label';
         nameInput.addEventListener('change', onPowerStepInputChange);
@@ -1234,22 +1234,22 @@ function renderPowerSteps() {
     
     var masteredLabel = document.createElement('span');
     masteredLabel.className = 'power-step-label';
-    masteredLabel.textContent = 'Final';
+    masteredLabel.textContent = t('progression.stageFinal');
     masteredLabel.style.color = 'var(--accent-gold, #ffd700)';
     
     var masteredXp = document.createElement('span');
     masteredXp.className = 'power-step-unit';
-    masteredXp.textContent = '100% XP';
+    masteredXp.textContent = t('progression.fullXp');
     masteredXp.style.marginLeft = '10px';
     
     var masteredPower = document.createElement('span');
     masteredPower.className = 'power-step-unit';
-    masteredPower.textContent = '100% Power';
+    masteredPower.textContent = t('progression.fullPower');
     masteredPower.style.marginLeft = '20px';
     
     var masteredName = document.createElement('span');
     masteredName.className = 'power-step-unit';
-    masteredName.textContent = 'Mastered (fixed)';
+    masteredName.textContent = t('progression.masteredFixed');
     masteredName.style.marginLeft = '20px';
     
     masteredRow.appendChild(masteredLabel);

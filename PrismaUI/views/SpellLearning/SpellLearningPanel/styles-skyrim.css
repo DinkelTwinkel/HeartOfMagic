@@ -1640,13 +1640,14 @@ body {
 }
 
 /* Multi-column compact rows for settings popup */
-.popup-row-2, .popup-row-3 {
+.popup-row-2, .popup-row-3, .popup-row-4 {
     display: grid;
     gap: 4px 10px;
     margin-bottom: 8px;
 }
 .popup-row-2 { grid-template-columns: 1fr 1fr; }
 .popup-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.popup-row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
 
 .popup-cell {
     display: flex;

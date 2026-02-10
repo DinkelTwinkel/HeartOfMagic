@@ -565,3 +565,123 @@ _handleBuildFailure(
 | `modules/tree/python/tree_build_tree.py` | TREE Python builder (NLP) |
 | `modules/proceduralTreeBuilder.js` | Shared callback routing + error handler |
 | `modules/sunGrid*.js` | SUN grid sub-modules |
+
+## Python Builder Contract
+
+Each growth module can bundle a Python tree builder in a `python/` subfolder.
+Server.py auto-discovers `modules/*/python/` directories and adds them to sys.path.
+
+### Function Signature
+
+```python
+def {mode}_build_tree_from_data(spells: list, config: dict) -> dict:
+```
+
+### Input: `spells`
+
+List of spell dicts, each with:
+```json
+{
+  "formId": "0x00012FCD",
+  "name": "Flames",
+  "school": "Destruction",
+  "skillLevel": "Novice",
+  "effectNames": ["Fire Damage"],
+  "effects": [{"name": "Fire Damage", "description": "..."}],
+  "keywords": ["MagicDamageFire"]
+}
+```
+
+### Input: `config`
+
+Dict with builder options. Common fields:
+- `max_children_per_node` (int): Soft cap on children per node (default 3)
+- `top_themes_per_school` (int): Max themes to discover (default 8)
+- `prefer_vanilla_roots` (bool): Prefer low-load-order spells as roots
+- `seed` (int|null): Random seed for reproducibility
+- `grid_hint` (dict|null): Grid metadata from JS layout (mode, schoolCount, etc.)
+
+### Output Schema
+
+```json
+{
+  "version": "1.0",
+  "schools": {
+    "SchoolName": {
+      "root": "formId",
+      "nodes": [
+        {
+          "formId": "0x...",
+          "name": "Spell Name",
+          "children": ["0x...", "0x..."],
+          "prerequisites": ["0x..."],
+          "tier": 1,
+          "skillLevel": "Novice",
+          "theme": "fire",
+          "section": "root|trunk|branch"
+        }
+      ],
+      "layoutStyle": "tier_first|organic"
+    }
+  },
+  "seed": 123456,
+  "generatedAt": "ISO8601",
+  "generator": "BuilderName",
+  "validation": {
+    "all_valid": true,
+    "total_nodes": 50,
+    "reachable_nodes": 50
+  }
+}
+```
+
+### Command Registration
+
+Builders self-register with server.py on import:
+
+```python
+# At module scope, after function definition:
+try:
+    from server import register_command
+    register_command('build_tree_mymode', mymode_build_tree_from_data)
+except ImportError:
+    pass  # Running standalone
+```
+
+Server.py routes commands via the registry. Built-in commands (ping, shutdown, prm_score) are handled directly.
+
+### Shared Modules
+
+Builders import shared infrastructure from `SpellTreeBuilder/`:
+- `core.node` — TreeNode, link_nodes
+- `theme_discovery` — discover_themes_per_school, extract_spell_text, merge_with_hints
+- `prereq_master_scorer` — tokenize, build_text, compute_tfidf, cosine_similarity, char_ngram_similarity
+- `spell_grouper` — get_spell_primary_theme, calculate_theme_score
+- `config` — TreeBuilderConfig, merge_configs
+- `validator` — validate_tree, fix_unreachable_nodes
+
+## Config Conventions
+
+### Deep Merge
+
+`merge_configs(base, override)` recursively merges nested dicts. Partial overrides
+preserve sibling keys from defaults:
+
+```python
+from config import merge_configs
+merged = merge_configs(
+    {'scoring': {'theme': True, 'nlp': True, 'tier': True}},
+    {'scoring': {'nlp': False}}
+)
+# Result: {'scoring': {'theme': True, 'nlp': False, 'tier': True}}
+```
+
+### Range Validation
+
+`TreeBuilderConfig.from_dict()` clamps values to safe ranges:
+- density: 0.0–1.0
+- max_children_per_node: 1–8
+- convergence_chance: 0.0–1.0
+- similarity_threshold: 0.0–1.0
+
+Invalid values are silently clamped, not rejected.

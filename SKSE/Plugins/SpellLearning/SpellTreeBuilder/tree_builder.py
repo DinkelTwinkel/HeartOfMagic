@@ -20,6 +20,9 @@ from theme_discovery import discover_themes_per_school, merge_with_hints
 from spell_grouper import group_spells_best_fit, get_spell_primary_theme
 from core.node import TreeNode, link_nodes
 from config import TreeBuilderConfig, load_config
+from prereq_master_scorer import tokenize, build_text, compute_tfidf
+from prereq_master_scorer import cosine_similarity as _cosine_sim
+from prereq_master_scorer import char_ngram_similarity
 
 # Import modular systems
 try:
@@ -111,6 +114,57 @@ class SpellTreeBuilder:
         tg = getattr(self.cfg, 'tree_generation', {})
         return tg.get(key, default)
 
+    def _compute_similarity_matrix(self, spells: List[Dict[str, Any]]) -> Dict[str, float]:
+        """
+        Compute pairwise TF-IDF cosine similarity between spells.
+        Uses pure Python TF-IDF from prereq_master_scorer (no sklearn needed).
+
+        Returns dict mapping 'formIdA:formIdB' -> similarity score.
+        Both directions stored for fast lookup.
+        """
+        if len(spells) < 2:
+            return {}
+
+        form_ids = []
+        all_docs = []
+        for spell in spells:
+            fid = spell.get('formId', '')
+            form_ids.append(fid)
+            # Normalize effects: may be strings or dicts with 'name' key
+            raw_effects = spell.get('effectNames', []) or spell.get('effects', [])
+            effects = []
+            for e in (raw_effects or []):
+                if isinstance(e, str):
+                    effects.append(e)
+                elif isinstance(e, dict):
+                    effects.append(e.get('name', ''))
+            text = build_text({
+                'name': spell.get('name', ''),
+                'desc': spell.get('description', '') or spell.get('desc', ''),
+                'effects': effects
+            })
+            all_docs.append(tokenize(text))
+
+        vectors = compute_tfidf(all_docs)
+
+        similarities: Dict[str, float] = {}
+        name_weight = getattr(self.cfg, 'name_similarity_weight', 0.3)
+        for i in range(len(form_ids)):
+            for j in range(i + 1, len(form_ids)):
+                score = _cosine_sim(vectors[i], vectors[j])
+                # Blend with character n-gram similarity on spell names
+                name_sim = char_ngram_similarity(
+                    spells[i].get('name', ''),
+                    spells[j].get('name', '')
+                )
+                combined = score * (1.0 - name_weight) + name_sim * name_weight
+                if combined > self.cfg.similarity_threshold:
+                    similarities[f"{form_ids[i]}:{form_ids[j]}"] = combined
+                    similarities[f"{form_ids[j]}:{form_ids[i]}"] = combined
+
+        print(f"[TreeBuilder] NLP similarity: {len(similarities) // 2} pairs above threshold from {len(spells)} spells")
+        return similarities
+
     def _score_parent(self, node: TreeNode, candidate: TreeNode) -> float:
         """
         Score a potential parent using tree_generation settings.
@@ -157,6 +211,12 @@ class SpellTreeBuilder:
                 return -9999  # Reject
             # Small bonus for same-tier if allowed
             score += 10
+
+        # Description similarity via TF-IDF cosine similarity
+        if scoring.get('description_similarity', True) and hasattr(self, '_similarities') and self._similarities:
+            key = f"{node.form_id}:{candidate.form_id}"
+            sim = self._similarities.get(key, 0.0)
+            score += sim * 60  # Up to +60 for perfect similarity
 
         # Prefer fewer children (capacity)
         max_children = tg.get('max_children_per_node', 3)
@@ -224,7 +284,8 @@ class SpellTreeBuilder:
             schools[school].append(spell)
         
         # Discover themes for all schools
-        all_themes = discover_themes_per_school(spells, top_n=self.cfg.top_themes_per_school)
+        _fallback = self.cfg.get_raw('fallback', False)
+        all_themes = discover_themes_per_school(spells, top_n=self.cfg.top_themes_per_school, fallback=_fallback)
         all_themes = merge_with_hints(all_themes, max_themes=self.cfg.top_themes_per_school + 4)
         
         # Get per-school configs (from JS LLM calls)
@@ -288,7 +349,15 @@ class SpellTreeBuilder:
             return None
         
         print(f"[TreeBuilder] Building {school_name}: {len(spells)} spells, shape={self.cfg.shape}")
-        
+
+        # Compute NLP similarity matrix for description-based scoring
+        tg = getattr(self.cfg, 'tree_generation', {})
+        scoring = tg.get('scoring', {})
+        if scoring.get('description_similarity', True):
+            self._similarities = self._compute_similarity_matrix(spells)
+        else:
+            self._similarities = {}
+
         # Reset branching energy tracking
         if self.branching:
             self.branching.reset()
@@ -383,35 +452,27 @@ class SpellTreeBuilder:
     def _assign_sections(self, nodes: Dict[str, 'TreeNode'], root_id: str) -> None:
         """Assign section labels (root/trunk/branch) based on tree depth.
 
-        Uses config pctRoot/pctTrunk/pctBranches to determine depth cutoffs.
-        Root section: depth 0 (root node itself)
-        Trunk section: shallow-to-mid depth nodes (bulk of the tree)
+        Uses config pctRoot/pctTrunk to determine depth-based cutoffs.
+        Root section: root node and shallow nodes
+        Trunk section: mid-depth nodes (bulk of the tree)
         Branch section: deepest nodes (tips of the tree)
         """
-        pct_root = self.cfg.get_raw('pctRoot', 20) / 100.0
-        pct_trunk = self.cfg.get_raw('pctTrunk', 50) / 100.0
-        # pct_branch is the remainder
-
-        # Find max depth
-        max_depth = max((n.depth for n in nodes.values()), default=0)
+        max_depth = max((n.depth for n in nodes.values()), default=0) if nodes else 0
         if max_depth == 0:
             for n in nodes.values():
                 n.section = 'root'
             return
 
-        # Sort nodes by depth to compute percentile-based cutoffs
-        sorted_nodes = sorted(nodes.values(), key=lambda n: n.depth)
-        total = len(sorted_nodes)
+        pct_root = self.cfg.get_raw('pctRoot', 20) / 100.0
+        pct_trunk = self.cfg.get_raw('pctTrunk', 50) / 100.0
 
-        root_cutoff = int(total * pct_root)
-        trunk_cutoff = int(total * (pct_root + pct_trunk))
+        root_cutoff = max(0, int(max_depth * pct_root))
+        trunk_cutoff = max(root_cutoff + 1, int(max_depth * (pct_root + pct_trunk)))
 
-        for i, node in enumerate(sorted_nodes):
-            if node.form_id == root_id:
+        for node in nodes.values():
+            if node.form_id == root_id or node.depth <= root_cutoff:
                 node.section = 'root'
-            elif i < root_cutoff:
-                node.section = 'root'
-            elif i < trunk_cutoff:
+            elif node.depth <= trunk_cutoff:
                 node.section = 'trunk'
             else:
                 node.section = 'branch'
@@ -585,7 +646,10 @@ class SpellTreeBuilder:
 
         # Use shape profile scoring if available
         if self.shape:
-            return self.shape.select_parent(node, all_candidates, {'themes': themes})
+            ctx = {'themes': themes}
+            if hasattr(self, '_similarities') and self._similarities:
+                ctx['similarities'] = self._similarities
+            return self.shape.select_parent(node, all_candidates, ctx)
 
         # Score all candidates using tree_generation settings
         scored = []
@@ -610,16 +674,30 @@ class SpellTreeBuilder:
         available: Dict[int, List[TreeNode]],
         themes: List[str]
     ):
-        """Process unassigned spells."""
-        for spell in self._sort_by_tier(unassigned):
+        """Process unassigned spells, prioritized by best theme score (descending)."""
+        # Score unassigned spells by their closest theme match
+        scored_unassigned = []
+        for spell in unassigned:
+            best_theme, best_score = get_spell_primary_theme(spell, themes) if themes else ('_unassigned', 0)
+            scored_unassigned.append((best_score, spell, best_theme))
+        scored_unassigned.sort(key=lambda x: x[0], reverse=True)
+
+        for score, spell, near_theme in scored_unassigned:
             form_id = spell['formId']
             if form_id in connected:
                 continue
-            
-            node = nodes[form_id]
+
+            node = nodes.get(form_id)
+            if not node:
+                continue
+
+            # Near-misses get temporary theme for scoring benefit
+            if score > 20 and near_theme != '_unassigned':
+                node.theme = near_theme
+
             tier_depth = self._tier_to_depth(node.tier)
             parent = self._find_parent(node, None, available, tier_depth, themes)
-            
+
             if parent:
                 link_nodes(parent, node)
                 connected.add(form_id)
@@ -694,17 +772,47 @@ class SpellTreeBuilder:
             for depth in range(node.depth - 1, -1, -1):
                 candidates = available.get(depth, [])
                 # Only consider candidates that are:
-                # 1. Different theme (for interesting convergence)
+                # 1. Different theme (for interesting convergence) — unless cross-theme disabled
                 # 2. Not already a prerequisite
                 # 3. Actually reachable from root (verified!)
                 # 4. Don't create a cycle (candidate is not a descendant of node)
-                different = [p for p in candidates
-                            if p.theme != node.theme
-                            and p.form_id not in node.prerequisites
-                            and p.form_id in reachable
-                            and not self._is_descendant(p.form_id, node.form_id, nodes)]
+                tg = getattr(self.cfg, 'tree_generation', {})
+                convergence_cross_theme = tg.get('convergence_cross_theme', True)
+                if convergence_cross_theme:
+                    # Cross-theme convergence: ignore element_isolation for convergence candidates
+                    different = [p for p in candidates
+                                if p.theme != node.theme
+                                and p.form_id not in node.prerequisites
+                                and p.form_id in reachable
+                                and not self._is_descendant(p.form_id, node.form_id, nodes)]
+                else:
+                    # Respect isolation: only same-theme or unassigned candidates
+                    if tg.get('element_isolation_strict', False):
+                        different = [p for p in candidates
+                                    if p.theme == node.theme
+                                    and p.form_id not in node.prerequisites
+                                    and p.form_id in reachable
+                                    and not self._is_descendant(p.form_id, node.form_id, nodes)]
+                    else:
+                        different = [p for p in candidates
+                                    if p.form_id not in node.prerequisites
+                                    and p.form_id in reachable
+                                    and not self._is_descendant(p.form_id, node.form_id, nodes)]
+                    if not different:
+                        print(f"[TreeBuilder] WARNING: No convergence candidates for {node.name} (cross-theme disabled, isolation active)")
                 if different:
-                    extra = random.choice(different)
+                    # Scored selection: prefer candidates with higher similarity and closer depth
+                    scored_cands = []
+                    for cand in different:
+                        conv_score = 0.0
+                        key = f"{node.form_id}:{cand.form_id}"
+                        sim = self._similarities.get(key, 0.0) if hasattr(self, '_similarities') else 0.0
+                        conv_score += sim * 40.0
+                        depth_diff = abs(node.depth - cand.depth)
+                        conv_score += max(0, 20 - depth_diff * 10)
+                        scored_cands.append((conv_score, cand))
+                    scored_cands.sort(key=lambda x: x[0], reverse=True)
+                    extra = scored_cands[0][1]
                     # Only add as prerequisite, NOT as child — convergence prereqs
                     # don't define the tree structure (children), just unlock gates
                     node.add_prerequisite(extra.form_id)
@@ -729,6 +837,12 @@ class SpellTreeBuilder:
     
     def _is_descendant(self, potential_ancestor: str, node_id: str, nodes: Dict[str, TreeNode]) -> bool:
         """Check if node_id is a descendant of potential_ancestor (would create cycle)."""
+        # Quick depth check: if potential_ancestor is at same or lower depth than node,
+        # it can't be a descendant of node (trees only grow downward)
+        pa_node = nodes.get(potential_ancestor)
+        nd_node = nodes.get(node_id)
+        if pa_node and nd_node and pa_node.depth <= nd_node.depth:
+            return False
         visited = set()
         queue = [node_id]
         while queue:
@@ -781,6 +895,8 @@ class SpellTreeBuilder:
             prereqs_needed = min_prereqs - current_prereqs
 
             # Find candidates: reachable nodes at lower depth, different from existing prereqs
+            tg = getattr(self.cfg, 'tree_generation', {})
+            convergence_cross_theme = tg.get('convergence_cross_theme', True)
             candidates = []
             for cand_id, cand in nodes.items():
                 if cand_id == fid:
@@ -793,11 +909,26 @@ class SpellTreeBuilder:
                     continue
                 if self._is_descendant(cand_id, fid, nodes):
                     continue
-                # Prefer different themes
-                candidates.append((cand, cand.theme != node.theme))
+                # If cross-theme disabled, respect isolation rules
+                if not convergence_cross_theme:
+                    if tg.get('element_isolation_strict', False) and cand.theme != node.theme:
+                        continue
+                # Score candidate: similarity + depth proximity + theme difference
+                conv_score = 0.0
+                key = f"{fid}:{cand_id}"
+                sim = self._similarities.get(key, 0.0) if hasattr(self, '_similarities') else 0.0
+                conv_score += sim * 40.0
+                depth_diff = abs(node.depth - cand.depth)
+                conv_score += max(0, 20 - depth_diff * 10)
+                if cand.theme != node.theme:
+                    conv_score += 10.0  # Prefer different themes
+                candidates.append((cand, conv_score))
 
-            # Sort: different themes first, then by depth (prefer closer)
-            candidates.sort(key=lambda x: (-x[1], -x[0].depth))
+            if not candidates and not convergence_cross_theme:
+                print(f"[TreeBuilder] WARNING: No convergence candidates for {node.name} (cross-theme disabled, isolation active)")
+
+            # Sort by convergence score (highest first)
+            candidates.sort(key=lambda x: x[1], reverse=True)
 
             added = 0
             for cand, _ in candidates:

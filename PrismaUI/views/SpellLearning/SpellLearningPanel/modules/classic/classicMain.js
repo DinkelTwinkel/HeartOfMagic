@@ -332,6 +332,24 @@ var TreeGrowthClassic = {
         }
         console.log('[ClassicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
+        // Gather grid layout info so Python can adapt branching
+        var gridHint = null;
+        if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
+            var previewOut = TreePreview.getOutput();
+            if (previewOut) {
+                var avgPts = 0;
+                var schoolCount = previewOut.schools ? previewOut.schools.length : 0;
+                if (previewOut.gridPoints && schoolCount > 0) {
+                    avgPts = Math.round(previewOut.gridPoints.length / schoolCount);
+                }
+                gridHint = {
+                    mode: previewOut.mode || 'sun',
+                    schoolCount: schoolCount,
+                    avgPointsPerSchool: avgPts
+                };
+            }
+        }
+
         var config = {
             shape: 'organic',
             density: 0.6,
@@ -340,7 +358,8 @@ var TreeGrowthClassic = {
             top_themes_per_school: 8,
             convergence_chance: 0.4,
             prefer_vanilla_roots: true,
-            tier_zones: self.settings.tierZones
+            tier_zones: self.settings.tierZones,
+            grid_hint: gridHint
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({

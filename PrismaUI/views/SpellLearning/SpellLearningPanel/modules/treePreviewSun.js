@@ -63,54 +63,54 @@ var TreePreviewSun = {
         var s = this.settings;
         var H = TreePreviewUtils.settingHTML;
         return '' +
-            '<div class="tree-preview-settings-title">Root Ring Settings</div>' +
+            '<div class="tree-preview-settings-title">' + t('preview.sun.title') + '</div>' +
 
             // --- Toggles at top ---
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Grid Type</label>' +
+                '<label class="tree-preview-label">' + t('preview.sun.gridType') + '</label>' +
                 '<div class="tree-preview-toggle-row tree-preview-toggle-wrap">' +
                     '<button class="tree-preview-toggle-btn' + (s.gridType === 'naive' ? ' active' : '') + '" ' +
-                        'id="tpSunGridNaive" data-grid="naive">Naive</button>' +
+                        'id="tpSunGridNaive" data-grid="naive">' + t('preview.sun.naive') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.gridType === 'linear' ? ' active' : '') + '" ' +
-                        'id="tpSunGridLinear" data-grid="linear">Linear</button>' +
+                        'id="tpSunGridLinear" data-grid="linear">' + t('preview.sun.linear') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.gridType === 'equalArea' ? ' active' : '') + '" ' +
-                        'id="tpSunGridEqArea" data-grid="equalArea">Equal Area</button>' +
+                        'id="tpSunGridEqArea" data-grid="equalArea">' + t('preview.sun.equalArea') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.gridType === 'fibonacci' ? ' active' : '') + '" ' +
-                        'id="tpSunGridFib" data-grid="fibonacci">Fibonacci</button>' +
+                        'id="tpSunGridFib" data-grid="fibonacci">' + t('preview.sun.fibonacci') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.gridType === 'square' ? ' active' : '') + '" ' +
-                        'id="tpSunGridSquare" data-grid="square">Square</button>' +
+                        'id="tpSunGridSquare" data-grid="square">' + t('preview.sun.square') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Section Split</label>' +
+                '<label class="tree-preview-label">' + t('preview.sectionSplit') + '</label>' +
                 '<div class="tree-preview-toggle-row">' +
                     '<button class="tree-preview-toggle-btn' + (!s.proportional ? ' active' : '') + '" ' +
-                        'id="tpSunSplitEqual">Equal</button>' +
+                        'id="tpSunSplitEqual">' + t('preview.equal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.proportional ? ' active' : '') + '" ' +
-                        'id="tpSunSplitProp">Proportional</button>' +
+                        'id="tpSunSplitProp">' + t('preview.proportional') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Growth Direction</label>' +
+                '<label class="tree-preview-label">' + t('preview.growthDirection') + '</label>' +
                 '<div class="tree-preview-toggle-row tree-preview-toggle-wrap">' +
                     '<button class="tree-preview-toggle-btn' + (!s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpSunGrowNormal">Outward</button>' +
+                        'id="tpSunGrowNormal">' + t('preview.sun.outward') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpSunGrowInvert">Inward</button>' +
+                        'id="tpSunGrowInvert">' + t('preview.sun.inward') + '</button>' +
                 '</div>' +
             '</div>' +
 
             // --- Numeric inputs in responsive grid ---
             '<div class="tree-preview-settings-grid">' +
-                H('Ring Tier', 'tpSunRingTier', 1, 9999, 1, s.ringTier) +
-                H('Node Size', 'tpSunNodeSize', 1, 9999, 1, s.nodeSize) +
-                H('Roots / School', 'tpSunRoots', 1, 9999, 1, s.rootsPerSchool) +
-                H('Spoke Density', 'tpSunGrid', 5, 9999, 5, s.gridDensity) +
-                H('Tier Density', 'tpSunTiers', 5, 9999, 5, s.tierDensity) +
-                H('Clumping', 'tpSunClump', 0, 100, 1, s.rootClumping, '%') +
-                H('Randomness', 'tpSunRand', 0, 100, 1, s.rootRandomness, '%') +
+                H(t('preview.sun.ringTier'), 'tpSunRingTier', 1, 9999, 1, s.ringTier) +
+                H(t('preview.nodeSize'), 'tpSunNodeSize', 1, 9999, 1, s.nodeSize) +
+                H(t('preview.rootsPerSchool'), 'tpSunRoots', 1, 9999, 1, s.rootsPerSchool) +
+                H(t('preview.sun.spokeDensity'), 'tpSunGrid', 5, 9999, 5, s.gridDensity) +
+                H(t('preview.sun.tierDensity'), 'tpSunTiers', 5, 9999, 5, s.tierDensity) +
+                H(t('preview.clumping'), 'tpSunClump', 0, 100, 1, s.rootClumping, '%') +
+                H(t('preview.randomness'), 'tpSunRand', 0, 100, 1, s.rootRandomness, '%') +
             '</div>';
     },
 
