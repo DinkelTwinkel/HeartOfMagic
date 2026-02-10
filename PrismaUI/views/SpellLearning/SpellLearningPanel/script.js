@@ -797,6 +797,21 @@ function initializeTabs() {
             switchTab('spellTree');
         });
     }
+
+    // Orphan repair button
+    var orphanBtn = document.getElementById('orphanRepairBtn');
+    if (orphanBtn) {
+        orphanBtn.addEventListener('click', function() {
+            if (typeof repairOrphans !== 'function') return;
+            var result = repairOrphans();
+            var msg = 'Repaired: removed ' + result.removedPrereqs + ' bad prereqs, reconnected ' +
+                result.reconnectedSubtrees + ' subtrees (' + result.nodesRecovered + ' nodes recovered)';
+            console.log('[OrphanRepair] ' + msg);
+            if (typeof updateOrphanRepairButton === 'function') {
+                updateOrphanRepairButton();
+            }
+        });
+    }
 }
 
 function switchTab(tabId) {

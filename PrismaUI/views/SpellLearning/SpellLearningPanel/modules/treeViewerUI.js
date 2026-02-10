@@ -754,6 +754,16 @@ function _loadTrustedTree(data, switchToTreeTab) {
         window.callCpp('GetPlayerKnownSpells', '');
     }
 
+    // Analyze orphans and show repair button if needed
+    if (typeof analyzeOrphans === 'function') {
+        setTimeout(function() {
+            analyzeOrphans();
+            if (typeof updateOrphanRepairButton === 'function') {
+                updateOrphanRepairButton();
+            }
+        }, 300);
+    }
+
     _logToSKSE('[_loadTrustedTree] === DONE ===');
     setTreeStatus(t('status.loadedTrustedTree', {count: nodes.length}));
 }
@@ -1133,6 +1143,16 @@ function loadTreeData(jsonData, switchToTreeTab, isManualImport) {
         console.log('[SpellLearning] Tree loaded - syncing progress and player known spells...');
         window.callCpp('GetProgress', '');  // Reload progress data
         window.callCpp('GetPlayerKnownSpells', '');  // Sync known spells
+    }
+
+    // Analyze orphans and show repair button if needed
+    if (typeof analyzeOrphans === 'function') {
+        setTimeout(function() {
+            analyzeOrphans();
+            if (typeof updateOrphanRepairButton === 'function') {
+                updateOrphanRepairButton();
+            }
+        }, 300);
     }
 }
 

@@ -277,18 +277,15 @@ var TreePreviewSun = {
             maxDots: isExpensiveGrid ? 5000 : 20000
         };
 
-        // Use shared padded grid renderer (covers pan/zoom without clipping)
-        var gcKey = s.gridType + '|' + spokes + '|' + tiers + '|' + tierSpacing + '|' +
-            schoolCount + '|' + (s.proportional ? 1 : 0);
-        var self = this;
-        TreePreviewUtils.renderGridCached(ctx, cx, cy, w, h, function(offCtx, padCx, padCy) {
-            var gridModule = self._grids[s.gridType];
-            if (gridModule && typeof gridModule.renderGrid === 'function') {
-                gridModule.renderGrid(offCtx, padCx, padCy, gridOpts);
-            } else {
-                self._renderNaiveGrid(offCtx, padCx, padCy, gridOpts);
-            }
-        }, gcKey, this);
+        // Render grid directly (batched paths, no offscreen canvas needed)
+        var gridModule = this._grids[s.gridType];
+        if (gridModule && typeof gridModule.renderGrid === 'function') {
+            gridModule.renderGrid(ctx, cx, cy, gridOpts);
+        } else {
+            this._renderNaiveGrid(ctx, cx, cy, gridOpts);
+        }
+        // Clean up old offscreen canvas from previous caching approach
+        if (this._gridCanvas) { this._gridCanvas = null; this._gridCacheKey = null; }
 
         // Collect grid point positions for downstream modules (cached)
         var gpCacheKey = s.gridType + '|' + spokes + '|' + tiers + '|' + tierSpacing + '|' +
@@ -678,50 +675,80 @@ var TreePreviewSun = {
         var totalTiers = Math.ceil(maxExtent / tierSpacing);
         var angleStep = (Math.PI * 2) / spokes;
 
-        // Concentric tier rings
+        // Concentric tier rings — batch by style
+        var innerRings = [];
+        var outerRings = [];
+        var rootRingR = -1;
         for (var r = 1; r <= totalTiers; r++) {
             var ringR = r * tierSpacing;
-            ctx.beginPath();
-            ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
             if (r === ringTier) {
-                ctx.strokeStyle = 'rgba(184, 168, 120, 0.35)';
-                ctx.lineWidth = 1.5;
-            } else if (r <= ringTier) {
-                ctx.strokeStyle = 'rgba(184, 168, 120, 0.1)';
-                ctx.lineWidth = 1;
+                rootRingR = ringR;
+            } else if (r < ringTier) {
+                innerRings.push(ringR);
             } else {
-                ctx.strokeStyle = 'rgba(184, 168, 120, 0.05)';
-                ctx.lineWidth = 1;
+                outerRings.push(ringR);
             }
+        }
+        if (outerRings.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.05)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (var ori = 0; ori < outerRings.length; ori++) { ctx.moveTo(cx + outerRings[ori], cy); ctx.arc(cx, cy, outerRings[ori], 0, Math.PI * 2); }
+            ctx.stroke();
+        }
+        if (innerRings.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (var iri = 0; iri < innerRings.length; iri++) { ctx.moveTo(cx + innerRings[iri], cy); ctx.arc(cx, cy, innerRings[iri], 0, Math.PI * 2); }
+            ctx.stroke();
+        }
+        if (rootRingR > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(cx + rootRingR, cy);
+            ctx.arc(cx, cy, rootRingR, 0, Math.PI * 2);
             ctx.stroke();
         }
 
-        // Radial spokes
+        // Radial spokes — single batched path
+        ctx.strokeStyle = 'rgba(184, 168, 120, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
         for (var g = 0; g < spokes; g++) {
             var angle = g * angleStep;
-            ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(cx + Math.cos(angle) * maxExtent, cy + Math.sin(angle) * maxExtent);
-            ctx.strokeStyle = 'rgba(184, 168, 120, 0.08)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
         }
+        ctx.stroke();
 
-        // Grid dots on all visible tiers (3× spoke density for comparable
-        // visible density with Linear/Fibonacci, batched by angle for perf)
+        // Grid dots — batch by color for single path per color
         var maxDots = opts.maxDots || 20000;
         var dotsPerRing = spokes * 3;
         var dotAngleStep = (Math.PI * 2) / dotsPerRing;
         var dotTiers = Math.min(totalTiers, Math.floor(maxDots / Math.max(1, dotsPerRing)));
+        var naiveBuckets = {};
         for (var g2 = 0; g2 < dotsPerRing; g2++) {
             var dotAngle = g2 * dotAngleStep;
             var cosA = Math.cos(dotAngle);
             var sinA = Math.sin(dotAngle);
-            ctx.fillStyle = opts.pointColorFn ? opts.pointColorFn(dotAngle) : 'rgba(184, 168, 120, 0.15)';
+            var dotColor = opts.pointColorFn ? opts.pointColorFn(dotAngle) : 'rgba(184, 168, 120, 0.15)';
+            if (!naiveBuckets[dotColor]) naiveBuckets[dotColor] = [];
+            var nbucket = naiveBuckets[dotColor];
             for (var r2 = 1; r2 <= dotTiers; r2++) {
                 var dotR = r2 * tierSpacing;
-                ctx.fillRect(cx + cosA * dotR - 1, cy + sinA * dotR - 1, 3, 3);
+                nbucket.push(cx + cosA * dotR, cy + sinA * dotR);
             }
+        }
+        for (var nbColor in naiveBuckets) {
+            var nbPts = naiveBuckets[nbColor];
+            ctx.fillStyle = nbColor;
+            ctx.beginPath();
+            for (var nbi = 0; nbi < nbPts.length; nbi += 2) {
+                ctx.rect(nbPts[nbi] - 1, nbPts[nbi + 1] - 1, 3, 3);
+            }
+            ctx.fill();
         }
 
         // Center dot

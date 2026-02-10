@@ -588,250 +588,449 @@ var TreeParser = {
 };
 
 // =============================================================================
-// PROCEDURAL PREREQUISITE INJECTION
+// ORPHAN ANALYSIS & REPAIR
+// Works on state.treeData directly (fast path compatible — no TreeParser needed)
 // =============================================================================
 
 /**
- * Programmatically inject additional prerequisites into the tree
- * This creates more interesting unlock paths by requiring multiple spells
- * Only adds prereqs that are SAFE (already unlockable, no cycles)
- * 
- * Uses settings.proceduralInjection for configuration:
- * - chance: % chance per eligible node (0-100)
- * - maxPrereqs: maximum total prerequisites per node
- * - minTier: minimum tier where injection applies
- * - sameTierPreference: prefer same-tier prereqs for convergence
+ * Last orphan analysis result. Updated by analyzeOrphans().
+ * UI reads this to show/hide the orphan repair button.
  */
-function injectProceduralPrerequisites() {
+var lastOrphanStats = null;
+
+/**
+ * Analyze the currently loaded tree for orphans and missing prerequisite refs.
+ * Read-only — does NOT modify the tree.
+ *
+ * Returns { totalOrphans, totalMissingPrereqs, totalNodes, schools: { ... } }
+ */
+function analyzeOrphans() {
     if (!state.treeData || !state.treeData.nodes) {
-        console.log('[TreeParser] No tree data for prereq injection');
-        return;
+        lastOrphanStats = { totalOrphans: 0, totalMissingPrereqs: 0, totalNodes: 0, schools: {} };
+        return lastOrphanStats;
     }
-    
-    // Get settings with defaults
-    var config = settings.proceduralInjection || {};
-    var chance = config.chance !== undefined ? config.chance : 50;
-    var maxPrereqs = config.maxPrereqs !== undefined ? config.maxPrereqs : 3;
-    var minTier = config.minTier !== undefined ? config.minTier : 3;
-    var sameTierPref = config.sameTierPreference !== false;
-    
-    console.log('[TreeParser] Injection config: chance=' + chance + '%, maxPrereqs=' + maxPrereqs + ', minTier=' + minTier + ', sameTierPref=' + sameTierPref);
-    
+
     var nodes = state.treeData.nodes;
-    var injectedCount = 0;
-    
-    // Build lookup maps
+    var schools = state.treeData.schools;
+
+    // Build lookup
     var nodeById = {};
-    var nodesBySchool = {};
-    var nodesByDepth = {};
-    
-    nodes.forEach(function(node) {
-        nodeById[node.id] = node;
-        
-        var school = node.school || 'Unknown';
-        if (!nodesBySchool[school]) nodesBySchool[school] = [];
-        nodesBySchool[school].push(node);
-        
-        var depth = node.depth || 0;
-        if (!nodesByDepth[depth]) nodesByDepth[depth] = [];
-        nodesByDepth[depth].push(node);
-    });
-    
-    // For each non-root node, try to add extra prereqs
-    nodes.forEach(function(node) {
-        // Skip roots
-        if (!node.prerequisites || node.prerequisites.length === 0) return;
-        
-        // Skip if already at max prereqs
-        if (node.prerequisites.length >= maxPrereqs) return;
-        
-        // Skip nodes below minimum tier
-        var depth = node.depth || 0;
-        if (depth < minTier) return;
-        
-        // Random chance check
-        if (Math.random() * 100 >= chance) return;
-        
-        // Find candidate prereqs from same school, lower or same tier
-        var school = node.school || 'Unknown';
-        var schoolNodes = nodesBySchool[school] || [];
-        
-        // Filter to valid candidates
-        var candidates = schoolNodes.filter(function(candidate) {
-            // Not self
-            if (candidate.id === node.id) return false;
-            // Not already a prereq
-            if (node.prerequisites.indexOf(candidate.id) !== -1) return false;
-            // Not a descendant (would create cycle)
-            if (isDescendantOf(candidate, node.id, nodeById)) return false;
-            // Must be lower or same tier
-            var candDepth = candidate.depth || 0;
-            if (candDepth >= depth) return false;
-            // Must be unlockable (has path to root)
-            if (!hasPathToRoot(candidate, nodeById)) return false;
-            
-            return true;
-        });
-        
-        if (candidates.length === 0) return;
-        
-        // Apply same-tier preference if enabled
-        var pool = candidates;
-        if (sameTierPref) {
-            // Prefer adjacent tier (depth - 1)
-            var adjacentTierCandidates = candidates.filter(function(c) {
-                return (c.depth || 0) === depth - 1;
+    nodes.forEach(function(n) { nodeById[n.id] = n; });
+
+    var stats = { totalOrphans: 0, totalMissingPrereqs: 0, totalNodes: nodes.length, schools: {} };
+
+    for (var schoolName in schools) {
+        var sData = schools[schoolName];
+        var rootId = sData.root;
+        if (!nodeById[rootId]) continue;
+
+        var schoolNodes = nodes.filter(function(n) { return n.school === schoolName; });
+        var schoolIds = schoolNodes.map(function(n) { return n.id; });
+        var schoolIdSet = {};
+        schoolIds.forEach(function(id) { schoolIdSet[id] = true; });
+
+        var schoolStats = { orphans: 0, missingPrereqs: 0, missingPrereqIds: [], subtrees: [] };
+        var missingIdSet = {};
+
+        // Count missing prereq references
+        schoolNodes.forEach(function(node) {
+            (node.prerequisites || []).forEach(function(prereqId) {
+                if (!nodeById[prereqId]) {
+                    schoolStats.missingPrereqs++;
+                    stats.totalMissingPrereqs++;
+                    if (!missingIdSet[prereqId]) {
+                        missingIdSet[prereqId] = true;
+                        schoolStats.missingPrereqIds.push(prereqId);
+                    }
+                }
             });
-            if (adjacentTierCandidates.length > 0) {
-                pool = adjacentTierCandidates;
+        });
+
+        // BFS from root(s) to find reachable nodes
+        var reachable = {};
+        var queue = [rootId];
+        reachable[rootId] = true;
+
+        while (queue.length > 0) {
+            var cId = queue.shift();
+            var cNode = nodeById[cId];
+            if (!cNode) continue;
+            (cNode.children || []).forEach(function(childId) {
+                if (!reachable[childId] && nodeById[childId]) {
+                    reachable[childId] = true;
+                    queue.push(childId);
+                }
+            });
+        }
+
+        // Additional element roots
+        schoolNodes.forEach(function(node) {
+            if (!reachable[node.id] && node.isRoot) {
+                reachable[node.id] = true;
+                var q = [node.id];
+                while (q.length > 0) {
+                    var id = q.shift();
+                    var n = nodeById[id];
+                    if (!n) continue;
+                    (n.children || []).forEach(function(childId) {
+                        if (!reachable[childId] && nodeById[childId]) {
+                            reachable[childId] = true;
+                            q.push(childId);
+                        }
+                    });
+                }
             }
-        }
-        
-        var selected = pool[Math.floor(Math.random() * pool.length)];
-        
-        // Add the prerequisite
-        node.prerequisites.push(selected.id);
-        
-        // Add to children of selected node
-        if (!selected.children) selected.children = [];
-        if (selected.children.indexOf(node.id) === -1) {
-            selected.children.push(node.id);
-        }
-        
-        // Add edge
-        TreeParser.edges.push({ from: selected.id, to: node.id });
-        
-        injectedCount++;
-        console.log('[TreeParser] Injected prereq: ' + (node.name || node.id) + ' now requires ' + (selected.name || selected.id));
-    });
-    
-    console.log('[TreeParser] Procedural injection complete: ' + injectedCount + ' additional prerequisites added');
-    
-    // Re-render tree if visible
-    if (WheelRenderer.nodes && WheelRenderer.nodes.length > 0) {
-        WheelRenderer.render();
+        });
+
+        // Count orphans
+        var orphanIds = schoolIds.filter(function(id) { return !reachable[id]; });
+        schoolStats.orphans = orphanIds.length;
+        stats.totalOrphans += orphanIds.length;
+
+        // Group orphans into connected subtrees
+        var visited = {};
+        orphanIds.forEach(function(orphanId) {
+            if (visited[orphanId]) return;
+            var component = [];
+            var compQ = [orphanId];
+            visited[orphanId] = true;
+            while (compQ.length > 0) {
+                var id = compQ.shift();
+                component.push(id);
+                var node = nodeById[id];
+                if (!node) continue;
+                (node.children || []).forEach(function(childId) {
+                    if (!visited[childId] && !reachable[childId] && schoolIdSet[childId]) {
+                        visited[childId] = true;
+                        compQ.push(childId);
+                    }
+                });
+                // Reverse: find orphans whose children include this id
+                orphanIds.forEach(function(otherId) {
+                    if (visited[otherId]) return;
+                    var otherNode = nodeById[otherId];
+                    if (otherNode && (otherNode.children || []).indexOf(id) !== -1) {
+                        visited[otherId] = true;
+                        compQ.push(otherId);
+                    }
+                });
+            }
+            schoolStats.subtrees.push({ size: component.length });
+        });
+
+        stats.schools[schoolName] = schoolStats;
     }
-    
-    // Save the modified tree
+
+    lastOrphanStats = stats;
+    return stats;
+}
+
+/**
+ * Repair orphans in the currently loaded tree (state.treeData).
+ * 1. Strip prerequisite references to non-existent nodes
+ * 2. Strip non-existent children references
+ * 3. Identify orphan subtrees per school
+ * 4. Reconnect each subtree root to an appropriate same-school parent
+ * 5. Recalculate depths
+ * 6. Sync changes to rawData and save
+ *
+ * Returns { removedPrereqs, reconnectedSubtrees, nodesRecovered }
+ */
+function repairOrphans() {
+    if (!state.treeData || !state.treeData.nodes) {
+        console.log('[OrphanRepair] No tree data');
+        return { removedPrereqs: 0, reconnectedSubtrees: 0, nodesRecovered: 0 };
+    }
+
+    var nodes = state.treeData.nodes;
+    var edges = state.treeData.edges || [];
+    var schools = state.treeData.schools;
+    var repairStats = { removedPrereqs: 0, reconnectedSubtrees: 0, nodesRecovered: 0 };
+
+    // Build lookup
+    var nodeById = {};
+    nodes.forEach(function(n) { nodeById[n.id] = n; });
+
+    // Step 1: Strip non-existent prereqs and children from ALL nodes
+    nodes.forEach(function(node) {
+        var origPrereqLen = (node.prerequisites || []).length;
+        node.prerequisites = (node.prerequisites || []).filter(function(pid) {
+            return !!nodeById[pid];
+        });
+        var removed = origPrereqLen - node.prerequisites.length;
+        if (removed > 0) {
+            repairStats.removedPrereqs += removed;
+            console.log('[OrphanRepair] Stripped ' + removed + ' missing prereqs from ' + (node.name || node.id));
+        }
+
+        node.children = (node.children || []).filter(function(cid) {
+            return !!nodeById[cid];
+        });
+
+        // Also strip non-existent locks
+        if (node.locks) {
+            node.locks = node.locks.filter(function(lid) {
+                return !!nodeById[lid];
+            });
+        }
+        if (node.hardPrereqs) {
+            node.hardPrereqs = node.hardPrereqs.filter(function(pid) {
+                return !!nodeById[pid];
+            });
+        }
+        if (node.softPrereqs) {
+            node.softPrereqs = node.softPrereqs.filter(function(pid) {
+                return !!nodeById[pid];
+            });
+        }
+    });
+
+    // Clean edges too
+    state.treeData.edges = edges.filter(function(e) {
+        return nodeById[e.from] && nodeById[e.to];
+    });
+    edges = state.treeData.edges;
+
+    // Step 2: Per-school orphan subtree repair
+    for (var schoolName in schools) {
+        var sData = schools[schoolName];
+        var rootId = sData.root;
+        var rootNode = nodeById[rootId];
+        if (!rootNode) continue;
+
+        var schoolNodes = nodes.filter(function(n) { return n.school === schoolName; });
+        var schoolIds = schoolNodes.map(function(n) { return n.id; });
+        var schoolIdSet = {};
+        schoolIds.forEach(function(id) { schoolIdSet[id] = true; });
+
+        // BFS from root(s)
+        var reachable = {};
+        var depthMap = {};
+        var queue = [{ id: rootId, depth: 0 }];
+        reachable[rootId] = true;
+        depthMap[rootId] = 0;
+
+        while (queue.length > 0) {
+            var item = queue.shift();
+            var cNode = nodeById[item.id];
+            if (!cNode) continue;
+            (cNode.children || []).forEach(function(childId) {
+                if (!reachable[childId] && nodeById[childId]) {
+                    reachable[childId] = true;
+                    depthMap[childId] = item.depth + 1;
+                    queue.push({ id: childId, depth: item.depth + 1 });
+                }
+            });
+        }
+
+        // Additional element roots
+        schoolNodes.forEach(function(node) {
+            if (!reachable[node.id] && node.isRoot) {
+                reachable[node.id] = true;
+                depthMap[node.id] = 0;
+                var q = [{ id: node.id, depth: 0 }];
+                while (q.length > 0) {
+                    var it = q.shift();
+                    var n = nodeById[it.id];
+                    if (!n) continue;
+                    (n.children || []).forEach(function(childId) {
+                        if (!reachable[childId] && nodeById[childId]) {
+                            reachable[childId] = true;
+                            depthMap[childId] = it.depth + 1;
+                            q.push({ id: childId, depth: it.depth + 1 });
+                        }
+                    });
+                }
+            }
+        });
+
+        // Find orphans
+        var orphanIds = schoolIds.filter(function(id) { return !reachable[id]; });
+        if (orphanIds.length === 0) continue;
+
+        // Group into connected subtrees
+        var visited = {};
+        var subtrees = [];
+
+        orphanIds.forEach(function(orphanId) {
+            if (visited[orphanId]) return;
+            var component = [];
+            var compQ = [orphanId];
+            visited[orphanId] = true;
+            while (compQ.length > 0) {
+                var id = compQ.shift();
+                component.push(id);
+                var node = nodeById[id];
+                if (!node) continue;
+                (node.children || []).forEach(function(childId) {
+                    if (!visited[childId] && !reachable[childId] && schoolIdSet[childId]) {
+                        visited[childId] = true;
+                        compQ.push(childId);
+                    }
+                });
+                orphanIds.forEach(function(otherId) {
+                    if (visited[otherId]) return;
+                    var otherNode = nodeById[otherId];
+                    if (otherNode && (otherNode.children || []).indexOf(id) !== -1) {
+                        visited[otherId] = true;
+                        compQ.push(otherId);
+                    }
+                });
+            }
+
+            // Find subtree root: node with no parent in this component, lowest tier
+            var stRoot = null;
+            var lowestTier = Infinity;
+            component.forEach(function(cId) {
+                var cNode = nodeById[cId];
+                if (!cNode) return;
+                var hasParent = component.some(function(otherId) {
+                    if (otherId === cId) return false;
+                    var oNode = nodeById[otherId];
+                    return oNode && (oNode.children || []).indexOf(cId) !== -1;
+                });
+                if (!hasParent && (cNode.tier || 0) < lowestTier) {
+                    lowestTier = cNode.tier || 0;
+                    stRoot = cId;
+                }
+            });
+            if (!stRoot) stRoot = component[0];
+            subtrees.push({ root: stRoot, members: component });
+        });
+
+        // Reconnect each subtree
+        var maxCh = 5;
+        subtrees.forEach(function(subtree) {
+            var stRootNode = nodeById[subtree.root];
+            if (!stRootNode) return;
+            var stTier = stRootNode.tier || 0;
+
+            // Find best parent in reachable set
+            var candidates = [];
+            for (var connId in reachable) {
+                var conn = nodeById[connId];
+                if (!conn || conn.school !== schoolName) continue;
+                var connTier = conn.tier || 0;
+                if (connTier > stTier) continue;
+                if (connTier < stTier - 1) continue;
+                candidates.push({ node: conn, childCount: (conn.children || []).length, tierDiff: stTier - connTier });
+            }
+
+            var withRoom = candidates.filter(function(c) { return c.childCount < maxCh; });
+            if (withRoom.length === 0) withRoom = candidates;
+            if (withRoom.length === 0) withRoom = [{ node: rootNode, childCount: (rootNode.children || []).length, tierDiff: stTier }];
+
+            withRoom.sort(function(a, b) {
+                if (a.tierDiff !== b.tierDiff) return a.tierDiff - b.tierDiff;
+                return a.childCount - b.childCount;
+            });
+
+            var bestParent = withRoom[0].node;
+            console.log('[OrphanRepair] Reconnecting subtree (' + subtree.members.length + ' nodes) ' +
+                (stRootNode.name || subtree.root) + ' (tier ' + stTier + ') -> ' +
+                (bestParent.name || bestParent.id) + ' (tier ' + (bestParent.tier || 0) + ')');
+
+            // Link
+            if (!bestParent.children) bestParent.children = [];
+            if (bestParent.children.indexOf(subtree.root) === -1) {
+                bestParent.children.push(subtree.root);
+            }
+            if (!stRootNode.prerequisites) stRootNode.prerequisites = [];
+            if (stRootNode.prerequisites.indexOf(bestParent.id) === -1) {
+                stRootNode.prerequisites.push(bestParent.id);
+            }
+            edges.push({ from: bestParent.id, to: subtree.root });
+
+            // BFS to recover subtree depths
+            var parentDepth = depthMap[bestParent.id] || bestParent.depth || 0;
+            reachable[subtree.root] = true;
+            depthMap[subtree.root] = parentDepth + 1;
+            stRootNode.depth = parentDepth + 1;
+
+            var recQ = [{ id: subtree.root, depth: parentDepth + 1 }];
+            var recovered = 0;
+            while (recQ.length > 0) {
+                var rItem = recQ.shift();
+                var rNode = nodeById[rItem.id];
+                if (!rNode) continue;
+                recovered++;
+                (rNode.children || []).forEach(function(childId) {
+                    if (!reachable[childId] && nodeById[childId]) {
+                        reachable[childId] = true;
+                        var cd = rItem.depth + 1;
+                        depthMap[childId] = cd;
+                        nodeById[childId].depth = cd;
+                        recQ.push({ id: childId, depth: cd });
+                    }
+                });
+            }
+            repairStats.reconnectedSubtrees++;
+            repairStats.nodesRecovered += recovered;
+        });
+
+        // Update school maxDepth
+        var maxDepth = 0;
+        schoolNodes.forEach(function(n) { maxDepth = Math.max(maxDepth, n.depth || 0); });
+        sData.maxDepth = maxDepth;
+    }
+
+    console.log('[OrphanRepair] Complete: removed ' + repairStats.removedPrereqs +
+        ' missing prereqs, reconnected ' + repairStats.reconnectedSubtrees +
+        ' subtrees, recovered ' + repairStats.nodesRecovered + ' nodes');
+
+    // Sync to rawData for persistence
+    if (state.treeData.rawData && state.treeData.rawData.schools) {
+        nodes.forEach(function(node) {
+            var rawSchool = state.treeData.rawData.schools[node.school];
+            if (!rawSchool || !rawSchool.nodes) return;
+            for (var i = 0; i < rawSchool.nodes.length; i++) {
+                var rawNode = rawSchool.nodes[i];
+                if ((rawNode.formId || rawNode.spellId) === node.id) {
+                    rawNode.prerequisites = (node.prerequisites || []).slice();
+                    rawNode.children = (node.children || []).slice();
+                    rawNode.depth = node.depth;
+                    if (node.hardPrereqs) rawNode.hardPrereqs = node.hardPrereqs.slice();
+                    if (node.softPrereqs) rawNode.softPrereqs = node.softPrereqs.slice();
+                    if (node.locks) rawNode.locks = node.locks.slice();
+                    break;
+                }
+            }
+        });
+    }
+
+    // Save repaired tree
     if (window.callCpp && state.treeData.rawData) {
-        // Update rawData with new prerequisites
-        updateRawDataPrerequisites();
         var treeJson = JSON.stringify(state.treeData.rawData);
         window.callCpp('SaveSpellTree', treeJson);
+        console.log('[OrphanRepair] Saved repaired tree');
     }
+
+    // Re-analyze
+    analyzeOrphans();
+
+    // Re-render
+    if (typeof WheelRenderer !== 'undefined' && WheelRenderer.nodes && WheelRenderer.nodes.length > 0) {
+        WheelRenderer.render();
+    }
+
+    return repairStats;
 }
 
 /**
- * Clear injected prerequisites and reroll with current settings
- * This reloads the original tree data and re-applies injection
+ * Update the orphan repair button visibility and text.
+ * Called after tree loads and after repair.
  */
-function rerollProceduralPrerequisites() {
-    console.log('[TreeParser] Rerolling procedural prerequisites...');
-    
-    if (!state.treeData || !state.treeData.rawData) {
-        console.log('[TreeParser] No tree data to reroll');
-        return;
-    }
-    
-    // Reload the tree from rawData (clears injected prereqs)
-    var rawData = state.treeData.rawData;
-    
-    // Re-parse the tree (this resets to original structure)
-    if (typeof loadTreeData === 'function') {
-        loadTreeData(rawData);
+function updateOrphanRepairButton() {
+    var btn = document.getElementById('orphanRepairBtn');
+    if (!btn) return;
+
+    var stats = lastOrphanStats || analyzeOrphans();
+    if (stats.totalOrphans > 0 || stats.totalMissingPrereqs > 0) {
+        var total = stats.totalOrphans + stats.totalMissingPrereqs;
+        btn.textContent = total + ' orphan' + (total !== 1 ? 's' : '') + ' - repair';
+        btn.style.display = '';
+        btn.title = stats.totalOrphans + ' unreachable nodes, ' + stats.totalMissingPrereqs + ' missing prereq refs';
     } else {
-        // Fallback: re-parse manually
-        var result = TreeParser.parse(rawData);
-        if (result.success) {
-            state.treeData = result;
-            state.treeData.rawData = rawData;
-        }
-    }
-    
-    // Now apply injection with current settings
-    if (settings.proceduralPrereqInjection) {
-        setTimeout(function() {
-            injectProceduralPrerequisites();
-        }, 100);
-    } else {
-        // Just re-render
-        if (WheelRenderer.nodes && WheelRenderer.nodes.length > 0) {
-            WheelRenderer.render();
-        }
-    }
-}
-
-/**
- * Check if candidate is a descendant of targetId (would create cycle)
- */
-function isDescendantOf(candidate, targetId, nodeById) {
-    var visited = {};
-    var queue = candidate.children ? candidate.children.slice() : [];
-    
-    while (queue.length > 0) {
-        var childId = queue.shift();
-        if (childId === targetId) return true;
-        if (visited[childId]) continue;
-        visited[childId] = true;
-        
-        var childNode = nodeById[childId];
-        if (childNode && childNode.children) {
-            queue = queue.concat(childNode.children);
-        }
-    }
-    
-    return false;
-}
-
-/**
- * Check if node has a valid path to root
- */
-function hasPathToRoot(node, nodeById) {
-    var visited = {};
-    var current = node;
-    var maxIterations = 100;
-    var iterations = 0;
-    
-    while (current && iterations < maxIterations) {
-        iterations++;
-        if (visited[current.id]) return false; // Cycle
-        visited[current.id] = true;
-        
-        if (!current.prerequisites || current.prerequisites.length === 0) {
-            return true; // Found root
-        }
-        
-        // Follow first prereq (if any prereq leads to root, it's valid)
-        current = nodeById[current.prerequisites[0]];
-    }
-    
-    return false;
-}
-
-/**
- * Update the raw tree data with injected prerequisites
- */
-function updateRawDataPrerequisites() {
-    if (!state.treeData || !state.treeData.rawData || !state.treeData.nodes) return;
-    
-    var rawData = state.treeData.rawData;
-    
-    // Build a map of node id to updated prerequisites
-    var prereqMap = {};
-    state.treeData.nodes.forEach(function(node) {
-        prereqMap[node.id] = node.prerequisites || [];
-    });
-    
-    // Update each school's nodes in rawData
-    for (var schoolName in rawData.schools) {
-        var school = rawData.schools[schoolName];
-        if (!school.nodes) continue;
-        
-        school.nodes.forEach(function(rawNode) {
-            var nodeId = rawNode.formId || rawNode.id;
-            if (prereqMap[nodeId]) {
-                rawNode.prerequisites = prereqMap[nodeId];
-            }
-        });
+        btn.style.display = 'none';
     }
 }

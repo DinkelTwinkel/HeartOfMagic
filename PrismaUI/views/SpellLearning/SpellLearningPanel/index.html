@@ -24,6 +24,7 @@
                 <button class="header-btn header-btn-wide" id="returnToTreeBtn" style="display:none;" title="Return to Spell Tree" data-i18n="tabs.return" data-i18n-title="tabs.returnTitle">Return</button>
                 <button class="header-btn header-btn-wide" id="tabSpellScan" data-tab="spellScan" title="Spell Scanner" data-i18n="tabs.scan" data-i18n-title="tabs.scanTitle">Scan</button>
                 <button class="header-btn header-btn-wide" id="tabSettings" data-tab="settings" title="Settings" data-i18n="tabs.settings" data-i18n-title="tabs.settingsTitle">Settings</button>
+                <button class="header-btn header-btn-wide header-btn-warn" id="orphanRepairBtn" style="display:none;" title="Orphan nodes detected">0 orphans</button>
                 <button class="header-btn" id="fullscreenBtn" title="Toggle Fullscreen" data-i18n-title="buttons.toggleFullscreen">[ ]</button>
                 <button class="header-btn" id="closeBtn" title="Close (Esc/Tab)" data-i18n-title="buttons.closeTitle">X</button>
             </div>
@@ -1566,73 +1567,6 @@
                             </div>
                         </div>
                         
-                        <!-- Post-Generation: Procedural Injection -->
-                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-green); margin-top: 12px;">
-                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-green); margin-bottom: 8px;">
-                                AFTER GENERATION (Procedural)
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label" data-i18n="settings.treeGen.proceduralInjection">Procedural Prereq Injection</span>
-                                    <span class="setting-desc" data-i18n="settings.treeGen.proceduralInjectionDesc">Randomly add extra safe prereqs after tree loads</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="proceduralPrereqInjectionToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            
-                            <!-- Procedural Injection Settings (shown when enabled) -->
-                            <div id="proceduralInjectionSettings" class="subsettings-panel" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.15); border-radius: 4px;">
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.injectionChance">Injection Chance</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.injectionChanceDesc">% chance per eligible node</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="injectionChanceSlider" min="0" max="100" value="50" class="setting-slider">
-                                        <span id="injectionChanceValue">50%</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.maxPrereqs">Max Prerequisites</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.maxPrereqsDesc">Cap total prereqs per spell</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="maxPrereqsSlider" min="2" max="5" value="3" class="setting-slider">
-                                        <span id="maxPrereqsValue">3</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.minTier">Minimum Tier</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.minTierDesc">Only at tier N and above</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="minTierSlider" min="1" max="5" value="3" class="setting-slider">
-                                        <span id="minTierValue">3</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.sameTierPref">Same-Tier Preference</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.sameTierPrefDesc">Prefer adjacent tier prereqs</span>
-                                    </div>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="sameTierPreferenceToggle" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.rerollInjections">Reroll Injections</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.rerollInjectionsDesc">Re-inject with current settings</span>
-                                    </div>
-                                    <button id="rerollInjectionsBtn" class="btn btn-small">[R] Reroll</button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 

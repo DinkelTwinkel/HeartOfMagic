@@ -1080,8 +1080,18 @@ var CanvasRenderer = {
                 pulse = (beat1 + beat2 * 0.6) * 0.08;  // Max ~8% scale change
             }
             scale = 1 + pulse;
+
+            // Global rising-edge detection — fires once per beat start
+            var nowBeatingGlobal = cyclePos < beatDuration && cyclePos < 0.5;
+            if (nowBeatingGlobal && !this._lastHeartbeatGlobal) {
+                // Scatter globe particles on every heartbeat
+                if (typeof Globe3D !== 'undefined' && Globe3D.onHeartbeat) {
+                    Globe3D.onHeartbeat(1.0);
+                }
+            }
+            this._lastHeartbeatGlobal = nowBeatingGlobal;
         }
-        
+
         // Keep animation running for heartbeat or globe (throttled to reduce CPU)
         var globeEnabled = this._globeEnabled && (typeof Globe3D !== 'undefined') && Globe3D.enabled;
         if (this._heartAnimationEnabled || globeEnabled) {
@@ -1251,10 +1261,9 @@ var CanvasRenderer = {
             var cycleLength = beatDuration + pulseDelay;
             var cyclePos = this._heartbeatPhase % cycleLength;
             
-            // Detect start of heartbeat (rising edge)
+            // Detect start of heartbeat (rising edge) for learning path particles
             var nowBeating = cyclePos < beatDuration && cyclePos < 0.5;
             if (nowBeating && !this._lastHeartbeatPulse) {
-                // Detach globe particle to travel along learning path
                 this._detachGlobeParticleToLearningPath();
             }
             this._lastHeartbeatPulse = nowBeating;
@@ -1490,14 +1499,45 @@ var CanvasRenderer = {
                 // Chain-link parameters
                 var linkW = 5;       // Link width (along chain)
                 var linkH = 3.2;     // Link height (perpendicular)
-                var linkThick = 1.8; // Stroke thickness of each link
                 var linkSpacing = linkW * 1.15; // Center-to-center distance
                 var numLinks = Math.max(3, Math.round(dist / linkSpacing));
                 var angle = Math.atan2(dy, dx);
 
+                // Lazy-create chain link sprite (once, ~12x10px offscreen canvas)
+                if (!this._chainSprite) {
+                    var linkThick = 1.8;
+                    var pad = Math.ceil(linkThick) + 1;
+                    var sprW = Math.ceil(linkW + pad * 2); if (sprW % 2 !== 0) sprW++;
+                    var sprH = Math.ceil(linkH + pad * 2); if (sprH % 2 !== 0) sprH++;
+                    var sc = document.createElement('canvas'); sc.width = sprW; sc.height = sprH;
+                    var sctx = sc.getContext('2d');
+                    var scx = sprW / 2, scy = sprH / 2;
+                    var hw = linkW * 0.5, hh = linkH * 0.5, cr = Math.min(hw, hh) * 0.8;
+                    sctx.beginPath();
+                    sctx.moveTo(scx-hw+cr, scy-hh); sctx.lineTo(scx+hw-cr, scy-hh);
+                    sctx.arcTo(scx+hw, scy-hh, scx+hw, scy-hh+cr, cr); sctx.lineTo(scx+hw, scy+hh-cr);
+                    sctx.arcTo(scx+hw, scy+hh, scx+hw-cr, scy+hh, cr); sctx.lineTo(scx-hw+cr, scy+hh);
+                    sctx.arcTo(scx-hw, scy+hh, scx-hw, scy+hh-cr, cr); sctx.lineTo(scx-hw, scy-hh+cr);
+                    sctx.arcTo(scx-hw, scy-hh, scx-hw+cr, scy-hh, cr); sctx.closePath();
+                    sctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
+                    sctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
+                    sctx.lineWidth = linkThick; sctx.fill(); sctx.stroke();
+                    var ihw = hw * 0.45, ihh = hh * 0.35, ir = Math.min(ihw, ihh) * 0.6;
+                    sctx.beginPath();
+                    sctx.moveTo(scx-ihw+ir, scy-ihh); sctx.lineTo(scx+ihw-ir, scy-ihh);
+                    sctx.arcTo(scx+ihw, scy-ihh, scx+ihw, scy-ihh+ir, ir); sctx.lineTo(scx+ihw, scy+ihh-ir);
+                    sctx.arcTo(scx+ihw, scy+ihh, scx+ihw-ir, scy+ihh, ir); sctx.lineTo(scx-ihw+ir, scy+ihh);
+                    sctx.arcTo(scx-ihw, scy+ihh, scx-ihw, scy+ihh-ir, ir); sctx.lineTo(scx-ihw, scy-ihh+ir);
+                    sctx.arcTo(scx-ihw, scy-ihh, scx-ihw+ir, scy-ihh, ir); sctx.closePath();
+                    sctx.fillStyle = 'rgba(20, 20, 30, 0.7)'; sctx.fill();
+                    this._chainSprite = sc;
+                }
+                var spr = this._chainSprite;
+                var sprHW = spr.width / 2, sprHH = spr.height / 2;
+
                 ctx.globalAlpha = 0.8;
 
-                // Draw interlocking chain links (alternating orientation)
+                // Draw chain links using pre-rendered sprite
                 for (var cl = 0; cl < numLinks; cl++) {
                     var t = (cl + 0.5) / numLinks;
                     var cx = fromNode.x + dx * t;
@@ -1506,55 +1546,8 @@ var CanvasRenderer = {
                     ctx.save();
                     ctx.translate(cx, cy);
                     ctx.rotate(angle);
-
-                    // Alternate: even links are horizontal (along chain), odd are rotated 90 degrees
-                    if (cl % 2 !== 0) {
-                        ctx.rotate(Math.PI / 2);
-                    }
-
-                    // Draw a rounded-rectangle chain link (pill shape)
-                    var hw = linkW * 0.5;
-                    var hh = linkH * 0.5;
-                    var r = Math.min(hw, hh) * 0.8; // corner radius
-
-                    ctx.beginPath();
-                    ctx.moveTo(-hw + r, -hh);
-                    ctx.lineTo(hw - r, -hh);
-                    ctx.arcTo(hw, -hh, hw, -hh + r, r);
-                    ctx.lineTo(hw, hh - r);
-                    ctx.arcTo(hw, hh, hw - r, hh, r);
-                    ctx.lineTo(-hw + r, hh);
-                    ctx.arcTo(-hw, hh, -hw, hh - r, r);
-                    ctx.lineTo(-hw, -hh + r);
-                    ctx.arcTo(-hw, -hh, -hw + r, -hh, r);
-                    ctx.closePath();
-
-                    // Gray fill + darker stroke = solid chain look
-                    ctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
-                    ctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
-                    ctx.lineWidth = linkThick;
-                    ctx.fill();
-                    ctx.stroke();
-
-                    // Inner cutout (hollow center of each link)
-                    var ihw = hw * 0.45;
-                    var ihh = hh * 0.35;
-                    var ir = Math.min(ihw, ihh) * 0.6;
-                    ctx.beginPath();
-                    ctx.moveTo(-ihw + ir, -ihh);
-                    ctx.lineTo(ihw - ir, -ihh);
-                    ctx.arcTo(ihw, -ihh, ihw, -ihh + ir, ir);
-                    ctx.lineTo(ihw, ihh - ir);
-                    ctx.arcTo(ihw, ihh, ihw - ir, ihh, ir);
-                    ctx.lineTo(-ihw + ir, ihh);
-                    ctx.arcTo(-ihw, ihh, -ihw, ihh - ir, ir);
-                    ctx.lineTo(-ihw, -ihh + ir);
-                    ctx.arcTo(-ihw, -ihh, -ihw + ir, -ihh, ir);
-                    ctx.closePath();
-
-                    ctx.fillStyle = 'rgba(20, 20, 30, 0.7)';
-                    ctx.fill();
-
+                    if (cl % 2 !== 0) ctx.rotate(Math.PI / 2);
+                    ctx.drawImage(spr, -sprHW, -sprHH);
                     ctx.restore();
                 }
             }

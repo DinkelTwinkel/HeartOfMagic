@@ -229,6 +229,17 @@ body {
     background: var(--text-bright);
 }
 
+/* Warning button for orphan repair */
+.header-btn-warn {
+    color: #ff9944;
+    border: 1px solid rgba(255, 153, 68, 0.4);
+}
+.header-btn-warn:hover {
+    color: #fff;
+    background: rgba(255, 153, 68, 0.3);
+    border-color: rgba(255, 153, 68, 0.7);
+}
+
 /* =============================================================================
    TAB NAVIGATION - Skyrim-style tabs
    ============================================================================= */

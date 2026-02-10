@@ -20,6 +20,9 @@
     // Active tab tracking for preview canvas
     var _activeTab = 'locks';
 
+    // Cached offscreen sprite for chain-link rendering (lazy-created)
+    var _prmChainSprite = null;
+
     // =========================================================================
     // SETTINGS - Read from UI controls
     // =========================================================================
@@ -946,9 +949,12 @@
             var settings = request.settings;
 
             // Filter out candidates that have already been used as a target too many times
+            // Also filter out candidates that gained locks during this batch (chain lock prevention)
             var availableCandidates = candidates.filter(function(c) {
                 var cId = c.id || c.formId;
-                return (targetUsage[cId] || 0) < MAX_TARGET_USES;
+                if ((targetUsage[cId] || 0) >= MAX_TARGET_USES) return false;
+                if (!settings.allowLockedLock && c.locks && c.locks.length > 0) return false;
+                return true;
             });
 
             if (availableCandidates.length === 0) {
@@ -1103,6 +1109,17 @@
      */
     window.onPreReqMasterComplete = function(resultStr) {
         try {
+            // Respect PRM toggle — if user disabled PRM while Python was scoring, bail out
+            if (!isEnabled()) {
+                _prmLog('PRM disabled during Python scoring — discarding results');
+                updateStatus('Prerequisite locks disabled');
+                if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
+                    BuildProgress.setStage('finalize');
+                    setTimeout(function() { BuildProgress.complete('PRM disabled'); }, 300);
+                }
+                return;
+            }
+
             var result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
             if (!result.success || !result.scores) {
                 _prmLog('Python scoring failed: ' + (result.error || 'unknown') + ' - falling back to JS TF-IDF');
@@ -1125,6 +1142,7 @@
             var lockCount = 0;
             var skippedCount = 0;
             var nlpNodes = _getAllNodes();
+            var nlpSettings = getSettings();
             var nlpTargetUsage = {};  // nodeId -> count
             var NLP_MAX_TARGET_USES = 2;
 
@@ -1140,11 +1158,16 @@
                 // Use topCandidates if available (new format), fall back to bestMatch
                 var topCandidates = item.topCandidates || [{ nodeId: item.bestMatch, score: item.score }];
 
-                // Filter out candidates that would create deadlocks OR have hit the target cap
+                // Filter out candidates that would create deadlocks, hit the target cap, or violate chain lock setting
                 var validCandidates = [];
                 for (var vi = 0; vi < topCandidates.length; vi++) {
                     var cId = topCandidates[vi].nodeId;
                     if ((nlpTargetUsage[cId] || 0) >= NLP_MAX_TARGET_USES) continue;
+                    // Chain lock check: skip candidates that already have locks assigned this batch
+                    if (!nlpSettings.allowLockedLock) {
+                        var candNode = nlpNodes ? nlpNodes.get(cId) : null;
+                        if (candNode && candNode.locks && candNode.locks.length > 0) continue;
+                    }
                     if (!_isDescendant(spellId, cId, nlpNodes) && !_isOnlyReachableThrough(spellId, cId, nlpNodes)) {
                         validCandidates.push(topCandidates[vi]);
                     }
@@ -1900,6 +1923,37 @@
                         var nLinks = Math.max(3, Math.round(edist / lSpacing));
                         var eAngle = Math.atan2(edy, edx);
 
+                        // Lazy-create chain link sprite for preview
+                        if (!_prmChainSprite) {
+                            var pad = Math.ceil(lThick) + 1;
+                            var sprW = Math.ceil(lW + pad * 2); if (sprW % 2 !== 0) sprW++;
+                            var sprH = Math.ceil(lH + pad * 2); if (sprH % 2 !== 0) sprH++;
+                            var sc = document.createElement('canvas'); sc.width = sprW; sc.height = sprH;
+                            var sctx = sc.getContext('2d');
+                            var scx = sprW / 2, scy = sprH / 2;
+                            var chw = lW * 0.5, chh = lH * 0.5, cr = Math.min(chw, chh) * 0.8;
+                            sctx.beginPath();
+                            sctx.moveTo(scx-chw+cr, scy-chh); sctx.lineTo(scx+chw-cr, scy-chh);
+                            sctx.arcTo(scx+chw, scy-chh, scx+chw, scy-chh+cr, cr); sctx.lineTo(scx+chw, scy+chh-cr);
+                            sctx.arcTo(scx+chw, scy+chh, scx+chw-cr, scy+chh, cr); sctx.lineTo(scx-chw+cr, scy+chh);
+                            sctx.arcTo(scx-chw, scy+chh, scx-chw, scy+chh-cr, cr); sctx.lineTo(scx-chw, scy-chh+cr);
+                            sctx.arcTo(scx-chw, scy-chh, scx-chw+cr, scy-chh, cr); sctx.closePath();
+                            sctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
+                            sctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
+                            sctx.lineWidth = lThick; sctx.fill(); sctx.stroke();
+                            var ihw = chw * 0.4, ihh = chh * 0.3, ir = Math.min(ihw, ihh) * 0.6;
+                            sctx.beginPath();
+                            sctx.moveTo(scx-ihw+ir, scy-ihh); sctx.lineTo(scx+ihw-ir, scy-ihh);
+                            sctx.arcTo(scx+ihw, scy-ihh, scx+ihw, scy-ihh+ir, ir); sctx.lineTo(scx+ihw, scy+ihh-ir);
+                            sctx.arcTo(scx+ihw, scy+ihh, scx+ihw-ir, scy+ihh, ir); sctx.lineTo(scx-ihw+ir, scy+ihh);
+                            sctx.arcTo(scx-ihw, scy+ihh, scx-ihw, scy+ihh-ir, ir); sctx.lineTo(scx-ihw, scy-ihh+ir);
+                            sctx.arcTo(scx-ihw, scy-ihh, scx-ihw+ir, scy-ihh, ir); sctx.closePath();
+                            sctx.fillStyle = 'rgba(20, 20, 30, 0.7)'; sctx.fill();
+                            _prmChainSprite = sc;
+                        }
+                        var pspr = _prmChainSprite;
+                        var psprHW = pspr.width / 2, psprHH = pspr.height / 2;
+
                         ctx.globalAlpha = 0.75;
 
                         for (var ci = 0; ci < nLinks; ci++) {
@@ -1911,45 +1965,7 @@
                             ctx.translate(ccx, ccy);
                             ctx.rotate(eAngle);
                             if (ci % 2 !== 0) ctx.rotate(Math.PI / 2);
-
-                            var chw = lW * 0.5, chh = lH * 0.5;
-                            var cr = Math.min(chw, chh) * 0.8;
-
-                            ctx.beginPath();
-                            ctx.moveTo(-chw + cr, -chh);
-                            ctx.lineTo(chw - cr, -chh);
-                            ctx.arcTo(chw, -chh, chw, -chh + cr, cr);
-                            ctx.lineTo(chw, chh - cr);
-                            ctx.arcTo(chw, chh, chw - cr, chh, cr);
-                            ctx.lineTo(-chw + cr, chh);
-                            ctx.arcTo(-chw, chh, -chw, chh - cr, cr);
-                            ctx.lineTo(-chw, -chh + cr);
-                            ctx.arcTo(-chw, -chh, -chw + cr, -chh, cr);
-                            ctx.closePath();
-
-                            ctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
-                            ctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
-                            ctx.lineWidth = lThick;
-                            ctx.fill();
-                            ctx.stroke();
-
-                            // Inner cutout
-                            var ihw = chw * 0.4, ihh = chh * 0.3;
-                            var ir = Math.min(ihw, ihh) * 0.6;
-                            ctx.beginPath();
-                            ctx.moveTo(-ihw + ir, -ihh);
-                            ctx.lineTo(ihw - ir, -ihh);
-                            ctx.arcTo(ihw, -ihh, ihw, -ihh + ir, ir);
-                            ctx.lineTo(ihw, ihh - ir);
-                            ctx.arcTo(ihw, ihh, ihw - ir, ihh, ir);
-                            ctx.lineTo(-ihw + ir, ihh);
-                            ctx.arcTo(-ihw, ihh, -ihw, ihh - ir, ir);
-                            ctx.lineTo(-ihw, -ihh + ir);
-                            ctx.arcTo(-ihw, -ihh, -ihw + ir, -ihh, ir);
-                            ctx.closePath();
-                            ctx.fillStyle = 'rgba(20, 20, 30, 0.7)';
-                            ctx.fill();
-
+                            ctx.drawImage(pspr, -psprHW, -psprHH);
                             ctx.restore();
                         }
                         ctx.globalAlpha = 1.0;

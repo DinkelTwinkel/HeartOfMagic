@@ -51,60 +51,80 @@ var SunGridEqualArea = {
             if (dist < bestRootDist) { bestRootDist = dist; rootRingK = rk; }
         }
 
+        // Collect ring radii by style + dots by color in single pass
+        var eqBuckets = {};
+        var eqInnerRings = [], eqOuterRings = [], eqRootRingR = -1;
         for (var k = 1; k <= totalRings; k++) {
             if (dotCount >= maxDots) break;
             var radius = Math.sqrt(k / totalRings) * maxRadius;
             var isRootRing = (k === rootRingK);
 
-            // Only draw circle strokes every circleSkip rings (+ root ring)
             if (isRootRing || k % circleSkip === 0) {
-                var isInner = (radius < ringRadius);
-                ctx.beginPath();
-                ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-                if (isRootRing) {
-                    ctx.strokeStyle = 'rgba(184, 168, 120, 0.35)';
-                    ctx.lineWidth = 1.5;
-                } else if (isInner) {
-                    ctx.strokeStyle = 'rgba(184, 168, 120, 0.1)';
-                    ctx.lineWidth = 1;
-                } else {
-                    ctx.strokeStyle = 'rgba(184, 168, 120, 0.05)';
-                    ctx.lineWidth = 1;
-                }
-                ctx.stroke();
+                if (isRootRing) { eqRootRingR = radius; }
+                else if (radius < ringRadius) { eqInnerRings.push(radius); }
+                else { eqOuterRings.push(radius); }
             }
 
-            // --- Grid dots on this ring (scaled with circumference) ---
+            // Collect dots into color buckets
             var circumference = 2 * Math.PI * radius;
             var pointCount = Math.max(spokes, Math.round(circumference / baseSpacing));
             var angleStep = (Math.PI * 2) / pointCount;
             var ringOffset = k * goldenAngle;
-            var lastColor = '';
 
             for (var p = 0; p < pointCount; p++) {
                 if (dotCount >= maxDots) break;
                 var angle = p * angleStep + ringOffset;
                 var color = opts.pointColorFn ? opts.pointColorFn(angle) : 'rgba(184, 168, 120, 0.15)';
-                if (color !== lastColor) { ctx.fillStyle = color; lastColor = color; }
-                ctx.fillRect(cx + Math.cos(angle) * radius - 1, cy + Math.sin(angle) * radius - 1, 3, 3);
+                if (!eqBuckets[color]) eqBuckets[color] = [];
+                eqBuckets[color].push(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
                 dotCount++;
             }
         }
-
-        // --- Radial spokes from center to maxExtent ---
-        var spokeStep = (Math.PI * 2) / spokes;
-        for (var s = 0; s < spokes; s++) {
-            var spokeAngle = s * spokeStep;
-            ctx.beginPath();
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(
-                cx + Math.cos(spokeAngle) * maxExtent,
-                cy + Math.sin(spokeAngle) * maxExtent
-            );
-            ctx.strokeStyle = 'rgba(184, 168, 120, 0.08)';
+        // Draw batched rings
+        if (eqOuterRings.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.05)';
             ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (var eoi = 0; eoi < eqOuterRings.length; eoi++) { ctx.moveTo(cx + eqOuterRings[eoi], cy); ctx.arc(cx, cy, eqOuterRings[eoi], 0, Math.PI * 2); }
             ctx.stroke();
         }
+        if (eqInnerRings.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for (var eii = 0; eii < eqInnerRings.length; eii++) { ctx.moveTo(cx + eqInnerRings[eii], cy); ctx.arc(cx, cy, eqInnerRings[eii], 0, Math.PI * 2); }
+            ctx.stroke();
+        }
+        if (eqRootRingR > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(cx + eqRootRingR, cy); ctx.arc(cx, cy, eqRootRingR, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Draw batched dots
+        for (var eqColor in eqBuckets) {
+            var eqPts = eqBuckets[eqColor];
+            ctx.fillStyle = eqColor;
+            ctx.beginPath();
+            for (var eqi = 0; eqi < eqPts.length; eqi += 2) {
+                ctx.rect(eqPts[eqi] - 1, eqPts[eqi + 1] - 1, 3, 3);
+            }
+            ctx.fill();
+        }
+
+        // --- Radial spokes — single batched path ---
+        var spokeStep = (Math.PI * 2) / spokes;
+        ctx.strokeStyle = 'rgba(184, 168, 120, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (var s = 0; s < spokes; s++) {
+            var spokeAngle = s * spokeStep;
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(spokeAngle) * maxExtent, cy + Math.sin(spokeAngle) * maxExtent);
+        }
+        ctx.stroke();
 
         // --- Center dot ---
         ctx.beginPath();

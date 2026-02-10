@@ -69,19 +69,17 @@ var SunGridSquare = {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // --- Grid dots at intersections (fillRect for perf) ---
+        // --- Grid dots at intersections — batch by color for single path per color ---
         var dotCount = 0;
-        var lastColor = '';
         var ringTol = tierSpacing * 0.6;
+        var sqBuckets = {};
 
         for (var gx = -halfCount; gx <= halfCount; gx++) {
-            var px = cx + gx * tierSpacing;
             var dx = gx * tierSpacing;
             for (var gy = -halfCount; gy <= halfCount; gy++) {
                 if (dotCount >= maxDots) break;
                 if (gx === 0 && gy === 0) continue;
                 var dy = gy * tierSpacing;
-                var py = cy + dy;
 
                 var angle = Math.atan2(dy, dx);
                 if (angle < 0) angle += Math.PI * 2;
@@ -95,11 +93,20 @@ var SunGridSquare = {
                         ? 'rgba(184, 168, 120, 0.35)'
                         : 'rgba(184, 168, 120, 0.15)';
                 }
-                if (color !== lastColor) { ctx.fillStyle = color; lastColor = color; }
-                ctx.fillRect(px - 1, py - 1, 3, 3);
+                if (!sqBuckets[color]) sqBuckets[color] = [];
+                sqBuckets[color].push(cx + dx, cy + dy);
                 dotCount++;
             }
             if (dotCount >= maxDots) break;
+        }
+        for (var sqColor in sqBuckets) {
+            var sqPts = sqBuckets[sqColor];
+            ctx.fillStyle = sqColor;
+            ctx.beginPath();
+            for (var sqi = 0; sqi < sqPts.length; sqi += 2) {
+                ctx.rect(sqPts[sqi] - 1, sqPts[sqi + 1] - 1, 3, 3);
+            }
+            ctx.fill();
         }
 
         // --- Center dot ---
