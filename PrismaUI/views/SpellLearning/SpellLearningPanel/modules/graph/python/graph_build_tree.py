@@ -171,27 +171,34 @@ def graph_build_tree_from_data(spells: list, config_dict: dict) -> dict:
     except Exception as e:
         _log(f"merge_with_hints failed (non-critical): {e}")
 
-    # ----- Pre-compute similarity matrices -----
-    similarities = _compute_similarity_matrix(spells)
-
-    # ----- Build each school's tree -----
+    # ----- Build each school's tree (per-school similarity computation) -----
     tree_data: Dict[str, Any] = {'version': '1.0', 'schools': {}}
 
     for school_name, school_spell_list in school_spells.items():
+        t_school = time.monotonic()
         _log(f"Building {school_name}: {len(school_spell_list)} spells")
+
+        # Compute similarity matrix PER SCHOOL (much faster than global)
+        school_similarities = _compute_similarity_matrix(school_spell_list)
 
         school_themes = themes_per_school.get(school_name, [])
         result = _build_school_tree(
             school_spell_list, school_name, school_themes,
-            similarities, max_children, chaos, force_balance, config
+            school_similarities, max_children, chaos, force_balance, config
         )
         if result:
             tree_data['schools'][school_name] = result
-            _log(f"  {school_name}: {len(result['nodes'])} nodes, root={result['root']}")
+            elapsed = time.monotonic() - t_school
+            _log(f"  {school_name}: {len(result['nodes'])} nodes, root={result['root']} "
+                 f"({elapsed:.1f}s total)")
 
     # ----- Cross-school chaos edges -----
     if chaos > 0.3 and len(tree_data['schools']) > 1:
-        _apply_cross_school_edges(tree_data, similarities, chaos, max_children)
+        t_cross = time.monotonic()
+        _log("Computing cross-school similarities (text-only, lightweight)...")
+        cross_similarities = _compute_cross_school_similarities(spells, school_spells)
+        _apply_cross_school_edges(tree_data, cross_similarities, chaos, max_children)
+        _log(f"  Cross-school edges: {time.monotonic() - t_cross:.1f}s")
 
     # ----- Metadata -----
     tree_data['generatedAt'] = datetime.now().isoformat()
@@ -356,8 +363,12 @@ def _edmonds_arborescence(
     force_balance: float
 ) -> List[Tuple[str, str]]:
     """
-    Build a weighted digraph and extract the minimum spanning arborescence
-    rooted at root_id using NetworkX.
+    Build a sparse weighted digraph and extract the minimum spanning
+    arborescence rooted at root_id using NetworkX.
+
+    Uses K-nearest-neighbors per node to keep the graph sparse (O(N*K) edges
+    instead of O(N^2)), which makes Edmonds' algorithm run in seconds rather
+    than minutes for large schools (e.g. Destruction with 498 spells).
 
     Returns:
         List of (parent_fid, child_fid) edges forming the arborescence.
@@ -365,35 +376,79 @@ def _edmonds_arborescence(
     Raises:
         nx.NetworkXException if no arborescence exists.
     """
-    G = nx.DiGraph()
+    t0 = time.monotonic()
 
-    # Add all nodes
+    K = 20  # Keep top K parent candidates per child
+    n = len(all_fids)
+
+    # Pre-compute tier indices
+    tier_idx_map: Dict[str, int] = {}
+    for fid in all_fids:
+        tier_idx_map[fid] = TIER_INDEX.get(nodes[fid].tier, 0)
+
+    G = nx.DiGraph()
     for fid in all_fids:
         G.add_node(fid)
 
-    # Add directed edges: for each ordered pair (parent_candidate, child_candidate)
-    for parent_fid in all_fids:
-        parent_node = nodes[parent_fid]
-        parent_tier_idx = TIER_INDEX.get(parent_node.tier, 0)
+    # For each potential child, find the top K cheapest parent candidates
+    total_cost_evals = 0
+    for child_fid in all_fids:
+        if child_fid == root_id:
+            continue
 
-        for child_fid in all_fids:
+        child_node = nodes[child_fid]
+        child_tier_idx = tier_idx_map[child_fid]
+
+        # Compute cost for valid parent candidates (tier-filtered)
+        candidates: List[Tuple[str, float]] = []
+        for parent_fid in all_fids:
             if parent_fid == child_fid:
                 continue
 
-            child_node = nodes[child_fid]
-            child_tier_idx = TIER_INDEX.get(child_node.tier, 0)
+            parent_tier_idx = tier_idx_map[parent_fid]
+
+            # Skip parents 2+ tiers above child (would be tier-order violation)
+            if parent_tier_idx > child_tier_idx + 1:
+                continue
 
             cost = _compute_edge_cost(
                 parent_fid, child_fid,
-                parent_node, child_node,
+                nodes[parent_fid], child_node,
                 parent_tier_idx, child_tier_idx,
                 similarities, chaos, force_balance
             )
+            candidates.append((parent_fid, cost))
+            total_cost_evals += 1
 
+        # Keep top K cheapest parents
+        candidates.sort(key=lambda x: x[1])
+        added_root = False
+        for parent_fid, cost in candidates[:K]:
             G.add_edge(parent_fid, child_fid, weight=cost)
+            if parent_fid == root_id:
+                added_root = True
+
+        # Ensure root always has a path to this child (arborescence reachability)
+        if not added_root:
+            root_tier_idx = tier_idx_map[root_id]
+            cost = _compute_edge_cost(
+                root_id, child_fid,
+                nodes[root_id], child_node,
+                root_tier_idx, child_tier_idx,
+                similarities, chaos, force_balance
+            )
+            G.add_edge(root_id, child_fid, weight=cost)
+
+    t_graph = time.monotonic()
+    _log(f"    Graph built: {n} nodes, {G.number_of_edges()} edges "
+         f"({total_cost_evals} cost evals) in {t_graph - t0:.1f}s")
 
     # Find minimum spanning arborescence rooted at root_id
     arb = nx.minimum_spanning_arborescence(G, attr='weight')
+
+    t_arb = time.monotonic()
+    _log(f"    Edmonds arborescence: {arb.number_of_edges()} edges "
+         f"in {t_arb - t_graph:.1f}s")
 
     # Extract edges as (parent, child) pairs
     return list(arb.edges())
@@ -917,9 +972,12 @@ def _apply_cross_school_edges(
 
 def _compute_similarity_matrix(spells: List[dict]) -> dict:
     """
-    Pre-compute pairwise TF-IDF, name, and effect-name similarity for all
-    spells. Identical approach to classic_build_tree._compute_similarity_matrix.
+    Pre-compute pairwise TF-IDF, name, and effect-name similarity for spells.
+    Called per-school so n is typically ~200-300, not the full spell pool.
     """
+    import time as _time
+    _t0 = _time.monotonic()
+
     form_ids: List[str] = []
     documents: List[str] = []
     spell_names: Dict[str, str] = {}
@@ -1011,13 +1069,73 @@ def _compute_similarity_matrix(spells: List[dict]) -> dict:
                 effect_sims[key_ab] = best_sim
                 effect_sims[key_ba] = best_sim
 
-    _log(f"  Similarity matrix: {len(text_sims) // 2} text, "
-         f"{len(name_sims) // 2} name, {len(effect_sims) // 2} effect pairs")
+    _elapsed = _time.monotonic() - _t0
+    _log(f"  Similarity matrix ({len(form_ids)} spells): {len(text_sims) // 2} text, "
+         f"{len(name_sims) // 2} name, {len(effect_sims) // 2} effect pairs "
+         f"in {_elapsed:.1f}s")
 
     return {
         'text_sims': text_sims,
         'name_sims': name_sims,
         'effect_sims': effect_sims,
+    }
+
+
+def _compute_cross_school_similarities(
+    all_spells: List[dict],
+    school_spells: Dict[str, List[dict]]
+) -> dict:
+    """
+    Compute LIGHTWEIGHT cross-school similarities for chaos edges.
+
+    Only computes TF-IDF text similarity between spells of DIFFERENT schools.
+    Skips expensive effect-name and name n-gram comparisons since cross-school
+    edges only need a rough affinity signal.
+    """
+    form_ids: List[str] = []
+    documents: List[str] = []
+    spell_school: Dict[str, str] = {}
+
+    for school_name, slist in school_spells.items():
+        for s in slist:
+            fid = s.get('formId', '')
+            if not fid:
+                continue
+            form_ids.append(fid)
+            spell_school[fid] = school_name
+
+            raw_effects = s.get('effects', []) or s.get('effectNames', []) or []
+            effects_flat = [e if isinstance(e, str) else e.get('name', '') for e in raw_effects]
+            doc_text = build_text({
+                'name': s.get('name', ''),
+                'desc': s.get('description', '') or s.get('desc', ''),
+                'effects': effects_flat
+            })
+            documents.append(doc_text)
+
+    tokenized = [tokenize(doc) for doc in documents]
+    tfidf_vectors = compute_tfidf(tokenized)
+    n = len(form_ids)
+
+    # Only compute cross-school pairs (skip same-school — already handled)
+    text_sims: Dict[str, float] = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if spell_school[form_ids[i]] == spell_school[form_ids[j]]:
+                continue  # Same school — skip
+            sim = _cosine_sim(tfidf_vectors[i], tfidf_vectors[j])
+            if sim > 0.1:
+                key_ab = f"{form_ids[i]}:{form_ids[j]}"
+                key_ba = f"{form_ids[j]}:{form_ids[i]}"
+                text_sims[key_ab] = sim
+                text_sims[key_ba] = sim
+
+    _log(f"  Cross-school similarities: {len(text_sims) // 2} text pairs")
+
+    return {
+        'text_sims': text_sims,
+        'name_sims': {},
+        'effect_sims': {},
     }
 
 

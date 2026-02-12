@@ -141,7 +141,8 @@ var TreeGrowthTree = {
             max_children_per_node: 4,
             top_themes_per_school: 8,
             convergence_chance: 0.3,
-            prefer_vanilla_roots: true
+            prefer_vanilla_roots: true,
+            selected_roots: settings.selectedRoots || {}
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({
@@ -220,6 +221,22 @@ var TreeGrowthTree = {
             }
         }
 
+        // Build layout-derived edge lookups from parentMap
+        // This replaces Python NLP edges with edges that match the visual layout
+        var childrenLookup = {};
+        var prereqLookup = {};
+        if (layout && layout.parentMap) {
+            for (var pmId in layout.parentMap) {
+                if (!layout.parentMap.hasOwnProperty(pmId)) continue;
+                var pmParent = layout.parentMap[pmId];
+                if (!childrenLookup[pmParent]) childrenLookup[pmParent] = [];
+                childrenLookup[pmParent].push(pmId);
+                if (!prereqLookup[pmId]) prereqLookup[pmId] = [];
+                prereqLookup[pmId].push(pmParent);
+            }
+        }
+        var hasLayoutEdges = layout && layout.parentMap && Object.keys(layout.parentMap).length > 0;
+
         // Bake school sector data from TreePreview so the wheel renderer
         // can use exact angles/colors instead of guessing from node positions.
         var sectorLookup = {};
@@ -276,7 +293,14 @@ var TreeGrowthTree = {
             var outNodes = [];
             for (var i = 0; i < srcNodes.length; i++) {
                 var sn = srcNodes[i];
-                var nodePrereqs = sn.prerequisites || [];
+
+                // Skip unpositioned nodes when layout edges exist
+                // (they weren't placed by the layout engine)
+                if (hasLayoutEdges && !posLookup[sn.formId]) continue;
+
+                // Use layout-derived edges when available, fall back to Python NLP edges
+                var layoutChildren = hasLayoutEdges ? (childrenLookup[sn.formId] || []) : (sn.children || []);
+                var layoutPrereqs = hasLayoutEdges ? (prereqLookup[sn.formId] || []) : (sn.prerequisites || []);
 
                 // Prereq rework: regular prereqs = soft (need any 1 of N)
                 // Lock prereqs = hard (mandatory)
@@ -290,18 +314,24 @@ var TreeGrowthTree = {
 
                 var outNode = {
                     formId: sn.formId,
-                    children: sn.children || [],
-                    prerequisites: nodePrereqs,
+                    children: layoutChildren,
+                    prerequisites: layoutPrereqs,
                     hardPrereqs: lockHardPrereqs,
-                    softPrereqs: nodePrereqs,
-                    softNeeded: nodePrereqs.length > 0 ? 1 : 0,
+                    softPrereqs: layoutPrereqs,
+                    softNeeded: layoutPrereqs.length > 0 ? 1 : 0,
                     tier: sn.tier || 1
                 };
                 if (lockData.length > 0) outNode.locks = lockData;
                 if (sn.skillLevel) outNode.skillLevel = sn.skillLevel;
                 if (sn.theme) outNode.theme = sn.theme;
                 if (sn.name) outNode.name = sn.name;
-                if (sn.formId === schoolRootId) outNode.isRoot = true;
+                if (sn.formId === schoolRootId) {
+                    outNode.isRoot = true;
+                    // Root nodes are school entry points — never assign prerequisites
+                    outNode.prerequisites = [];
+                    outNode.softPrereqs = [];
+                    outNode.softNeeded = 0;
+                }
 
                 // Bake layout position if computed
                 var pos = posLookup[sn.formId];
@@ -626,6 +656,7 @@ var TreeGrowthTree = {
         var allEdges = [];
         var allNodes = [];
         var allPosMap = {};
+        var allParentMap = {};
         var totalPlaced = 0;
         var totalPool = 0;
 
@@ -928,6 +959,88 @@ var TreeGrowthTree = {
                 ' nbrs) for ' + allTreeNodes.length + ' nodes');
 
             // ==========================================================
+            // E2) PRE-LAYOUT GRID EXPANSION
+            //     If grid has fewer free points than nodes, generate
+            //     synthetic sector points so every node can be placed.
+            // ==========================================================
+            var gridDeficit = allTreeNodes.length - totalPts;
+            if (gridDeficit > 0) {
+                var expansionAdded = 0;
+                var expansionSet = {};
+                for (var exi = 0; exi < schoolPts.length; exi++) {
+                    expansionSet[Math.round(schoolPts[exi].x) + ',' + Math.round(schoolPts[exi].y)] = true;
+                }
+                // Strategy 1: midpoint insertion between existing pairs
+                var expMaxD2 = tierSp * tierSp * 5; // pairs within ~2.2x tierSp
+                for (var epi = 0; epi < totalPts && expansionAdded < gridDeficit; epi++) {
+                    for (var enj = 0; enj < schoolPts[epi].neighbors.length && expansionAdded < gridDeficit; enj++) {
+                        var enbIdx = schoolPts[epi].neighbors[enj];
+                        if (enbIdx <= epi) continue;
+                        var emdx = schoolPts[enbIdx].x - schoolPts[epi].x;
+                        var emdy = schoolPts[enbIdx].y - schoolPts[epi].y;
+                        if (emdx * emdx + emdy * emdy > expMaxD2) continue;
+                        var emx = (schoolPts[epi].x + schoolPts[enbIdx].x) / 2;
+                        var emy = (schoolPts[epi].y + schoolPts[enbIdx].y) / 2;
+                        var emk = Math.round(emx) + ',' + Math.round(emy);
+                        if (expansionSet[emk]) continue;
+                        expansionSet[emk] = true;
+                        schoolPts.push({
+                            x: emx, y: emy,
+                            used: false,
+                            neighbors: [epi, enbIdx],
+                            inCorridor: false,
+                            _synthetic: true
+                        });
+                        var newMidIdx = schoolPts.length - 1;
+                        schoolPts[epi].neighbors.push(newMidIdx);
+                        schoolPts[enbIdx].neighbors.push(newMidIdx);
+                        expansionAdded++;
+                    }
+                }
+                // Strategy 2: radial extension from outermost points
+                var extRound = 0;
+                var extSeedStart = 0;
+                while (expansionAdded < gridDeficit && extRound < 30) {
+                    extRound++;
+                    var extAdded = 0;
+                    // Sort by distance from center (outermost first)
+                    var extSeeds = [];
+                    for (var esi = extSeedStart; esi < schoolPts.length; esi++) {
+                        var esr = (schoolPts[esi].x - baseMidX) * (schoolPts[esi].x - baseMidX) +
+                                  (schoolPts[esi].y - baseMidY) * (schoolPts[esi].y - baseMidY);
+                        extSeeds.push({ idx: esi, r2: esr });
+                    }
+                    extSeeds.sort(function(a, b) { return b.r2 - a.r2; });
+                    extSeedStart = schoolPts.length;
+                    for (var eki = 0; eki < extSeeds.length && expansionAdded < gridDeficit; eki++) {
+                        var ekIdx = extSeeds[eki].idx;
+                        var ekR = Math.sqrt(extSeeds[eki].r2);
+                        if (ekR < 1) continue;
+                        var enx = schoolPts[ekIdx].x + (schoolPts[ekIdx].x - baseMidX) / ekR * tierSp;
+                        var eny = schoolPts[ekIdx].y + (schoolPts[ekIdx].y - baseMidY) / ekR * tierSp;
+                        var enk = Math.round(enx) + ',' + Math.round(eny);
+                        if (expansionSet[enk]) continue;
+                        expansionSet[enk] = true;
+                        var newExtIdx = schoolPts.length;
+                        schoolPts.push({
+                            x: enx, y: eny,
+                            used: false,
+                            neighbors: [ekIdx],
+                            inCorridor: false,
+                            _synthetic: true
+                        });
+                        schoolPts[ekIdx].neighbors.push(newExtIdx);
+                        expansionAdded++;
+                        extAdded++;
+                    }
+                    if (extAdded === 0) break;
+                }
+                totalPts = schoolPts.length;
+                console.log('[TreeGrowthTree] ' + schoolName + ': pre-layout expansion added ' +
+                    expansionAdded + ' points (deficit was ' + gridDeficit + ', now ' + totalPts + ' pts)');
+            }
+
+            // ==========================================================
             // F) BUILD NODE LOOKUP + SUBTREE SIZES
             // ==========================================================
             var nodeLookup = {};
@@ -981,6 +1094,7 @@ var TreeGrowthTree = {
             // G) PLACE ROOT ON ROOT GRID POINT
             // ==========================================================
             var posMap = {};
+            var parentMap = {};
             var gridIdxMap = {};
 
             schoolPts[rootLocalIdx].used = true;
@@ -1197,6 +1311,7 @@ var TreeGrowthTree = {
                             x2: schoolPts[bestIdx].x, y2: schoolPts[bestIdx].y,
                             color: schoolColor
                         });
+                        parentMap[tChildId] = tCurId;
 
                         dirMap[tChildId] = { dx: gdx, dy: gdy };
                         nextLevel.push(tChildId);
@@ -1317,6 +1432,7 @@ var TreeGrowthTree = {
                             x2: schoolPts[rdBest].x, y2: schoolPts[rdBest].y,
                             color: schoolColor
                         });
+                        parentMap[rdChildId] = rdChild.parentId;
 
                         // Push to DFS so this node's children also try corridor
                         dfsStack.push(rdChildId);
@@ -1423,6 +1539,7 @@ var TreeGrowthTree = {
                             x2: schoolPts[rBest].x, y2: schoolPts[rBest].y,
                             color: schoolColor
                         });
+                        parentMap[rChildId2] = rCurId;
 
                         dfsStack.push(rChildId2);
                     }
@@ -1488,6 +1605,7 @@ var TreeGrowthTree = {
             // Assign each deferred node to a branch origin with a unique fan angle
             // so branches spread across a wide arc instead of just left/right
             var branchDfsStack = [];
+            var branchPushedBy = {};
             var originRR = 0; // round-robin counter
             var fanArc = Math.PI * 0.83; // ±75° from growth direction
             for (var bqi = 0; bqi < deferredNodes.length; bqi++) {
@@ -1507,6 +1625,7 @@ var TreeGrowthTree = {
                     fanAngle: fanT * (fanArc / 2)
                 };
                 branchDfsStack.push(defId);
+                branchPushedBy[defId] = assignedOrigin.id;
             }
 
             // Build placed positions list for empty-space scoring
@@ -1545,6 +1664,7 @@ var TreeGrowthTree = {
                         for (var bci = 0; bci < bSorted.length; bci++) {
                             if (!posMap[bSorted[bci]]) {
                                 branchDfsStack.push(bSorted[bci]);
+                                branchPushedBy[bSorted[bci]] = bNodeId;
                             }
                         }
                     }
@@ -1683,20 +1803,39 @@ var TreeGrowthTree = {
                     }
                 }
 
-                // Last resort: nearest unused globally
+                // Last resort: generate a synthetic grid point near the anchor
+                // in the branch growth direction (instead of picking a distant
+                // global point that creates long spanning edges).
                 if (bestIdx < 0) {
                     placeStats.globalFB++;
-                    var fbDist = Infinity;
-                    for (var fi = 0; fi < totalPts; fi++) {
-                        if (schoolPts[fi].used) continue;
-                        var fdx = schoolPts[fi].x - anchorPos.x;
-                        var fdy = schoolPts[fi].y - anchorPos.y;
-                        var fd = fdx * fdx + fdy * fdy;
-                        if (fd < fbDist) { fbDist = fd; bestIdx = fi; }
+                    // Step in the branch growth direction from anchor
+                    var synX = anchorPos.x + bGrowDx * tierSp * (0.8 + Math.random() * 0.4);
+                    var synY = anchorPos.y + bGrowDy * tierSp * (0.8 + Math.random() * 0.4);
+                    // Add slight perpendicular jitter to avoid stacking
+                    var synPerp = (Math.random() - 0.5) * tierSp * 0.6;
+                    synX += (-bGrowDy) * synPerp;
+                    synY += bGrowDx * synPerp;
+                    var synNewIdx = schoolPts.length;
+                    // Find nearest existing point for neighbor link
+                    var synNearIdx = -1;
+                    var synNearD = Infinity;
+                    for (var sni = Math.max(0, schoolPts.length - 300); sni < schoolPts.length; sni++) {
+                        var sndx = schoolPts[sni].x - synX;
+                        var sndy = schoolPts[sni].y - synY;
+                        var snd = sndx * sndx + sndy * sndy;
+                        if (snd < synNearD) { synNearD = snd; synNearIdx = sni; }
                     }
+                    var synNbrs = synNearIdx >= 0 ? [synNearIdx] : [];
+                    schoolPts.push({
+                        x: synX, y: synY,
+                        used: false,
+                        neighbors: synNbrs,
+                        inCorridor: false,
+                        _synthetic: true
+                    });
+                    if (synNearIdx >= 0) schoolPts[synNearIdx].neighbors.push(synNewIdx);
+                    bestIdx = synNewIdx;
                 }
-
-                if (bestIdx < 0) continue; // grid full
 
                 schoolPts[bestIdx].used = true;
                 posMap[bNodeId] = { x: schoolPts[bestIdx].x, y: schoolPts[bestIdx].y };
@@ -1727,6 +1866,7 @@ var TreeGrowthTree = {
                     x2: schoolPts[bestIdx].x, y2: schoolPts[bestIdx].y,
                     color: schoolColor
                 });
+                parentMap[bNodeId] = branchPushedBy[bNodeId] || (deferredSet[bNodeId] && deferredSet[bNodeId].originId) || rootSpellId;
 
                 // Push this node's children for DFS processing
                 var bChildNode = nodeLookup[bNodeId];
@@ -1738,6 +1878,7 @@ var TreeGrowthTree = {
                     for (var bcsi = 0; bcsi < bcSorted.length; bcsi++) {
                         if (!posMap[bcSorted[bcsi]]) {
                             branchDfsStack.push(bcSorted[bcsi]);
+                            branchPushedBy[bcSorted[bcsi]] = bNodeId;
                         }
                     }
                 }
@@ -1771,7 +1912,7 @@ var TreeGrowthTree = {
                 for (var rfi = 0; rfi < numRoots; rfi++) {
                     var rfPos = schoolRootPositions[rfi];
                     rootFrontiers.push({
-                        tips: [{ x: rfPos.x, y: rfPos.y, depth: 0 }],
+                        tips: [{ x: rfPos.x, y: rfPos.y, depth: 0, formId: rootSpellId }],
                         dirDx: rootGrowDx,
                         dirDy: rootGrowDy
                     });
@@ -1829,10 +1970,11 @@ var TreeGrowthTree = {
                         x2: rNewX, y2: rNewY,
                         color: schoolColor
                     });
+                    parentMap[rgNodeId] = rTip.formId || rootSpellId;
 
                     // New position becomes a growth tip
                     var rNewDepth = rTip.depth + 1;
-                    rFront.tips.push({ x: rNewX, y: rNewY, depth: rNewDepth });
+                    rFront.tips.push({ x: rNewX, y: rNewY, depth: rNewDepth, formId: rgNodeId });
 
                     // Branching: deeper tips may be retired to encourage branching
                     // Keep old tip alive = creates branches; remove = linear growth
@@ -1851,7 +1993,10 @@ var TreeGrowthTree = {
 
             // ==========================================================
             // L) CATCH-ALL: any remaining unplaced nodes (respects allocation cap)
+            //    With dynamic grid expansion when grid points are exhausted.
             // ==========================================================
+            var catchAllExpansions = 0;
+            var catchAllExpSet = null; // lazy-init dedup set
             for (var umi = 0; umi < allTreeNodes.length; umi++) {
                 if (placedCount >= maxPlaceable) break;
                 var umNode = allTreeNodes[umi];
@@ -1861,13 +2006,87 @@ var TreeGrowthTree = {
                 var nearPos = trunkTipPos;
                 var umIdx = -1;
                 var umfDist = Infinity;
-                for (var umf = 0; umf < totalPts; umf++) {
+                for (var umf = 0; umf < schoolPts.length; umf++) {
                     if (schoolPts[umf].used) continue;
                     var umfx = schoolPts[umf].x - nearPos.x;
                     var umfy = schoolPts[umf].y - nearPos.y;
                     var umfd = umfx * umfx + umfy * umfy;
                     if (umfd < umfDist) { umfDist = umfd; umIdx = umf; }
                 }
+
+                // Dynamic grid expansion: generate new points when grid is full
+                if (umIdx < 0 && catchAllExpansions < 10) {
+                    catchAllExpansions++;
+                    if (!catchAllExpSet) {
+                        catchAllExpSet = {};
+                        for (var ces = 0; ces < schoolPts.length; ces++) {
+                            catchAllExpSet[Math.round(schoolPts[ces].x) + ',' + Math.round(schoolPts[ces].y)] = true;
+                        }
+                    }
+                    var remaining = 0;
+                    for (var cri = umi; cri < allTreeNodes.length; cri++) {
+                        if (!posMap[allTreeNodes[cri].formId]) remaining++;
+                    }
+                    var ceNeeded = Math.max(remaining, 20);
+                    var ceAdded = 0;
+                    // Extend outward from placed nodes
+                    var cePlaced = [];
+                    for (var cpk in posMap) {
+                        if (posMap.hasOwnProperty(cpk)) cePlaced.push(posMap[cpk]);
+                    }
+                    // Sort by distance from center (outermost first)
+                    cePlaced.sort(function(a, b) {
+                        var ra = (a.x - baseMidX) * (a.x - baseMidX) + (a.y - baseMidY) * (a.y - baseMidY);
+                        var rb = (b.x - baseMidX) * (b.x - baseMidX) + (b.y - baseMidY) * (b.y - baseMidY);
+                        return rb - ra;
+                    });
+                    for (var cei = 0; cei < cePlaced.length && ceAdded < ceNeeded; cei++) {
+                        var cep = cePlaced[cei];
+                        var ceR = Math.sqrt((cep.x - baseMidX) * (cep.x - baseMidX) +
+                                            (cep.y - baseMidY) * (cep.y - baseMidY));
+                        if (ceR < 1) continue;
+                        // Generate 2-3 points per seed: outward + lateral
+                        var ceAngles = [0, Math.PI / 6, -Math.PI / 6];
+                        var ceBaseAngle = Math.atan2(cep.y - baseMidY, cep.x - baseMidX);
+                        for (var ceai = 0; ceai < ceAngles.length && ceAdded < ceNeeded; ceai++) {
+                            var ceAngle = ceBaseAngle + ceAngles[ceai];
+                            var cenx = cep.x + Math.cos(ceAngle) * tierSp;
+                            var ceny = cep.y + Math.sin(ceAngle) * tierSp;
+                            var cenk = Math.round(cenx) + ',' + Math.round(ceny);
+                            if (catchAllExpSet[cenk]) continue;
+                            catchAllExpSet[cenk] = true;
+                            // Find nearest existing point for neighbor link
+                            var ceNearIdx = -1;
+                            var ceNearD = Infinity;
+                            var ceSearchStart = Math.max(0, schoolPts.length - 200);
+                            for (var cesi = ceSearchStart; cesi < schoolPts.length; cesi++) {
+                                var cesdx = schoolPts[cesi].x - cenx;
+                                var cesdy = schoolPts[cesi].y - ceny;
+                                var cesd = cesdx * cesdx + cesdy * cesdy;
+                                if (cesd < ceNearD) { ceNearD = cesd; ceNearIdx = cesi; }
+                            }
+                            var newCeIdx = schoolPts.length;
+                            var ceNbrs = ceNearIdx >= 0 ? [ceNearIdx] : [];
+                            schoolPts.push({
+                                x: cenx, y: ceny,
+                                used: false,
+                                neighbors: ceNbrs,
+                                inCorridor: false,
+                                _synthetic: true
+                            });
+                            if (ceNearIdx >= 0) schoolPts[ceNearIdx].neighbors.push(newCeIdx);
+                            ceAdded++;
+                        }
+                    }
+                    totalPts = schoolPts.length;
+                    console.log('[TreeGrowthTree] ' + schoolName + ': dynamic expansion #' +
+                        catchAllExpansions + ' added ' + ceAdded + ' points (now ' + totalPts + ')');
+                    // Retry this node
+                    umi--;
+                    placeStats.globalFB--;
+                    continue;
+                }
+
                 if (umIdx < 0) break;
 
                 schoolPts[umIdx].used = true;
@@ -1885,6 +2104,7 @@ var TreeGrowthTree = {
                     x2: schoolPts[umIdx].x, y2: schoolPts[umIdx].y,
                     color: schoolColor
                 });
+                parentMap[umNode.formId] = (branchOrigins.length > 0 ? branchOrigins[0].id : rootSpellId);
             }
 
             console.log('[TreeGrowthTree] ' + schoolName + ': placed ' +
@@ -1907,9 +2127,14 @@ var TreeGrowthTree = {
                     allPosMap[pmk] = posMap[pmk];
                 }
             }
+            for (var pmk2 in parentMap) {
+                if (parentMap.hasOwnProperty(pmk2)) {
+                    allParentMap[pmk2] = parentMap[pmk2];
+                }
+            }
         }
 
-        return { edges: allEdges, nodes: allNodes, posMap: allPosMap, totalPlaced: totalPlaced, totalPool: totalPool };
+        return { edges: allEdges, nodes: allNodes, posMap: allPosMap, parentMap: allParentMap, totalPlaced: totalPlaced, totalPool: totalPool };
     },
 
     // =========================================================================

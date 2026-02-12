@@ -629,13 +629,23 @@ function _loadTrustedTree(data, switchToTreeTab) {
                 }
             }
 
+            // Root nodes must never have prerequisites — they are school entry points.
+            // Old trees (pre-parentMap fix) had Python NLP prereqs on roots, causing
+            // entire schools to be unreachable orphan chains.
+            if (nd.isRoot || id === sd.root) {
+                _hardPrereqs = [];
+                _softPrereqs = [];
+                _softNeeded = 0;
+            }
+
+            var isRootNode = nd.isRoot || id === sd.root;
             var node = {
                 id: id,
                 formId: id,
                 name: nd.name || null,
                 school: schoolName,
                 children: nd.children || [],
-                prerequisites: nd.prerequisites || [],
+                prerequisites: isRootNode ? [] : (nd.prerequisites || []),
                 hardPrereqs: _hardPrereqs,
                 softPrereqs: _softPrereqs,
                 softNeeded: _softNeeded,
@@ -643,13 +653,17 @@ function _loadTrustedTree(data, switchToTreeTab) {
                 depth: nd.tier || 0,
                 x: nx,
                 y: ny,
-                isRoot: nd.isRoot || false,
+                isRoot: isRootNode,
                 _fromLayoutEngine: true,
-                state: 'locked'
+                state: 'locked',
+                // Theme data baked from tree generator
+                theme: nd.theme || null,
+                themeColor: nd.themeColor || null,
+                skillLevel: nd.skillLevel || null
             };
 
             // Roots and prereq-less nodes are available
-            if (nd.isRoot || !nd.prerequisites || nd.prerequisites.length === 0) {
+            if (isRootNode || !node.prerequisites || node.prerequisites.length === 0) {
                 node.state = 'available';
             }
 

@@ -67,6 +67,10 @@ private:
     HANDLE m_hStdoutRead = nullptr;
     DWORD m_processId = 0;
 
+    // TCP socket IPC (used on Wine where pipe inheritance is broken)
+    SOCKET m_socket = INVALID_SOCKET;
+    bool m_useSocket = false;
+
     // State
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_ready{false};

@@ -9,6 +9,154 @@
 #include "SpellEffectivenessHook.h"
 #include "SpellTomeHook.h"
 #include "PapyrusAPI.h"
+#include "SpellLearningAPI.h"
+
+// =============================================================================
+// SPELL LEARNING API IMPLEMENTATION (for SKSE inter-plugin messaging)
+// =============================================================================
+
+class SpellLearningAPIImpl : public SpellLearning::ISpellLearningAPI
+{
+public:
+    static SpellLearningAPIImpl* GetSingleton()
+    {
+        static SpellLearningAPIImpl singleton;
+        return &singleton;
+    }
+
+    uint32_t GetAPIVersion() const override { return SpellLearning::kAPIVersion; }
+
+    float AddSourcedXP(uint32_t spellFormID, float amount, const std::string& sourceName) override
+    {
+        return ProgressionManager::GetSingleton()->AddSourcedXP(
+            static_cast<RE::FormID>(spellFormID), amount, sourceName);
+    }
+
+    float AddRawXP(uint32_t spellFormID, float amount) override
+    {
+        return ProgressionManager::GetSingleton()->AddRawXP(
+            static_cast<RE::FormID>(spellFormID), amount);
+    }
+
+    void SetSpellXP(uint32_t spellFormID, float xp) override
+    {
+        ProgressionManager::GetSingleton()->SetSpellXP(
+            static_cast<RE::FormID>(spellFormID), xp);
+    }
+
+    bool IsSpellMastered(uint32_t spellFormID) const override
+    {
+        return ProgressionManager::GetSingleton()->IsSpellMastered(
+            static_cast<RE::FormID>(spellFormID));
+    }
+
+    bool IsSpellAvailableToLearn(uint32_t spellFormID) const override
+    {
+        return ProgressionManager::GetSingleton()->IsSpellAvailableToLearn(
+            static_cast<RE::FormID>(spellFormID));
+    }
+
+    float GetRequiredXP(uint32_t spellFormID) const override
+    {
+        return ProgressionManager::GetSingleton()->GetRequiredXP(
+            static_cast<RE::FormID>(spellFormID));
+    }
+
+    float GetProgress(uint32_t spellFormID) const override
+    {
+        auto progress = ProgressionManager::GetSingleton()->GetProgress(
+            static_cast<RE::FormID>(spellFormID));
+        return progress.progressPercent * 100.0f;
+    }
+
+    uint32_t GetLearningTarget(const std::string& school) const override
+    {
+        return static_cast<uint32_t>(
+            ProgressionManager::GetSingleton()->GetLearningTarget(school));
+    }
+
+    void SetLearningTarget(uint32_t spellFormID) override
+    {
+        auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(
+            static_cast<RE::FormID>(spellFormID));
+        if (spell) {
+            std::stringstream ss;
+            ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << spellFormID;
+            ProgressionManager::GetSingleton()->SetLearningTargetFromTome(ss.str(), spell);
+        }
+    }
+
+    void ClearLearningTarget(const std::string& school) override
+    {
+        ProgressionManager::GetSingleton()->ClearLearningTarget(school);
+    }
+
+    float GetGlobalMultiplier() const override
+    {
+        return ProgressionManager::GetSingleton()->GetXPSettings().globalMultiplier;
+    }
+
+    bool RegisterXPSource(const std::string& sourceId, const std::string& displayName) override
+    {
+        return ProgressionManager::GetSingleton()->RegisterModdedXPSource(sourceId, displayName);
+    }
+
+private:
+    SpellLearningAPIImpl() = default;
+};
+
+// Handle incoming SKSE messages from other plugins
+void OnExternalPluginMessage(SKSE::MessagingInterface::Message* a_msg)
+{
+    if (!a_msg) return;
+
+    switch (a_msg->type) {
+        case SpellLearning::kMessageType_RequestAPI: {
+            logger::info("SpellLearning: API requested by external plugin");
+            auto* api = SpellLearningAPIImpl::GetSingleton();
+            SKSE::GetMessagingInterface()->Dispatch(
+                SpellLearning::kMessageType_RequestAPI,
+                api, sizeof(void*), nullptr);
+            break;
+        }
+        case SpellLearning::kMessageType_AddXP: {
+            if (a_msg->dataLen >= sizeof(SpellLearning::AddXPMessage)) {
+                auto* msg = static_cast<SpellLearning::AddXPMessage*>(a_msg->data);
+                std::string sourceName;
+
+                switch (msg->sourceType) {
+                    case SpellLearning::XPSourceType::Any:    sourceName = "any"; break;
+                    case SpellLearning::XPSourceType::School: sourceName = "school"; break;
+                    case SpellLearning::XPSourceType::Direct: sourceName = "direct"; break;
+                    case SpellLearning::XPSourceType::Self:   sourceName = "self"; break;
+                    case SpellLearning::XPSourceType::Raw:
+                        ProgressionManager::GetSingleton()->AddRawXP(
+                            static_cast<RE::FormID>(msg->spellFormID), msg->amount);
+                        return;
+                    case SpellLearning::XPSourceType::Custom:
+                        sourceName = msg->sourceName;
+                        break;
+                }
+
+                ProgressionManager::GetSingleton()->AddSourcedXP(
+                    static_cast<RE::FormID>(msg->spellFormID), msg->amount, sourceName);
+                logger::info("SpellLearning: External AddXP({:08X}, {:.1f}, '{}')",
+                    msg->spellFormID, msg->amount, sourceName);
+            }
+            break;
+        }
+        case SpellLearning::kMessageType_RegisterSource: {
+            if (a_msg->dataLen >= sizeof(SpellLearning::RegisterSourceMessage)) {
+                auto* msg = static_cast<SpellLearning::RegisterSourceMessage*>(a_msg->data);
+                ProgressionManager::GetSingleton()->RegisterModdedXPSource(
+                    msg->sourceId, msg->displayName);
+                logger::info("SpellLearning: External RegisterSource('{}', '{}')",
+                    msg->sourceId, msg->displayName);
+            }
+            break;
+        }
+    }
+}
 
 // =============================================================================
 // LOGGING SETUP
@@ -98,7 +246,7 @@ public:
             // Matched! Toggle the panel
             logger::info("Hotkey {} pressed - toggling Spell Learning Panel", m_hotkeyCode);
             UIManager::GetSingleton()->TogglePanel();
-            // Don't break - continue processing in case there are multiple hotkey events
+            break;  // Only process one hotkey event per frame to prevent double-toggle
         }
 
         return RE::BSEventNotifyControl::kContinue;
@@ -285,6 +433,10 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
         logger::error("Failed to register messaging listener");
         return false;
     }
+
+    // Register listener for external plugin API messages (targeted at "SpellLearning")
+    messaging->RegisterListener("SpellLearning", OnExternalPluginMessage);
+    logger::info("SpellLearning inter-plugin API listener registered");
     
     // Register serialization interface (co-save)
     auto serialization = SKSE::GetSerializationInterface();

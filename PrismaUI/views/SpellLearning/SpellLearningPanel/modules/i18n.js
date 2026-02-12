@@ -37,11 +37,17 @@
         _locale = locale;
 
         // Prefer preloaded data from <script src="lang/en.js"> (avoids sync XHR issues in Ultralight/USVFS)
+        // Only use preload if the locale matches (prevents loading English when another locale is requested)
         if (window._i18nPreload && typeof window._i18nPreload === 'object') {
-            _translations = window._i18nPreload;
-            _loaded = true;
-            console.log('[i18n] Loaded locale "' + locale + '" from preload (' + Object.keys(_translations).length + ' keys)');
-            return;
+            var preloadLocale = window._i18nPreload['_meta.locale'] || 'en';
+            if (preloadLocale === locale) {
+                _translations = window._i18nPreload;
+                _loaded = true;
+                console.log('[i18n] Loaded locale "' + locale + '" from preload (' + Object.keys(_translations).length + ' keys)');
+                return;
+            } else {
+                console.log('[i18n] Preload is "' + preloadLocale + '" but requested "' + locale + '", loading via XHR');
+            }
         }
 
         // Fallback: sync XHR (works in browsers, may truncate in Ultralight file://)

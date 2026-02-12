@@ -212,8 +212,8 @@ def _build_school_tree(
     # Assign unknown-tier spells to Novice (safest default)
     by_tier['Novice'].extend(unknown_tier)
 
-    # Find root: prefer vanilla root from lowest tier with spells
-    root_spell = _pick_root(by_tier, config)
+    # Find root: user override > vanilla preference > lowest tier
+    root_spell = _pick_root(by_tier, config, school_name)
     if not root_spell:
         return None
 
@@ -312,8 +312,22 @@ def _build_school_tree(
     }
 
 
-def _pick_root(by_tier: Dict[str, List[dict]], config: dict) -> Optional[dict]:
-    """Pick the best root spell from the lowest available tier."""
+def _pick_root(by_tier: Dict[str, List[dict]], config: dict, school: str = '') -> Optional[dict]:
+    """Pick the best root spell. User override takes priority over auto-pick."""
+    # Check user-selected root override
+    selected_roots = config.get('selected_roots', {})
+    if school and school in selected_roots:
+        override = selected_roots[school]
+        override_id = override.get('formId', '') if isinstance(override, dict) else ''
+        if override_id:
+            all_spells = [s for tier in by_tier.values() for s in tier]
+            for s in all_spells:
+                if s.get('formId') == override_id:
+                    sys.stderr.write("[ClassicBuilder] Using user-selected root for %s: %s\n" % (school, s.get('name', override_id)))
+                    return s
+            sys.stderr.write("[ClassicBuilder] User-selected root %s for %s not in spell pool, auto-picking\n" % (override_id, school))
+
+    # Auto-pick: prefer vanilla root from lowest tier
     prefer_vanilla = config.get('prefer_vanilla_roots', True)
 
     for tier_name in TIER_ORDER:
@@ -322,7 +336,6 @@ def _pick_root(by_tier: Dict[str, List[dict]], config: dict) -> Optional[dict]:
             continue
 
         if prefer_vanilla:
-            # Vanilla formIds are typically < 0x01000000 (no mod prefix)
             vanilla = [s for s in tier_spells if _is_vanilla(s.get('formId', ''))]
             if vanilla:
                 return random.choice(vanilla)

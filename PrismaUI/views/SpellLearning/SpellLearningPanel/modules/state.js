@@ -56,6 +56,7 @@ var settings = {
     // Connection visibility settings
     showSelectionPath: true,      // Show white highlight path when node selected
     showBaseConnections: true,    // Show dim connection lines between all nodes
+    edgeStyle: 'straight',        // 'straight' or 'curved' (Bezier) edge rendering
     nodeSizeScaling: true,
     showNodeNames: true,
     nodeFontSize: 10,
@@ -99,6 +100,8 @@ var settings = {
     xpCapSchool: 15,    // Max 15% from same-school spells
     xpCapDirect: 50,    // Max 50% from direct prerequisite casts
     // Remaining 50% must come from self-casting the learning target
+    // Modded XP sources (registered by external mods, each with multiplier + cap)
+    moddedXPSources: {},
     // Tier XP requirements
     xpNovice: 100,
     xpApprentice: 200,
@@ -177,6 +180,19 @@ var settings = {
         weakenedSpellNotifications: true, // Show "X operating at Y% power" when casting weakened spells
         weakenedSpellInterval: 10         // Seconds between notifications (default 10)
     },
+    // Passive learning settings
+    passiveLearning: {
+        enabled: false,
+        scope: 'novice',        // 'all', 'root', 'novice'
+        xpPerGameHour: 5,
+        maxByTier: {
+            novice: 100,
+            apprentice: 75,
+            adept: 50,
+            expert: 25,
+            master: 5
+        }
+    },
     // Spell blacklist (excluded from tree building)
     // Each entry: { formId: '0x...', name: 'Spell Name', school: 'School' }
     spellBlacklist: [],
@@ -184,6 +200,10 @@ var settings = {
     // Each entry: { plugin: 'PluginName.esp', enabled: true, spellCount: 42 }
     // If empty or all disabled, all plugins are scanned (default behavior)
     pluginWhitelist: [],
+    // User-selected root spells per school (optional override for tree building)
+    // { "Destruction": { formId: "0x...", name: "Flames", plugin: "Skyrim.esm", localFormId: "012FCD" }, ... }
+    // Missing school = auto-pick (default behavior)
+    selectedRoots: {},
 
     // ==========================================================================
     // DYNAMIC TREE GENERATION SETTINGS (Tier 3)

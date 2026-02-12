@@ -24,6 +24,19 @@ PythonInstaller* PythonInstaller::GetSingleton()
 }
 
 // =============================================================================
+// PLATFORM-SPECIFIC URL
+// =============================================================================
+
+const char* PythonInstaller::GetPythonURL() const
+{
+    if (IsRunningUnderWine()) {
+        logger::info("PythonInstaller: Wine detected — using Python 3.11.9 (3.12+ crashes on Wine)");
+        return PYTHON_URL_WINE;
+    }
+    return PYTHON_URL;
+}
+
+// =============================================================================
 // PUBLIC API
 // =============================================================================
 
@@ -80,9 +93,12 @@ void PythonInstaller::InstallWorker()
         if (m_cancelRequested.load()) { CleanupPartialInstall(); return; }
 
         auto tempZip = m_toolDir / "python_temp.zip";
-        ReportProgress("DownloadingPython", 2, "Downloading Python 3.12...");
+        const char* pythonUrl = GetPythonURL();
+        bool isWine = IsRunningUnderWine();
+        std::string pyVersion = isWine ? "3.11" : "3.12";
+        ReportProgress("DownloadingPython", 2, "Downloading Python " + pyVersion + "...");
 
-        if (!DownloadFile(PYTHON_URL, tempZip, "DownloadingPython", 2, 20)) {
+        if (!DownloadFile(pythonUrl, tempZip, "DownloadingPython", 2, 20)) {
             if (m_cancelRequested.load()) {
                 CleanupPartialInstall();
                 return;
@@ -252,14 +268,16 @@ void PythonInstaller::InstallWorker()
             logger::info("PythonInstaller: Writing marker to: {}", markerPath.string());
             std::ofstream marker(markerPath);
             if (marker.is_open()) {
-                marker << "Python 3.12.8 embedded + packages installed successfully\n";
+                std::string pyFullVersion = isWine ? "3.11.9" : "3.12.8";
+                marker << "Python " << pyFullVersion << " embedded + packages installed successfully\n";
                 marker.close();
                 logger::info("PythonInstaller: Wrote install completion marker");
             } else {
                 // Fallback: try relative path
                 auto relMarker = m_pythonDir / ".install_complete";
                 std::ofstream marker2(relMarker);
-                marker2 << "Python 3.12.8 embedded + packages installed successfully\n";
+                std::string pyFullVersion = isWine ? "3.11.9" : "3.12.8";
+                marker2 << "Python " << pyFullVersion << " embedded + packages installed successfully\n";
                 marker2.close();
                 logger::info("PythonInstaller: Wrote marker via relative path");
             }

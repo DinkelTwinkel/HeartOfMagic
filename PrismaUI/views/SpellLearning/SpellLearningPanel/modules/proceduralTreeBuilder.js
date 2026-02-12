@@ -1461,6 +1461,96 @@ window.onProceduralPythonComplete = function(resultStr) {
             return;
         }
 
+        // Route to Graph Growth mode if it triggered this build
+        if (state._graphGrowthBuildPending) {
+            state._graphGrowthBuildPending = false;
+            if (result.success && result.treeData) {
+                if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
+                    BuildProgress.setStage('prereqs');
+                }
+                var graphTreeData = typeof result.treeData === 'string' ? JSON.parse(result.treeData) : result.treeData;
+                if (typeof TreeGrowthGraph !== 'undefined' && TreeGrowthGraph.loadTreeData) {
+                    TreeGrowthGraph.loadTreeData(graphTreeData);
+                    if (typeof TreeGrowth !== 'undefined') TreeGrowth._markDirty();
+                }
+                var graphSchools = graphTreeData && graphTreeData.schools ? Object.keys(graphTreeData.schools).length : 0;
+                var graphSpells = 0;
+                if (graphTreeData && graphTreeData.schools) { for (var gs in graphTreeData.schools) { graphSpells += (graphTreeData.schools[gs].nodes || []).length; } }
+                if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeBuildComplete', {schools: graphSchools, spells: graphSpells}), 'success');
+            } else {
+                _handleBuildFailure(
+                    result.error || 'unknown',
+                    '_graphGrowthBuildPending',
+                    typeof GraphSettings !== 'undefined' ? GraphSettings : null,
+                    { command: 'build_tree_graph', config: {} },
+                    'tgGraphBuildBtn',
+                    '[GraphGrowth]'
+                );
+            }
+            resetProceduralPlusButton();
+            return;
+        }
+
+        // Route to Oracle Growth mode if it triggered this build
+        if (state._oracleGrowthBuildPending) {
+            state._oracleGrowthBuildPending = false;
+            if (result.success && result.treeData) {
+                if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
+                    BuildProgress.setStage('prereqs');
+                }
+                var oracleTreeData = typeof result.treeData === 'string' ? JSON.parse(result.treeData) : result.treeData;
+                if (typeof TreeGrowthOracle !== 'undefined' && TreeGrowthOracle.loadTreeData) {
+                    TreeGrowthOracle.loadTreeData(oracleTreeData);
+                    if (typeof TreeGrowth !== 'undefined') TreeGrowth._markDirty();
+                }
+                var oracleSchools = oracleTreeData && oracleTreeData.schools ? Object.keys(oracleTreeData.schools).length : 0;
+                var oracleSpells = 0;
+                if (oracleTreeData && oracleTreeData.schools) { for (var os in oracleTreeData.schools) { oracleSpells += (oracleTreeData.schools[os].nodes || []).length; } }
+                if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeBuildComplete', {schools: oracleSchools, spells: oracleSpells}), 'success');
+            } else {
+                _handleBuildFailure(
+                    result.error || 'unknown',
+                    '_oracleGrowthBuildPending',
+                    typeof OracleSettings !== 'undefined' ? OracleSettings : null,
+                    { command: 'build_tree_oracle', config: {} },
+                    'tgOracleBuildBtn',
+                    '[OracleGrowth]'
+                );
+            }
+            resetProceduralPlusButton();
+            return;
+        }
+
+        // Route to Thematic Growth mode if it triggered this build
+        if (state._thematicGrowthBuildPending) {
+            state._thematicGrowthBuildPending = false;
+            if (result.success && result.treeData) {
+                if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
+                    BuildProgress.setStage('prereqs');
+                }
+                var thematicTreeData = typeof result.treeData === 'string' ? JSON.parse(result.treeData) : result.treeData;
+                if (typeof TreeGrowthThematic !== 'undefined' && TreeGrowthThematic.loadTreeData) {
+                    TreeGrowthThematic.loadTreeData(thematicTreeData);
+                    if (typeof TreeGrowth !== 'undefined') TreeGrowth._markDirty();
+                }
+                var thematicSchools = thematicTreeData && thematicTreeData.schools ? Object.keys(thematicTreeData.schools).length : 0;
+                var thematicSpells = 0;
+                if (thematicTreeData && thematicTreeData.schools) { for (var ts in thematicTreeData.schools) { thematicSpells += (thematicTreeData.schools[ts].nodes || []).length; } }
+                if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeBuildComplete', {schools: thematicSchools, spells: thematicSpells}), 'success');
+            } else {
+                _handleBuildFailure(
+                    result.error || 'unknown',
+                    '_thematicGrowthBuildPending',
+                    typeof ThematicSettings !== 'undefined' ? ThematicSettings : null,
+                    { command: 'build_tree_thematic', config: {} },
+                    'tgThematicBuildBtn',
+                    '[ThematicGrowth]'
+                );
+            }
+            resetProceduralPlusButton();
+            return;
+        }
+
         // Check if visual-first mode was waiting for LLM configs + fuzzy data
         if (state.visualFirstConfigPending && result.success) {
             state.visualFirstConfigPending = false;

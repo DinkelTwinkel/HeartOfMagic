@@ -15,6 +15,7 @@ Implements tree building rules:
 from typing import List, Dict, Any, Optional, Set, Tuple
 from collections import defaultdict
 import random
+import sys
 
 from theme_discovery import discover_themes_per_school, merge_with_hints
 from spell_grouper import group_spells_best_fit, get_spell_primary_theme
@@ -423,9 +424,20 @@ class SpellTreeBuilder:
         }
     
     def _select_root(self, school: str, spells: List[Dict[str, Any]]) -> Optional[str]:
-        """Select the root spell for a school."""
+        """Select the root spell for a school. User override takes priority."""
         spell_ids = {s['formId'] for s in spells}
-        
+
+        # Check user-selected root override
+        selected_roots = self.cfg.get_raw('selected_roots', {})
+        if school in selected_roots:
+            override = selected_roots[school]
+            override_id = override.get('formId', '') if isinstance(override, dict) else ''
+            if override_id and override_id in spell_ids:
+                sys.stderr.write("[TreeBuilder] Using user-selected root for %s: %s\n" % (school, override.get('name', override_id)))
+                return override_id
+            elif override_id:
+                sys.stderr.write("[TreeBuilder] User-selected root %s for %s not in spell pool, auto-picking\n" % (override_id, school))
+
         if self.cfg.prefer_vanilla_roots:
             if school in VANILLA_ROOTS and VANILLA_ROOTS[school] in spell_ids:
                 return VANILLA_ROOTS[school]
@@ -433,12 +445,12 @@ class SpellTreeBuilder:
                 for alt in VANILLA_ROOT_ALTERNATIVES[school]:
                     if alt in spell_ids:
                         return alt
-        
+
         # Find vanilla Novice spell
         for spell in spells:
             if spell['formId'].startswith('0x00') and spell.get('skillLevel') == 'Novice':
                 return spell['formId']
-        
+
         return self._find_lowest_tier_spell(spells)
     
     def _find_lowest_tier_spell(self, spells: List[Dict[str, Any]]) -> Optional[str]:

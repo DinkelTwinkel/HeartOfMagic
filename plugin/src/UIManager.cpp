@@ -1713,8 +1713,22 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
         xpSettings.xpAdept = SafeJsonValue<int>(newConfig, "xpAdept", 400);
         xpSettings.xpExpert = SafeJsonValue<int>(newConfig, "xpExpert", 800);
         xpSettings.xpMaster = SafeJsonValue<int>(newConfig, "xpMaster", 1500);
+
+        // Load modded XP source settings from config
+        if (newConfig.contains("moddedXPSources") && newConfig["moddedXPSources"].is_object()) {
+            for (auto& [srcId, srcData] : newConfig["moddedXPSources"].items()) {
+                ProgressionManager::ModdedSourceConfig config;
+                config.displayName = SafeJsonValue<std::string>(srcData, "displayName", srcId);
+                config.enabled = SafeJsonValue<bool>(srcData, "enabled", true);
+                config.multiplier = SafeJsonValue<float>(srcData, "multiplier", 100.0f);
+                config.cap = SafeJsonValue<float>(srcData, "cap", 25.0f);
+                xpSettings.moddedSources[srcId] = config;
+            }
+            logger::info("UIManager: Loaded {} modded XP source configs", xpSettings.moddedSources.size());
+        }
+
         ProgressionManager::GetSingleton()->SetXPSettings(xpSettings);
-        
+
         // Update early learning settings in SpellEffectivenessHook if changed
         if (newConfig.contains("earlySpellLearning") && !newConfig["earlySpellLearning"].is_null()) {
             auto& elConfig = newConfig["earlySpellLearning"];
@@ -2133,13 +2147,33 @@ void UIManager::NotifyLearningTargetCleared(RE::FormID formId)
     UpdateSpellState(formIdStr, "available");
 }
 
+void UIManager::NotifyModdedSourceRegistered(const std::string& sourceId,
+                                              const std::string& displayName,
+                                              float multiplier, float cap)
+{
+    if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
+        logger::warn("UIManager: Cannot notify modded source registered - PrismaUI not valid");
+        return;
+    }
+
+    nlohmann::json j;
+    j["sourceId"] = sourceId;
+    j["displayName"] = displayName;
+    j["multiplier"] = multiplier;
+    j["cap"] = cap;
+    j["enabled"] = true;
+
+    logger::info("UIManager: Notifying UI - modded XP source registered: '{}' ('{}')", sourceId, displayName);
+    m_prismaUI->InteropCall(m_view, "onModdedXPSourceRegistered", j.dump().c_str());
+}
+
 void UIManager::NotifyMainMenuLoaded()
 {
     if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
         logger::warn("UIManager: Cannot notify main menu loaded - PrismaUI not valid");
         return;
     }
-    
+
     logger::info("UIManager: Notifying UI - main menu loaded, resetting tree states");
     m_prismaUI->InteropCall(m_view, "onResetTreeStates", "");
 }

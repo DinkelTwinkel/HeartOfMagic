@@ -627,8 +627,18 @@ if (typeof TreeGrowthTree !== 'undefined') {
     TreeGrowth.registerMode('tree', TreeGrowthTree);
 }
 
-// Placeholder tabs for upcoming modes
-TreeGrowth.registerPlaceholder('life');
+// Graph Growth mode
+if (typeof TreeGrowthGraph !== 'undefined') {
+    TreeGrowth.registerMode('graph', TreeGrowthGraph);
+}
+// Oracle Growth mode
+if (typeof TreeGrowthOracle !== 'undefined') {
+    TreeGrowth.registerMode('oracle', TreeGrowthOracle);
+}
+// Thematic Growth mode
+if (typeof TreeGrowthThematic !== 'undefined') {
+    TreeGrowth.registerMode('thematic', TreeGrowthThematic);
+}
 
 // Eagerly bind Setup Python button — it lives in static HTML and may be shown
 // by onPythonAddonStatus before TreeGrowth.init() runs (which requires a scan).

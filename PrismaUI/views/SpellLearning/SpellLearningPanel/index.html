@@ -605,6 +605,16 @@
                                     </label>
                                 </div>
                             </div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Curved Edges</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="edge-style-toggle">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="popup-cell"></div>
+                            </div>
 
                             <!-- Nodes -->
                             <div class="popup-divider"></div>
@@ -1085,7 +1095,14 @@
                         </div>
                         
                         <p class="setting-note" data-i18n="settings.progression.xpCapsExample">Example: With caps at 5%/15%/50%, the final 50% must come from casting the spell itself.</p>
-                        
+
+                        <!-- Modded XP Sources (populated dynamically when external mods register) -->
+                        <div id="moddedXPSourcesSection" class="settings-subsection" style="display:none;">
+                            <span class="subsection-title">Modded XP Sources</span>
+                            <p class="setting-note">External mods that grant XP. Each source has its own multiplier and cap, and is still affected by the Overall XP Multiplier.</p>
+                            <div id="moddedXPSourcesList"></div>
+                        </div>
+
                         <!-- XP Required per Tier -->
                         <div class="settings-subsection">
                             <span class="subsection-title" data-i18n="settings.progression.xpRequiredByTier">XP Required by Spell Tier</span>
@@ -1114,13 +1131,12 @@
                             </div>
                         </div>
                         
-                        <!-- Passive Learning (coming soon - grayed out) -->
-                        <div class="settings-subsection passive-learning-section disabled-feature">
+                        <!-- Passive Learning -->
+                        <div class="settings-subsection passive-learning-section">
                             <span class="subsection-title" data-i18n="settings.progression.passiveLearning">Passive Learning</span>
-                            <span class="coming-soon-badge" data-i18n="settings.progression.comingSoon">Coming Soon</span>
                         </div>
-                        
-                        <div class="passive-learning-controls disabled-feature">
+
+                        <div class="passive-learning-controls">
                             <div class="setting-row-inline">
                                 <div class="setting-info">
                                     <span class="setting-label" data-i18n="settings.progression.enablePassiveLearning">Enable Passive Learning</span>
@@ -1128,50 +1144,64 @@
                                 </div>
                                 <div class="inline-controls">
                                     <label class="toggle-switch">
-                                        <input type="checkbox" id="passiveLearningToggle" disabled>
+                                        <input type="checkbox" id="passiveLearningToggle">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
                             </div>
-                            
+
+                            <div class="setting-row-inline" style="margin-top: 6px;">
+                                <div class="setting-info">
+                                    <span class="setting-label">Applies To</span>
+                                    <span class="setting-desc">Which spells gain passive XP</span>
+                                </div>
+                                <div class="inline-controls">
+                                    <select id="passiveScopeSelect" class="setting-select" style="width:auto; min-width:100px; padding:3px 6px; font-size:0.8em; background:rgba(0,0,0,0.3); border:1px solid rgba(184,168,120,0.3); color:var(--text-primary); border-radius:3px;">
+                                        <option value="all">All Spells</option>
+                                        <option value="root">Root Spells</option>
+                                        <option value="novice" selected>Novice Spells</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="setting-row slider-row">
                                 <div class="setting-info">
                                     <span class="setting-label" data-i18n="settings.progression.xpPerGameHour">XP per Game Hour</span>
                                     <span class="setting-desc" data-i18n="settings.progression.xpPerGameHourDesc">Passive XP gained each in-game hour</span>
                                 </div>
                                 <div class="slider-container">
-                                    <input type="range" id="passiveXpPerHourSlider" min="1" max="50" value="5" step="1" class="setting-slider" disabled>
+                                    <input type="range" id="passiveXpPerHourSlider" min="1" max="50" value="5" step="1" class="setting-slider">
                                     <span id="passiveXpPerHourValue" class="slider-value">5</span>
                                 </div>
                             </div>
-                            
+
                             <div class="settings-subsection" style="margin-top: 8px;">
                                 <span class="subsection-title" style="font-size: 0.7em;" data-i18n="settings.progression.maxPassiveXpByTier">Max Passive XP % by Tier</span>
                             </div>
                             <div class="tier-xp-grid passive-tier-grid">
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxNovice" data-i18n="settings.progression.tierNovice">Novice</label>
-                                    <input type="number" id="passiveMaxNovice" class="tier-xp-input" value="100" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxNovice" class="tier-xp-input" value="100" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxApprentice" data-i18n="settings.progression.tierApprentice">Apprentice</label>
-                                    <input type="number" id="passiveMaxApprentice" class="tier-xp-input" value="75" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxApprentice" class="tier-xp-input" value="75" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxAdept" data-i18n="settings.progression.tierAdept">Adept</label>
-                                    <input type="number" id="passiveMaxAdept" class="tier-xp-input" value="50" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxAdept" class="tier-xp-input" value="50" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxExpert" data-i18n="settings.progression.tierExpert">Expert</label>
-                                    <input type="number" id="passiveMaxExpert" class="tier-xp-input" value="25" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxExpert" class="tier-xp-input" value="25" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxMaster" data-i18n="settings.progression.tierMaster">Master</label>
-                                    <input type="number" id="passiveMaxMaster" class="tier-xp-input" value="5" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxMaster" class="tier-xp-input" value="5" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                             </div>
@@ -1602,6 +1632,8 @@
                 <div id="import-error" class="error-box hidden"></div>
             </div>
             <div class="modal-footer">
+                <button id="paste-tree-btn" class="btn btn-sm" style="margin-right:auto;">Paste</button>
+                <button id="import-cancel" class="btn btn-sm">Cancel</button>
                 <button id="import-confirm" class="btn btn-success" data-i18n="modals.importTree.save">Save</button>
             </div>
         </div>
@@ -1799,8 +1831,9 @@
     
     <!-- 0. i18n Translation Engine (must load first) -->
     <script src="lang/en.js"></script>
+    <script src="lang/locale.js"></script>
     <script src="modules/i18n.js"></script>
-    <script>initI18n('en');</script>
+    <script>initI18n(window._i18nLocale || 'en');</script>
 
     <!-- 1. Constants and Configuration -->
     <script src="modules/constants.js"></script>
@@ -1866,6 +1899,21 @@
     <script src="modules/tree/treeTrunk.js"></script>
     <script src="modules/tree/treeSettings.js"></script>
     <script src="modules/treeGrowthTree.js"></script>
+    <!-- Graph Growth module -->
+    <script src="modules/graph/graphRenderer.js"></script>
+    <script src="modules/graph/graphLayout.js"></script>
+    <script src="modules/graph/graphSettings.js"></script>
+    <script src="modules/graph/graphMain.js"></script>
+    <!-- Oracle Growth module -->
+    <script src="modules/oracle/oracleRenderer.js"></script>
+    <script src="modules/oracle/oracleLayout.js"></script>
+    <script src="modules/oracle/oracleSettings.js"></script>
+    <script src="modules/oracle/oracleMain.js"></script>
+    <!-- Thematic Growth module -->
+    <script src="modules/thematic/thematicRenderer.js"></script>
+    <script src="modules/thematic/thematicLayout.js"></script>
+    <script src="modules/thematic/thematicSettings.js"></script>
+    <script src="modules/thematic/thematicMain.js"></script>
     <script src="modules/treeGrowth.js"></script>
 
     <!-- 6. Integrations and Callbacks -->

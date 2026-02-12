@@ -106,7 +106,7 @@ var TreeParser = {
                 self.nodes.set(id, {
                     id: id,
                     formId: id,
-                    name: null,
+                    name: nd.name || null,
                     school: schoolName,
                     level: null,
                     cost: null,
@@ -132,7 +132,11 @@ var TreeParser = {
                     softPrereqs: nd.softPrereqs || [],
                     softNeeded: nd.softNeeded || 0,
                     // Lock prerequisites (Pre Req Master)
-                    locks: nd.locks || []
+                    locks: nd.locks || [],
+                    // Theme data baked from tree generator
+                    theme: nd.theme || null,
+                    themeColor: nd.themeColor || null,
+                    skillLevel: nd.skillLevel || null
                 });
                 self.schools[schoolName].nodeIds.push(id);
             });

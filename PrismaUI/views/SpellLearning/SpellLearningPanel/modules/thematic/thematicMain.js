@@ -1,47 +1,42 @@
 /**
- * TreeGrowthClassic — Classic Growth Mode Orchestrator
+ * TreeGrowthThematic -- Thematic Growth Mode Orchestrator
  *
- * Wires together ClassicSettings, ClassicLayout, and ClassicRenderer to
- * provide the "CLASSIC" tab in the Tree Growth section. Manages tree build
- * state, delegates rendering to ClassicRenderer, and communicates with the
+ * Wires together ThematicSettings, ThematicLayout, and ThematicRenderer to
+ * provide the "THEMATIC" tab in the Tree Growth section. Manages tree build
+ * state, delegates rendering to ThematicRenderer, and communicates with the
  * C++ backend via window.callCpp for tree building and saving.
  *
  * Self-registers with TreeGrowth via registerMode().
  *
  * Depends on:
- *   classicSettings.js  (ClassicSettings)
- *   classicLayout.js    (ClassicLayout)
- *   classicRenderer.js  (ClassicRenderer)
- *   treePreviewUtils.js (TreePreviewUtils)
- *   treePreview.js      (TreePreview.getOutput)
- *   treeGrowth.js       (TreeGrowth — registers into it)
+ *   thematicSettings.js  (ThematicSettings)
+ *   thematicLayout.js    (ThematicLayout)
+ *   thematicRenderer.js  (ThematicRenderer)
+ *   treePreviewUtils.js  (TreePreviewUtils)
+ *   treePreview.js       (TreePreview.getOutput)
+ *   treeGrowth.js        (TreeGrowth -- registers into it)
  */
 
-var TreeGrowthClassic = {
+var TreeGrowthThematic = {
 
     // =========================================================================
     // STATE
     // =========================================================================
 
+    tabLabel: 'THEMATIC',
+
     settings: {
         ghostOpacity: 35,
         nodeRadius: 5,
-        spread: 50,
-        radialBias: 50,
-        centerMask: 3,
-        spellMatching: 'layered',
-        dynamicGridExpansion: true,  // Expand grid when schools run out of space
-        tierZones: {
-            Novice:     { min: 0,  max: 40 },
-            Apprentice: { min: 10, max: 55 },
-            Adept:      { min: 30, max: 75 },
-            Expert:     { min: 50, max: 90 },
-            Master:     { min: 65, max: 100 }
-        }
+        layoutMode: 'themed',
+        branchSpacing: 30,
+        showLabels: true,
+        showSpines: true
     },
 
     _treeData: null,
     _layoutData: null,
+    _positionMap: null,
     _pythonInstalled: false,
     _hasSpells: false,
 
@@ -50,21 +45,21 @@ var TreeGrowthClassic = {
     // =========================================================================
 
     /**
-     * Build the settings panel HTML for Classic mode.
+     * Build the settings panel HTML for Thematic mode.
      * @returns {string} HTML string
      */
     buildSettingsHTML: function () {
-        return ClassicSettings.buildHTML(this.settings);
+        return ThematicSettings.buildHTML(this.settings);
     },
 
     /**
      * Bind DOM events for the settings panel.
-     * Connects ClassicSettings callbacks to internal methods.
+     * Connects ThematicSettings callbacks to internal methods.
      */
     bindEvents: function () {
         var self = this;
 
-        ClassicSettings.bindEvents({
+        ThematicSettings.bindEvents({
             onBuild: function () {
                 self.buildTree();
             },
@@ -80,18 +75,10 @@ var TreeGrowthClassic = {
             onSettingChanged: function (key, value) {
                 self.settings[key] = value;
                 // Layout-affecting settings: invalidate cached layout so it recomputes
-                if (key === 'spread' || key === 'radialBias' || key === 'centerMask' || key === 'spellMatching') {
+                if (key === 'layoutMode' || key === 'branchSpacing') {
                     if (self._treeData) {
                         self._layoutData = null; // triggers lazy re-layout on next render
                     }
-                }
-                TreeGrowth._markDirty();
-            },
-            onTierZoneChanged: function (tier, min, max) {
-                if (!self.settings.tierZones) self.settings.tierZones = {};
-                self.settings.tierZones[tier] = { min: min, max: max };
-                if (self._treeData) {
-                    self._layoutData = null; // triggers re-layout
                 }
                 TreeGrowth._markDirty();
             }
@@ -99,7 +86,7 @@ var TreeGrowthClassic = {
     },
 
     /**
-     * Render the Classic Growth overlay onto the shared canvas.
+     * Render the Thematic Growth overlay onto the shared canvas.
      *
      * @param {CanvasRenderingContext2D} ctx
      * @param {number} w  - Canvas logical width
@@ -108,7 +95,7 @@ var TreeGrowthClassic = {
      */
     render: function (ctx, w, h, baseData) {
         if (!baseData) {
-            // No base data — show placeholder message
+            // No base data -- show placeholder message
             ctx.save();
             ctx.font = '13px sans-serif';
             ctx.fillStyle = 'rgba(184, 168, 120, 0.5)';
@@ -119,31 +106,17 @@ var TreeGrowthClassic = {
             return;
         }
 
-        // 1. Render the base grid underneath
-        baseData.renderGrid(ctx, w, h);
-
-        // 1b. Draw globe mask ring (non-root exclusion zone around globe)
-        if (this.settings.centerMask > 0 && baseData.grid) {
-            var maskR = this.settings.centerMask * (baseData.grid.tierSpacing || 30);
-            var globeOff = (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
-                ? TreeCore.getOutput() : { x: 0, y: 0 };
-            var mcx = w / 2 + globeOff.x;
-            var mcy = h / 2 + globeOff.y;
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, maskR, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 60, 60, 0.25)';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([4, 4]);
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(255, 60, 60, 0.04)';
-            ctx.fill();
-            ctx.restore();
+        // 1. Render the base grid underneath (ghost nodes only in Normal mode)
+        if (this.settings.layoutMode === 'normal') {
+            baseData.renderGrid(ctx, w, h);
+        } else {
+            // In themed mode, render grid without ghost nodes for cleaner look
+            baseData.renderGrid(ctx, w, h);
         }
 
         // 2. Lazy layout: if we have tree data but no layout yet, try now
         if (this._treeData && (!this._layoutData || !this._layoutData.schools)) {
-            this._layoutData = ClassicLayout.layoutAllSchools(this._treeData, baseData, this.settings);
+            this._layoutData = ThematicLayout.layoutAllSchools(this._treeData, baseData, this.settings);
             if (this._layoutData && this._layoutData.schools) {
                 var totalNodes = 0;
                 var s = this._layoutData.schools;
@@ -158,8 +131,8 @@ var TreeGrowthClassic = {
                         }
                     }
                 }
-                console.log('[ClassicGrowth] Lazy layout: ' + totalNodes + '/' + lazyPool + ' nodes positioned');
-                ClassicSettings.setTreeBuilt(true, totalNodes, lazyPool);
+                console.log('[ThematicGrowth] Lazy layout: ' + totalNodes + '/' + lazyPool + ' nodes positioned');
+                ThematicSettings.setTreeBuilt(true, totalNodes, lazyPool);
                 this._zoomToFit();
             }
         }
@@ -171,23 +144,43 @@ var TreeGrowthClassic = {
         var cy = h / 2;
         var opacity = this.settings.ghostOpacity / 100;
         var nodeR = this.settings.nodeRadius;
+        var isThemed = this.settings.layoutMode === 'themed';
 
-        // 3. For each school, render edges then nodes
+        // 4. For each school, render: branch spines, edges, nodes, labels, trunk, roots
         var schools = this._layoutData.schools;
         for (var schoolName in schools) {
             if (!schools.hasOwnProperty(schoolName)) continue;
             var school = schools[schoolName];
+            var schoolBranches = school.branches || [];
 
-            // Edges first (underneath)
-            ClassicRenderer.renderEdges(ctx, cx, cy, school.nodes, school.color, opacity);
+            // Branch spines (if themed + showSpines)
+            if (isThemed && this.settings.showSpines) {
+                ThematicRenderer.renderBranchSpines(ctx, cx, cy, schoolBranches, this._layoutData, opacity);
+            }
 
-            // Nodes on top
-            ClassicRenderer.renderNodes(ctx, cx, cy, school.nodes, school.color, opacity, nodeR);
+            // Edges
+            ThematicRenderer.renderEdges(ctx, cx, cy, school.nodes, opacity);
+
+            // Nodes
+            ThematicRenderer.renderNodes(ctx, cx, cy, school.nodes, opacity, nodeR);
+
+            // Branch labels (if themed + showLabels)
+            if (isThemed && this.settings.showLabels) {
+                ThematicRenderer.renderBranchLabels(ctx, cx, cy, schoolBranches, this._layoutData, opacity);
+            }
+
+            // Trunk emphasis (if themed, find trunk branch and its nodes)
+            if (isThemed) {
+                var trunkNodes = this._getTrunkNodes(school);
+                if (trunkNodes.length > 1) {
+                    ThematicRenderer.renderTrunkEmphasis(ctx, cx, cy, trunkNodes, opacity);
+                }
+            }
 
             // Root markers
             for (var i = 0; i < school.nodes.length; i++) {
                 if (school.nodes[i].isRoot) {
-                    ClassicRenderer.renderRootMarker(
+                    ThematicRenderer.renderRootMarker(
                         ctx,
                         cx + school.nodes[i].x,
                         cy + school.nodes[i].y,
@@ -197,84 +190,6 @@ var TreeGrowthClassic = {
                 }
             }
         }
-
-        // 4. Draw per-school tier zone arcs (visual debug overlay)
-        // Each school has its own tree height, so zone rings differ per school.
-        var zi = this._layoutData.zoneInfo;
-        if (zi && this.settings.tierZones) {
-            var tierVis = [
-                { key: 'Novice',     color: 'rgba(100,180,100,' },
-                { key: 'Apprentice', color: 'rgba(80,150,200,' },
-                { key: 'Adept',      color: 'rgba(180,160,80,' },
-                { key: 'Expert',     color: 'rgba(200,120,60,' },
-                { key: 'Master',     color: 'rgba(180,60,60,' }
-            ];
-
-            ctx.save();
-            for (var zSchoolName in schools) {
-                if (!schools.hasOwnProperty(zSchoolName)) continue;
-                var zSchool = schools[zSchoolName];
-                var treeMaxR = zSchool.treeMaxRadius || 0;
-                var growRange = treeMaxR - zi.ringRadius;
-                if (growRange < 1) continue;
-
-                // Determine angular span for this school from its root nodes
-                var zNodes = zSchool.nodes || [];
-                var avgAngle = 0;
-                var rootCount = 0;
-                for (var zni = 0; zni < zNodes.length; zni++) {
-                    if (zNodes[zni].isRoot) {
-                        avgAngle += Math.atan2(zNodes[zni].y, zNodes[zni].x);
-                        rootCount++;
-                    }
-                }
-                if (rootCount === 0) continue;
-                avgAngle /= rootCount;
-
-                // Draw zone arcs as 60-degree wedge centered on school direction
-                var arcSpan = Math.PI / 3; // 60 degrees
-                var arcStart = avgAngle - arcSpan / 2;
-                var arcEnd = avgAngle + arcSpan / 2;
-
-                for (var tvi = 0; tvi < tierVis.length; tvi++) {
-                    var tv = tierVis[tvi];
-                    var zone = this.settings.tierZones[tv.key];
-                    if (!zone) continue;
-
-                    var innerR = zi.ringRadius + (zone.min / 100) * growRange;
-                    var outerR = zi.ringRadius + (zone.max / 100) * growRange;
-
-                    // Outer boundary arc
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, outerR, arcStart, arcEnd);
-                    ctx.strokeStyle = tv.color + '0.3)';
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([3, 4]);
-                    ctx.stroke();
-
-                    // Inner boundary arc
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, innerR, arcStart, arcEnd);
-                    ctx.strokeStyle = tv.color + '0.2)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-
-                    // Label at the midpoint of the outer arc
-                    if (tvi === 0 || tvi === 4) { // Only label Novice and Master to avoid clutter
-                        ctx.setLineDash([]);
-                        var labelAngle = avgAngle;
-                        var labelR = outerR + 6;
-                        ctx.font = '8px sans-serif';
-                        ctx.fillStyle = tv.color + '0.5)';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(tv.key, cx + Math.cos(labelAngle) * labelR, cy + Math.sin(labelAngle) * labelR);
-                    }
-                }
-            }
-            ctx.setLineDash([]);
-            ctx.restore();
-        }
     },
 
     // =========================================================================
@@ -282,8 +197,8 @@ var TreeGrowthClassic = {
     // =========================================================================
 
     /**
-     * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate)
-     * with JS fallback if Python is unavailable.
+     * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate).
+     * Uses the thematic builder command.
      */
     buildTree: function () {
         var spellData = (typeof state !== 'undefined' && state.lastSpellData)
@@ -291,7 +206,7 @@ var TreeGrowthClassic = {
             : null;
 
         if (!spellData || !spellData.spells || spellData.spells.length === 0) {
-            ClassicSettings.setStatusText('No spells scanned \u2014 scan first', '#ef4444');
+            ThematicSettings.setStatusText('No spells scanned \u2014 scan first', '#ef4444');
             return;
         }
 
@@ -306,13 +221,13 @@ var TreeGrowthClassic = {
             BuildProgress.start(hasPRM);
         }
 
-        ClassicSettings.setStatusText('Building tree (Python)...', '#f59e0b');
-        var buildBtn = document.getElementById('tgClassicBuildBtn');
+        ThematicSettings.setStatusText('Building tree (Python/Thematic)...', '#f59e0b');
+        var buildBtn = document.getElementById('tgBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
         // Set pending flag so onProceduralPythonComplete routes result here
         if (typeof state !== 'undefined') {
-            state._classicGrowthBuildPending = true;
+            state._thematicGrowthBuildPending = true;
         }
 
         // Apply all scan filters: blacklist, whitelist, tome
@@ -330,7 +245,7 @@ var TreeGrowthClassic = {
                 return tomedIds[s.formId || s.id];
             });
         }
-        console.log('[ClassicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
+        console.log('[ThematicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
         // Gather grid layout info so Python can adapt branching
         var gridHint = null;
@@ -351,20 +266,15 @@ var TreeGrowthClassic = {
         }
 
         var config = {
-            shape: 'organic',
-            density: 0.6,
-            symmetry: 0.3,
+            chaos: this.settings.ghostOpacity / 100,
             max_children_per_node: 3,
-            top_themes_per_school: 8,
-            convergence_chance: 0.4,
-            prefer_vanilla_roots: true,
-            tier_zones: self.settings.tierZones,
-            grid_hint: gridHint,
-            selected_roots: settings.selectedRoots || {}
+            branch_style: 'thematic',
+            seed: Math.floor(Math.random() * 100000),
+            grid_hint: gridHint
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree_classic',
+            command: 'build_tree_thematic',
             spells: spellsToProcess,
             config: config
         }));
@@ -378,22 +288,35 @@ var TreeGrowthClassic = {
      */
     loadTreeData: function (data) {
         this._treeData = data;
-        console.log('[ClassicGrowth] loadTreeData called, schools:', data && data.schools ? Object.keys(data.schools) : 'none');
+        this._layoutData = null;
+        this._positionMap = null;
+        console.log('[ThematicGrowth] loadTreeData called, schools:', data && data.schools ? Object.keys(data.schools) : 'none');
+
+        // Extract branches per school
+        if (data && data.schools) {
+            for (var schoolName in data.schools) {
+                if (!data.schools.hasOwnProperty(schoolName)) continue;
+                var schoolTree = data.schools[schoolName];
+                if (!schoolTree.branches) {
+                    console.log('[ThematicGrowth] No branches metadata for ' + schoolName + ', will use fallback');
+                }
+            }
+        }
 
         // Attempt layout against the current base grid
         var baseData = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             baseData = TreePreview.getOutput();
         }
-        console.log('[ClassicGrowth] baseData:', baseData ? 'present' : 'null',
+        console.log('[ThematicGrowth] baseData:', baseData ? 'present' : 'null',
             baseData ? ('mode=' + baseData.mode + ' schools=' + (baseData.schools ? baseData.schools.length : 0) +
             ' rootNodes=' + (baseData.rootNodes ? baseData.rootNodes.length : 0)) : '');
 
         if (baseData) {
-            this._layoutData = ClassicLayout.layoutAllSchools(data, baseData, this.settings);
-            console.log('[ClassicGrowth] layoutData:', this._layoutData ? Object.keys(this._layoutData.schools || {}) : 'null');
+            this._layoutData = ThematicLayout.layoutAllSchools(data, baseData, this.settings);
+            console.log('[ThematicGrowth] layoutData:', this._layoutData ? Object.keys(this._layoutData.schools || {}) : 'null');
         } else {
-            console.warn('[ClassicGrowth] No baseData from TreePreview — layout skipped');
+            console.warn('[ThematicGrowth] No baseData from TreePreview -- layout skipped');
         }
 
         // Count positioned nodes vs total pool for status display
@@ -404,7 +327,7 @@ var TreeGrowthClassic = {
             for (var name in schools) {
                 if (schools.hasOwnProperty(name)) {
                     totalNodes += schools[name].nodes ? schools[name].nodes.length : 0;
-                    console.log('[ClassicGrowth] School ' + name + ': ' + (schools[name].nodes ? schools[name].nodes.length : 0) + ' nodes');
+                    console.log('[ThematicGrowth] School ' + name + ': ' + (schools[name].nodes ? schools[name].nodes.length : 0) + ' nodes');
                 }
             }
         }
@@ -415,9 +338,9 @@ var TreeGrowthClassic = {
                 }
             }
         }
-        console.log('[ClassicGrowth] Total positioned nodes: ' + totalNodes + '/' + totalPool);
+        console.log('[ThematicGrowth] Total positioned nodes: ' + totalNodes + '/' + totalPool);
 
-        ClassicSettings.setTreeBuilt(true, totalNodes, totalPool);
+        ThematicSettings.setTreeBuilt(true, totalNodes, totalPool);
         this._zoomToFit();
 
         TreeGrowth._markDirty();
@@ -427,19 +350,17 @@ var TreeGrowthClassic = {
      * Save the current tree data to the game via C++ backend.
      * Bakes layout positions from _layoutData into the output JSON
      * so the spell tree viewer can render at exact positions.
+     * Bakes themeColor per node.
      */
     applyTree: function () {
         if (!this._treeData) return;
 
-        // Build lookups from layout data:
-        //   posLookup:      formId → {x, y}
-        //   childrenLookup: formId → [childFormId, ...]  (from layout's parentFormId)
-        //   prereqLookup:   formId → [parentFormId]      (inverse of children)
-        //   placedSet:      formId → true                 (nodes actually placed by layout)
+        // Build lookups from layout data
         var posLookup = {};
         var childrenLookup = {};
         var prereqLookup = {};
         var placedSet = {};
+        var themeColorLookup = {};
 
         if (this._layoutData && this._layoutData.schools) {
             var layoutSchools = this._layoutData.schools;
@@ -450,8 +371,9 @@ var TreeGrowthClassic = {
                     var ln = lsNodes[li];
                     posLookup[ln.formId] = { x: ln.x, y: ln.y };
                     placedSet[ln.formId] = true;
+                    if (ln.themeColor) themeColorLookup[ln.formId] = ln.themeColor;
 
-                    // Build parent→children from layout's parentFormId
+                    // Build parent->children from layout's parentFormId
                     if (ln.parentFormId) {
                         if (!childrenLookup[ln.parentFormId]) childrenLookup[ln.parentFormId] = [];
                         childrenLookup[ln.parentFormId].push(ln.formId);
@@ -465,7 +387,7 @@ var TreeGrowthClassic = {
 
         var posCount = Object.keys(posLookup).length;
         var placedCount = Object.keys(placedSet).length;
-        console.log('[ClassicGrowth] applyTree: posLookup=' + posCount +
+        console.log('[ThematicGrowth] applyTree: posLookup=' + posCount +
                     ', placed=' + placedCount + ', childrenEdges=' + Object.keys(childrenLookup).length);
 
         // Get base data for mode and root directions
@@ -478,7 +400,7 @@ var TreeGrowthClassic = {
         // Build output JSON with layout-derived edges and positions
         var output = {
             version: this._treeData.version || '1.0',
-            generator: 'PrismaUI ClassicGrowth',
+            generator: 'PrismaUI ThematicGrowth',
             generatedAt: new Date().toISOString(),
             trustPrereqs: true,
             noRotate: (layoutMode === 'flat'),
@@ -500,7 +422,7 @@ var TreeGrowthClassic = {
             for (var rni = 0; rni < baseData.rootNodes.length; rni++) {
                 var rn = baseData.rootNodes[rni];
                 if (rn.school && rn.dir !== undefined) {
-                    rootDirBySchool[rn.school] = rn.dir; // radians
+                    rootDirBySchool[rn.school] = rn.dir;
                 }
             }
         }
@@ -523,15 +445,12 @@ var TreeGrowthClassic = {
                 // Only include nodes that were actually placed by the layout
                 if (!placedSet[sn.formId]) continue;
 
-                // Use layout-derived children and prereqs instead of Python builder's
+                // Use layout-derived children and prereqs
                 var layoutChildren = childrenLookup[sn.formId] || [];
                 var layoutPrereqs = prereqLookup[sn.formId] || [];
 
-                // Prereq rework: regular prereqs = soft (need any 1 of N)
-                // Lock prereqs = hard (mandatory)
                 var lockHardPrereqs = [];
                 var lockData = [];
-                // Locks are stored directly on the node by PreReqMaster
                 if (sn.locks && sn.locks.length > 0) {
                     lockData = sn.locks;
                     lockHardPrereqs = sn.locks.map(function(l) { return l.nodeId; });
@@ -558,6 +477,11 @@ var TreeGrowthClassic = {
                     outNode.softNeeded = 0;
                 }
 
+                // Bake themeColor per node
+                if (themeColorLookup[sn.formId]) {
+                    outNode.themeColor = themeColorLookup[sn.formId];
+                }
+
                 // Bake layout position
                 var pos = posLookup[sn.formId];
                 if (pos) {
@@ -568,22 +492,22 @@ var TreeGrowthClassic = {
                 outNodes.push(outNode);
             }
 
-            console.log('[ClassicGrowth] School "' + schoolName + '": ' +
+            console.log('[ThematicGrowth] School "' + schoolName + '": ' +
                         outNodes.length + ' nodes, ' + nodesWithPos + ' with positions');
 
             output.schools[schoolName] = {
                 root: schoolRootId,
-                layoutStyle: src.layoutStyle || 'classic',
+                layoutStyle: 'thematic',
                 nodes: outNodes
             };
 
             // Copy color if present
             if (src.color) output.schools[schoolName].color = src.color;
 
-            // Bake spoke angle from root direction so CanvasRendererV2 rotates correctly
+            // Bake spoke angle from root direction
             var dirRad = rootDirBySchool[schoolName];
             if (dirRad !== undefined && !isNaN(dirRad)) {
-                var spokeDeg = dirRad * 180 / Math.PI; // convert radians to degrees
+                var spokeDeg = dirRad * 180 / Math.PI;
                 output.schools[schoolName].spokeAngle = Math.round(spokeDeg * 100) / 100;
                 output.schools[schoolName].startAngle = Math.round((spokeDeg - sliceAngle / 2) * 100) / 100;
                 output.schools[schoolName].endAngle = Math.round((spokeDeg + sliceAngle / 2) * 100) / 100;
@@ -600,8 +524,11 @@ var TreeGrowthClassic = {
         }
 
         var appliedSchoolCount = Object.keys(output.schools).length;
-        ClassicSettings.setStatusText('Tree applied (' + posCount + ' positioned)', '#22c55e');
+        ThematicSettings.setStatusText('Tree applied (' + posCount + ' positioned)', '#22c55e');
         if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeApplied', {schools: appliedSchoolCount}), 'success');
+
+        // Build position map for external use
+        this._positionMap = posLookup;
 
         // Switch to the Spell Tree tab after a brief delay
         if (typeof switchTab === 'function') {
@@ -612,7 +539,7 @@ var TreeGrowthClassic = {
     },
 
     /**
-     * Return the current layout position map (formId → {x, y}) for preview rendering.
+     * Return the current layout position map (formId -> {x, y}).
      * Returns null if no tree has been built yet.
      */
     getPositionMap: function () {
@@ -636,8 +563,9 @@ var TreeGrowthClassic = {
     clearTree: function () {
         this._treeData = null;
         this._layoutData = null;
+        this._positionMap = null;
 
-        ClassicSettings.setTreeBuilt(false);
+        ThematicSettings.setTreeBuilt(false);
         if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeCleared'));
 
         TreeGrowth._markDirty();
@@ -693,9 +621,48 @@ var TreeGrowthClassic = {
         TreeGrowth.panX = -centerX * zoom;
         TreeGrowth.panY = -centerY * zoom;
 
-        console.log('[ClassicGrowth] Zoom to fit: zoom=' + zoom.toFixed(2) +
+        console.log('[ThematicGrowth] Zoom to fit: zoom=' + zoom.toFixed(2) +
             ' bounds=' + Math.round(treeW) + 'x' + Math.round(treeH) +
             ' center=' + Math.round(centerX) + ',' + Math.round(centerY));
+    },
+
+    // =========================================================================
+    // INTERNAL HELPERS
+    // =========================================================================
+
+    /**
+     * Extract ordered trunk nodes from a school's layout data.
+     * Trunk is identified by branches marked with isTrunk.
+     * @private
+     */
+    _getTrunkNodes: function (school) {
+        var trunkNodes = [];
+        if (!school || !school.branches || !school.nodes) return trunkNodes;
+
+        // Find the trunk branch
+        var trunkBranch = null;
+        for (var bi = 0; bi < school.branches.length; bi++) {
+            if (school.branches[bi].isTrunk) {
+                trunkBranch = school.branches[bi];
+                break;
+            }
+        }
+        if (!trunkBranch) return trunkNodes;
+
+        var trunkIds = {};
+        var trunkFormIds = trunkBranch.nodeFormIds || [];
+        for (var ti = 0; ti < trunkFormIds.length; ti++) {
+            trunkIds[trunkFormIds[ti]] = true;
+        }
+
+        // Collect matching nodes in layout order
+        for (var ni = 0; ni < school.nodes.length; ni++) {
+            if (trunkIds[school.nodes[ni].formId]) {
+                trunkNodes.push(school.nodes[ni]);
+            }
+        }
+
+        return trunkNodes;
     },
 
     // =========================================================================
@@ -711,7 +678,7 @@ var TreeGrowthClassic = {
      */
     onPythonStatusChanged: function (installed, hasScript, hasPython) {
         this._pythonInstalled = installed;
-        ClassicSettings.updatePythonStatus(installed, hasScript, hasPython);
+        ThematicSettings.onPythonStatusChanged(installed, hasScript, hasPython);
     },
 
     // =========================================================================
@@ -738,5 +705,5 @@ var TreeGrowthClassic = {
 // =============================================================================
 
 if (typeof TreeGrowth !== 'undefined') {
-    TreeGrowth.registerMode('classic', TreeGrowthClassic);
+    TreeGrowth.registerMode('thematic', TreeGrowthThematic);
 }

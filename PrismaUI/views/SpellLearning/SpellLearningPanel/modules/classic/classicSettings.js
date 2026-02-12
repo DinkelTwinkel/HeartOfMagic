@@ -74,13 +74,18 @@ var ClassicSettings = {
             '<div class="tree-preview-settings-title">' + t('preview.classic.title') + '</div>' +
 
             // --- Spell Matching toggle (3-way) ---
-            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; padding:0 4px;">' +
+            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:2px; padding:0 4px;">' +
                 '<span style="font-size:10px; color:rgba(184,168,120,0.6); white-space:nowrap;">' + t('preview.classic.spellMatching') + '</span>' +
                 '<div style="display:flex;">' +
-                    '<div id="tgClassicMatchSimple" title="No theme awareness. Spells placed by distance, tier, and radial bias only. Fastest." style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (spellMatching === 'simple' ? btnAct : btnOff) + '">' + t('preview.classic.simple') + '</div>' +
-                    '<div id="tgClassicMatchLayered" title="Uses Python-assigned themes for spatial clustering. Same-theme spells group together angularly. Default." style="' + btnBase + ' border-left:none; ' + (spellMatching === 'layered' ? btnAct : btnOff) + '">' + t('preview.classic.layered') + '</div>' +
-                    '<div id="tgClassicMatchSmart" title="Re-discovers themes in JS and overrides Python assignments. Strongest clustering, but slower." style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (spellMatching === 'smart' ? btnAct : btnOff) + '">' + t('preview.classic.smart') + '</div>' +
+                    '<div id="tgClassicMatchSimple" style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (spellMatching === 'simple' ? btnAct : btnOff) + '">' + t('preview.classic.simple') + '</div>' +
+                    '<div id="tgClassicMatchLayered" style="' + btnBase + ' border-left:none; ' + (spellMatching === 'layered' ? btnAct : btnOff) + '">' + t('preview.classic.layered') + '</div>' +
+                    '<div id="tgClassicMatchSmart" style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (spellMatching === 'smart' ? btnAct : btnOff) + '">' + t('preview.classic.smart') + '</div>' +
                 '</div>' +
+            '</div>' +
+            '<div id="tgClassicMatchDesc" style="font-size:9px; color:rgba(184,168,120,0.35); padding:0 4px 4px; min-height:22px;">' +
+                (spellMatching === 'simple' ? 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.' :
+                 spellMatching === 'smart' ? 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.' :
+                 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.') +
             '</div>' +
 
             // --- Slider grid ---
@@ -213,13 +218,23 @@ var ClassicSettings = {
                     .replace(/color:[^;]+/, isAct ? actCol : offCol);
             }
         };
+        var matchDescs = {
+            simple: 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.',
+            layered: 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.',
+            smart: 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.'
+        };
+        var descEl = document.getElementById('tgClassicMatchDesc');
         var modes = ['simple', 'layered', 'smart'];
         for (var mi = 0; mi < modes.length; mi++) {
             (function (mode) {
                 if (matchBtns[mode]) {
                     matchBtns[mode].addEventListener('click', function () {
                         setMatchActive(mode);
+                        if (descEl) descEl.textContent = matchDescs[mode];
                         onChanged('spellMatching', mode);
+                    });
+                    matchBtns[mode].addEventListener('mouseenter', function () {
+                        if (descEl) descEl.textContent = matchDescs[mode];
                     });
                 }
             })(modes[mi]);

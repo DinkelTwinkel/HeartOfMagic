@@ -2,6 +2,7 @@
 #include "UIManager.h"
 #include "SpellEffectivenessHook.h"
 #include "SpellTomeHook.h"
+#include "SKSE/SKSE.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -51,7 +52,10 @@ void ProgressionManager::SetLearningTarget(const std::string& school, RE::FormID
     
     m_learningTargets[school] = formId;
     m_dirty = true;
-    
+
+    // Fire ModEvent: SpellLearning_TargetChanged (set)
+    SendModEvent("SpellLearning_TargetChanged", school, 1.0f, RE::TESForm::LookupByID(formId));
+
     // Store the prerequisites for direct prereq detection
     if (!prereqs.empty()) {
         m_targetPrerequisites[formId] = prereqs;
@@ -267,6 +271,9 @@ void ProgressionManager::ClearLearningTarget(const std::string& school)
     
     m_learningTargets.erase(school);
     m_dirty = true;
+
+    // Fire ModEvent: SpellLearning_TargetChanged (cleared)
+    SendModEvent("SpellLearning_TargetChanged", school, 0.0f, nullptr);
 }
 
 void ProgressionManager::ClearLearningTargetForSpell(RE::FormID formId)
@@ -357,6 +364,181 @@ void ProgressionManager::SetSpellXP(RE::FormID formId, float xp)
     logger::info("ProgressionManager: SetSpellXP {:08X} to {:.0f} XP ({:.1f}%, cheat mode)", 
         formId, xp, progress.progressPercent * 100.0f);
 }
+
+// =============================================================================
+// MOD EVENT HELPER
+// =============================================================================
+
+void ProgressionManager::SendModEvent(const char* eventName, const std::string& strArg, float numArg, RE::TESForm* sender)
+{
+    SKSE::ModCallbackEvent modEvent(eventName, RE::BSFixedString(strArg.c_str()), numArg, sender);
+    SKSE::GetModCallbackEventSource()->SendEvent(&modEvent);
+    logger::trace("ProgressionManager: Sent ModEvent '{}' (str={}, num={:.1f})", eventName, strArg, numArg);
+}
+
+// =============================================================================
+// PUBLIC MODDER API
+// =============================================================================
+
+bool ProgressionManager::RegisterModdedXPSource(const std::string& sourceId, const std::string& displayName)
+{
+    // Check if already registered
+    if (m_xpSettings.moddedSources.find(sourceId) != m_xpSettings.moddedSources.end()) {
+        logger::info("ProgressionManager: Modded source '{}' already registered", sourceId);
+        return false;
+    }
+
+    // Create default config
+    ModdedSourceConfig config;
+    config.displayName = displayName.empty() ? sourceId : displayName;
+    config.enabled = true;
+    config.multiplier = 100.0f;
+    config.cap = 25.0f;
+    m_xpSettings.moddedSources[sourceId] = config;
+
+    logger::info("ProgressionManager: Registered modded XP source '{}' (display: '{}')", sourceId, config.displayName);
+
+    // Notify UI to create controls
+    UIManager::GetSingleton()->NotifyModdedSourceRegistered(sourceId, config.displayName, config.multiplier, config.cap);
+
+    // Fire ModEvent
+    SendModEvent("SpellLearning_SourceRegistered", sourceId, 0.0f, nullptr);
+
+    return true;
+}
+
+float ProgressionManager::AddSourcedXP(RE::FormID targetId, float amount, const std::string& sourceName)
+{
+    if (targetId == 0 || amount <= 0.0f) return 0.0f;
+
+    // Initialize progress entry if missing
+    if (m_spellProgress.find(targetId) == m_spellProgress.end()) {
+        SpellProgress newProgress;
+        newProgress.requiredXP = GetRequiredXP(targetId);
+        m_spellProgress[targetId] = newProgress;
+    }
+
+    auto& progress = m_spellProgress[targetId];
+
+    // Already mastered
+    if (progress.unlocked && progress.progressPercent >= 1.0f) return 0.0f;
+
+    // Apply global multiplier
+    float adjustedAmount = amount * m_xpSettings.globalMultiplier;
+
+    // Built-in sources
+    if (sourceName == "any" || sourceName == "school" || sourceName == "direct" || sourceName == "self") {
+        float maxFromSource = 0.0f;
+        float currentFromSource = 0.0f;
+
+        if (sourceName == "any") {
+            adjustedAmount *= m_xpSettings.multiplierAny;
+            maxFromSource = progress.requiredXP * (m_xpSettings.capAny / 100.0f);
+            currentFromSource = progress.xpFromAny;
+        } else if (sourceName == "school") {
+            adjustedAmount *= m_xpSettings.multiplierSchool;
+            maxFromSource = progress.requiredXP * (m_xpSettings.capSchool / 100.0f);
+            currentFromSource = progress.xpFromSchool;
+        } else if (sourceName == "direct") {
+            adjustedAmount *= m_xpSettings.multiplierDirect;
+            maxFromSource = progress.requiredXP * (m_xpSettings.capDirect / 100.0f);
+            currentFromSource = progress.xpFromDirect;
+        } else {  // "self" - no cap
+            adjustedAmount *= m_xpSettings.multiplierDirect;
+            maxFromSource = progress.requiredXP;
+            currentFromSource = progress.xpFromSelf;
+        }
+
+        float remaining = maxFromSource - currentFromSource;
+        adjustedAmount = (std::min)(adjustedAmount, (std::max)(0.0f, remaining));
+
+        if (adjustedAmount > 0.0f) {
+            if (sourceName == "any")         progress.xpFromAny += adjustedAmount;
+            else if (sourceName == "school") progress.xpFromSchool += adjustedAmount;
+            else if (sourceName == "direct") progress.xpFromDirect += adjustedAmount;
+            else                             progress.xpFromSelf += adjustedAmount;
+        }
+    }
+    // Modded sources
+    else {
+        // Auto-register if unknown
+        if (m_xpSettings.moddedSources.find(sourceName) == m_xpSettings.moddedSources.end()) {
+            RegisterModdedXPSource(sourceName, sourceName);
+        }
+
+        auto& srcConfig = m_xpSettings.moddedSources[sourceName];
+        if (!srcConfig.enabled) return 0.0f;
+
+        // Apply source-specific multiplier
+        adjustedAmount *= (srcConfig.multiplier / 100.0f);
+
+        // Apply cap
+        float maxFromSource = progress.requiredXP * (srcConfig.cap / 100.0f);
+        float currentFromSource = progress.xpFromModded[sourceName];
+        float remaining = maxFromSource - currentFromSource;
+        adjustedAmount = (std::min)(adjustedAmount, (std::max)(0.0f, remaining));
+
+        if (adjustedAmount > 0.0f) {
+            progress.xpFromModded[sourceName] += adjustedAmount;
+        }
+    }
+
+    if (adjustedAmount > 0.0f) {
+        AddXP(targetId, adjustedAmount);
+        SendModEvent("SpellLearning_XPGained", sourceName, adjustedAmount,
+                      RE::TESForm::LookupByID(targetId));
+    }
+
+    return adjustedAmount;
+}
+
+float ProgressionManager::AddRawXP(RE::FormID targetId, float amount)
+{
+    if (targetId == 0 || amount <= 0.0f) return 0.0f;
+
+    // Initialize progress entry if missing
+    if (m_spellProgress.find(targetId) == m_spellProgress.end()) {
+        SpellProgress newProgress;
+        newProgress.requiredXP = GetRequiredXP(targetId);
+        m_spellProgress[targetId] = newProgress;
+    }
+
+    auto& progress = m_spellProgress[targetId];
+    if (progress.unlocked && progress.progressPercent >= 1.0f) return 0.0f;
+
+    // Clamp to remaining XP needed
+    float currentXP = progress.GetCurrentXP();
+    float remaining = progress.requiredXP - currentXP;
+    float actualAmount = (std::min)(amount, (std::max)(0.0f, remaining));
+
+    if (actualAmount > 0.0f) {
+        AddXP(targetId, actualAmount);
+        SendModEvent("SpellLearning_XPGained", "raw", actualAmount,
+                      RE::TESForm::LookupByID(targetId));
+    }
+
+    return actualAmount;
+}
+
+float ProgressionManager::GetSourceCap(const std::string& sourceName) const
+{
+    if (sourceName == "any")    return m_xpSettings.capAny;
+    if (sourceName == "school") return m_xpSettings.capSchool;
+    if (sourceName == "direct") return m_xpSettings.capDirect;
+    if (sourceName == "self")   return 100.0f;  // Self has no cap
+
+    // Check modded sources
+    auto it = m_xpSettings.moddedSources.find(sourceName);
+    if (it != m_xpSettings.moddedSources.end()) {
+        return it->second.cap;
+    }
+
+    return 0.0f;  // Unknown source
+}
+
+// =============================================================================
+// XP TRACKING (spell cast events)
+// =============================================================================
 
 void ProgressionManager::OnSpellCast(const std::string& school, RE::FormID castSpellId, float baseXP)
 {
@@ -559,8 +741,23 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
             auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(targetSpellId);
             if (spell) {
                 SpellEffectivenessHook::GrantEarlySpell(spell);
-                logger::info("ProgressionManager: Early granted spell {:08X} at {:.0f}% progress", 
+                logger::info("ProgressionManager: Early granted spell {:08X} at {:.0f}% progress",
                     targetSpellId, newProgress * 100.0f);
+
+                // Fire ModEvent: SpellLearning_SpellEarlyGranted
+                auto* costliest = spell->GetCostliestEffectItem();
+                std::string schoolStr = "Unknown";
+                if (costliest && costliest->baseEffect) {
+                    switch (costliest->baseEffect->GetMagickSkill()) {
+                        case RE::ActorValue::kAlteration:  schoolStr = "Alteration"; break;
+                        case RE::ActorValue::kConjuration: schoolStr = "Conjuration"; break;
+                        case RE::ActorValue::kDestruction: schoolStr = "Destruction"; break;
+                        case RE::ActorValue::kIllusion:    schoolStr = "Illusion"; break;
+                        case RE::ActorValue::kRestoration: schoolStr = "Restoration"; break;
+                        default: break;
+                    }
+                }
+                SendModEvent("SpellLearning_SpellEarlyGranted", schoolStr, newProgress * 100.0f, spell);
             }
         }
         
@@ -581,6 +778,11 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
                 snprintf(notification, sizeof(notification), "%s power increased to %d%%",
                     spell->GetName(), static_cast<int>(effectiveness * 100));
                 RE::SendHUDMessage::ShowHUDMessage(notification);
+
+                // Fire ModEvent: SpellLearning_ProgressMilestone
+                SendModEvent("SpellLearning_ProgressMilestone",
+                    effectivenessHook->GetPowerStepLabel(currentStep),
+                    effectiveness * 100.0f, spell);
             }
         }
         
@@ -596,9 +798,24 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
             auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(targetSpellId);
             if (spell) {
                 char notification[256];
-                snprintf(notification, sizeof(notification), "%s MASTERED! Full power unlocked.", 
+                snprintf(notification, sizeof(notification), "%s MASTERED! Full power unlocked.",
                     spell->GetName());
                 RE::SendHUDMessage::ShowHUDMessage(notification);
+
+                // Fire ModEvent: SpellLearning_SpellMastered
+                auto* costliest = spell->GetCostliestEffectItem();
+                std::string schoolStr = "Unknown";
+                if (costliest && costliest->baseEffect) {
+                    switch (costliest->baseEffect->GetMagickSkill()) {
+                        case RE::ActorValue::kAlteration:  schoolStr = "Alteration"; break;
+                        case RE::ActorValue::kConjuration: schoolStr = "Conjuration"; break;
+                        case RE::ActorValue::kDestruction: schoolStr = "Destruction"; break;
+                        case RE::ActorValue::kIllusion:    schoolStr = "Illusion"; break;
+                        case RE::ActorValue::kRestoration: schoolStr = "Restoration"; break;
+                        default: break;
+                    }
+                }
+                SendModEvent("SpellLearning_SpellMastered", schoolStr, 0.0f, spell);
             }
             
             // Clear learning target for this school (spell is mastered)
@@ -977,12 +1194,22 @@ void ProgressionManager::OnGameSaved(SKSE::SerializationInterface* a_intfc)
     uint32_t numProgress = static_cast<uint32_t>(m_spellProgress.size());
     a_intfc->WriteRecordData(&numProgress, sizeof(numProgress));
     
-    // Write each progress: formId, progressPercent, unlocked
+    // Write each progress: formId, progressPercent, unlocked, [v2: modded source XP]
     for (auto& [formId, progress] : m_spellProgress) {
         a_intfc->WriteRecordData(&formId, sizeof(formId));
         a_intfc->WriteRecordData(&progress.progressPercent, sizeof(progress.progressPercent));
         uint8_t unlocked = progress.unlocked ? 1 : 0;
         a_intfc->WriteRecordData(&unlocked, sizeof(unlocked));
+
+        // v2: Write modded source XP tracking
+        uint32_t moddedCount = static_cast<uint32_t>(progress.xpFromModded.size());
+        a_intfc->WriteRecordData(&moddedCount, sizeof(moddedCount));
+        for (auto& [name, xp] : progress.xpFromModded) {
+            uint32_t nameLen = static_cast<uint32_t>(name.length());
+            a_intfc->WriteRecordData(&nameLen, sizeof(nameLen));
+            a_intfc->WriteRecordData(name.c_str(), nameLen);
+            a_intfc->WriteRecordData(&xp, sizeof(xp));
+        }
     }
     
     logger::info("ProgressionManager: Saved {} spell progress entries to co-save", numProgress);
@@ -999,8 +1226,8 @@ void ProgressionManager::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
     uint32_t type, version, length;
     
     while (a_intfc->GetNextRecordInfo(type, version, length)) {
-        if (version != kSerializationVersion) {
-            logger::warn("ProgressionManager: Skipping record with mismatched version (got {}, expected {})", 
+        if (version != kSerializationVersion && version != 1) {
+            logger::warn("ProgressionManager: Skipping record with unsupported version (got {}, expected {} or 1)",
                 version, kSerializationVersion);
             continue;
         }
@@ -1050,17 +1277,35 @@ void ProgressionManager::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
                     uint8_t unlocked = 0;
                     a_intfc->ReadRecordData(&unlocked, sizeof(unlocked));
                     
+                    // v2: Read modded source XP tracking
+                    std::unordered_map<std::string, float> moddedXP;
+                    if (version >= 2) {
+                        uint32_t moddedCount = 0;
+                        a_intfc->ReadRecordData(&moddedCount, sizeof(moddedCount));
+                        for (uint32_t m = 0; m < moddedCount; ++m) {
+                            uint32_t nameLen = 0;
+                            a_intfc->ReadRecordData(&nameLen, sizeof(nameLen));
+                            std::string name(nameLen, '\0');
+                            a_intfc->ReadRecordData(name.data(), nameLen);
+                            float xp = 0.0f;
+                            a_intfc->ReadRecordData(&xp, sizeof(xp));
+                            moddedXP[name] = xp;
+                        }
+                    }
+
                     // Resolve formId (handles load order changes)
                     RE::FormID resolvedId = 0;
                     if (a_intfc->ResolveFormID(formId, resolvedId)) {
                         SpellProgress progress;
                         progress.progressPercent = progressPercent;
                         progress.unlocked = unlocked != 0;
+                        progress.xpFromModded = std::move(moddedXP);
                         // requiredXP will be set from tree data later
                         m_spellProgress[resolvedId] = progress;
-                        
-                        logger::info("ProgressionManager: Loaded progress {:08X} -> {:.1f}% {}", 
-                            resolvedId, progressPercent * 100.0f, unlocked ? "(unlocked)" : "");
+
+                        logger::info("ProgressionManager: Loaded progress {:08X} -> {:.1f}% {} ({} modded sources)",
+                            resolvedId, progressPercent * 100.0f, unlocked ? "(unlocked)" : "",
+                            progress.xpFromModded.size());
                     } else {
                         logger::warn("ProgressionManager: Failed to resolve progress formId {:08X}", formId);
                     }

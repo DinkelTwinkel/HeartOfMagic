@@ -3322,6 +3322,28 @@ body {
     grid-template-columns: 1fr 1fr 1fr;
 }
 
+/* Modded XP Source rows */
+.modded-xp-source-row {
+    border: 1px solid rgba(184, 168, 120, 0.15);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.modded-source-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.modded-source-name {
+    font-size: 12px;
+    color: #d4c8a0;
+    font-weight: 500;
+}
+
 .slider-compact {
     display: flex;
     flex-direction: column;

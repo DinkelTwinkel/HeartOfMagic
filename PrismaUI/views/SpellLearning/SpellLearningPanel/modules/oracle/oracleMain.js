@@ -1,47 +1,47 @@
 /**
- * TreeGrowthClassic — Classic Growth Mode Orchestrator
+ * TreeGrowthOracle - Oracle Growth Mode Orchestrator
  *
- * Wires together ClassicSettings, ClassicLayout, and ClassicRenderer to
- * provide the "CLASSIC" tab in the Tree Growth section. Manages tree build
- * state, delegates rendering to ClassicRenderer, and communicates with the
- * C++ backend via window.callCpp for tree building and saving.
+ * Wires together OracleSettings, OracleLayout, and OracleRenderer to
+ * provide the "ORACLE" tab in the Tree Growth section. Produces parallel
+ * lane trees where each thematic chain runs as a separate lane, side by
+ * side - like parallel railroad tracks, each chain being a track with
+ * spells as stations.
+ *
+ * The Python builder returns extra metadata: chains with names and
+ * narratives, and each node has a `chain` property identifying which
+ * chain it belongs to.
  *
  * Self-registers with TreeGrowth via registerMode().
  *
  * Depends on:
- *   classicSettings.js  (ClassicSettings)
- *   classicLayout.js    (ClassicLayout)
- *   classicRenderer.js  (ClassicRenderer)
+ *   oracleSettings.js  (OracleSettings)
+ *   oracleLayout.js    (OracleLayout)
+ *   oracleRenderer.js  (OracleRenderer)
  *   treePreviewUtils.js (TreePreviewUtils)
  *   treePreview.js      (TreePreview.getOutput)
- *   treeGrowth.js       (TreeGrowth — registers into it)
+ *   treeGrowth.js       (TreeGrowth - registers into it)
  */
 
-var TreeGrowthClassic = {
+var TreeGrowthOracle = {
 
     // =========================================================================
     // STATE
     // =========================================================================
 
+    tabLabel: 'ORACLE',
+
     settings: {
         ghostOpacity: 35,
         nodeRadius: 5,
-        spread: 50,
-        radialBias: 50,
-        centerMask: 3,
-        spellMatching: 'layered',
-        dynamicGridExpansion: true,  // Expand grid when schools run out of space
-        tierZones: {
-            Novice:     { min: 0,  max: 40 },
-            Apprentice: { min: 10, max: 55 },
-            Adept:      { min: 30, max: 75 },
-            Expert:     { min: 50, max: 90 },
-            Master:     { min: 65, max: 100 }
-        }
+        chaos: 0,
+        batchSize: 20,
+        chainStyle: 'linear',
+        showNarrative: false
     },
 
     _treeData: null,
     _layoutData: null,
+    _positionMap: null,
     _pythonInstalled: false,
     _hasSpells: false,
 
@@ -50,48 +50,28 @@ var TreeGrowthClassic = {
     // =========================================================================
 
     /**
-     * Build the settings panel HTML for Classic mode.
+     * Build the settings panel HTML for Oracle mode.
      * @returns {string} HTML string
      */
     buildSettingsHTML: function () {
-        return ClassicSettings.buildHTML(this.settings);
+        return OracleSettings.buildHTML(this.settings);
     },
 
     /**
      * Bind DOM events for the settings panel.
-     * Connects ClassicSettings callbacks to internal methods.
+     * Connects OracleSettings callbacks to internal methods.
      */
     bindEvents: function () {
         var self = this;
 
-        ClassicSettings.bindEvents({
-            onBuild: function () {
-                self.buildTree();
-            },
-            onApply: function () {
-                self.applyTree();
-            },
-            onClear: function () {
-                self.clearTree();
-            },
-            onSetupPython: function () {
-                window.callCpp('SetupPython', '');
-            },
+        OracleSettings.bindEvents({
             onSettingChanged: function (key, value) {
                 self.settings[key] = value;
                 // Layout-affecting settings: invalidate cached layout so it recomputes
-                if (key === 'spread' || key === 'radialBias' || key === 'centerMask' || key === 'spellMatching') {
+                if (key === 'chaos' || key === 'chainStyle' || key === 'batchSize') {
                     if (self._treeData) {
                         self._layoutData = null; // triggers lazy re-layout on next render
                     }
-                }
-                TreeGrowth._markDirty();
-            },
-            onTierZoneChanged: function (tier, min, max) {
-                if (!self.settings.tierZones) self.settings.tierZones = {};
-                self.settings.tierZones[tier] = { min: min, max: max };
-                if (self._treeData) {
-                    self._layoutData = null; // triggers re-layout
                 }
                 TreeGrowth._markDirty();
             }
@@ -99,7 +79,7 @@ var TreeGrowthClassic = {
     },
 
     /**
-     * Render the Classic Growth overlay onto the shared canvas.
+     * Render the Oracle Growth overlay onto the shared canvas.
      *
      * @param {CanvasRenderingContext2D} ctx
      * @param {number} w  - Canvas logical width
@@ -108,7 +88,7 @@ var TreeGrowthClassic = {
      */
     render: function (ctx, w, h, baseData) {
         if (!baseData) {
-            // No base data — show placeholder message
+            // No base data - show placeholder message
             ctx.save();
             ctx.font = '13px sans-serif';
             ctx.fillStyle = 'rgba(184, 168, 120, 0.5)';
@@ -122,28 +102,9 @@ var TreeGrowthClassic = {
         // 1. Render the base grid underneath
         baseData.renderGrid(ctx, w, h);
 
-        // 1b. Draw globe mask ring (non-root exclusion zone around globe)
-        if (this.settings.centerMask > 0 && baseData.grid) {
-            var maskR = this.settings.centerMask * (baseData.grid.tierSpacing || 30);
-            var globeOff = (typeof TreeCore !== 'undefined' && TreeCore.getOutput)
-                ? TreeCore.getOutput() : { x: 0, y: 0 };
-            var mcx = w / 2 + globeOff.x;
-            var mcy = h / 2 + globeOff.y;
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, maskR, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 60, 60, 0.25)';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([4, 4]);
-            ctx.stroke();
-            ctx.fillStyle = 'rgba(255, 60, 60, 0.04)';
-            ctx.fill();
-            ctx.restore();
-        }
-
         // 2. Lazy layout: if we have tree data but no layout yet, try now
         if (this._treeData && (!this._layoutData || !this._layoutData.schools)) {
-            this._layoutData = ClassicLayout.layoutAllSchools(this._treeData, baseData, this.settings);
+            this._layoutData = OracleLayout.layoutAllSchools(this._treeData, baseData, this.settings);
             if (this._layoutData && this._layoutData.schools) {
                 var totalNodes = 0;
                 var s = this._layoutData.schools;
@@ -158,8 +119,8 @@ var TreeGrowthClassic = {
                         }
                     }
                 }
-                console.log('[ClassicGrowth] Lazy layout: ' + totalNodes + '/' + lazyPool + ' nodes positioned');
-                ClassicSettings.setTreeBuilt(true, totalNodes, lazyPool);
+                console.log('[OracleGrowth] Lazy layout: ' + totalNodes + '/' + lazyPool + ' nodes positioned');
+                OracleSettings.setTreeBuilt(true, totalNodes, lazyPool);
                 this._zoomToFit();
             }
         }
@@ -171,109 +132,46 @@ var TreeGrowthClassic = {
         var cy = h / 2;
         var opacity = this.settings.ghostOpacity / 100;
         var nodeR = this.settings.nodeRadius;
+        var showNarrative = this.settings.showNarrative;
 
-        // 3. For each school, render edges then nodes
+        // 4. For each school, render chain lanes, edges, then nodes
         var schools = this._layoutData.schools;
         for (var schoolName in schools) {
             if (!schools.hasOwnProperty(schoolName)) continue;
             var school = schools[schoolName];
+            var schoolNodes = school.nodes;
 
-            // Edges first (underneath)
-            ClassicRenderer.renderEdges(ctx, cx, cy, school.nodes, school.color, opacity);
+            // Build chain metadata and lane positions for this school
+            var schoolTree = this._treeData.schools ? this._treeData.schools[schoolName] : null;
+            var chainMeta = OracleLayout.buildChainMeta(schoolTree, school.color);
+            var lanePositions = OracleLayout.buildLanePositions(schoolNodes);
+
+            // Chain lane ribbons (underneath everything)
+            OracleRenderer.renderChainLanes(ctx, cx, cy, chainMeta, lanePositions, opacity);
+
+            // Edges
+            OracleRenderer.renderEdges(ctx, cx, cy, schoolNodes, school.color, opacity);
 
             // Nodes on top
-            ClassicRenderer.renderNodes(ctx, cx, cy, school.nodes, school.color, opacity, nodeR);
+            OracleRenderer.renderNodes(ctx, cx, cy, schoolNodes, school.color, opacity, nodeR);
 
             // Root markers
-            for (var i = 0; i < school.nodes.length; i++) {
-                if (school.nodes[i].isRoot) {
-                    ClassicRenderer.renderRootMarker(
+            for (var i = 0; i < schoolNodes.length; i++) {
+                if (schoolNodes[i].isRoot) {
+                    OracleRenderer.renderRootMarker(
                         ctx,
-                        cx + school.nodes[i].x,
-                        cy + school.nodes[i].y,
+                        cx + schoolNodes[i].x,
+                        cy + schoolNodes[i].y,
                         school.color,
                         nodeR
                     );
                 }
             }
-        }
 
-        // 4. Draw per-school tier zone arcs (visual debug overlay)
-        // Each school has its own tree height, so zone rings differ per school.
-        var zi = this._layoutData.zoneInfo;
-        if (zi && this.settings.tierZones) {
-            var tierVis = [
-                { key: 'Novice',     color: 'rgba(100,180,100,' },
-                { key: 'Apprentice', color: 'rgba(80,150,200,' },
-                { key: 'Adept',      color: 'rgba(180,160,80,' },
-                { key: 'Expert',     color: 'rgba(200,120,60,' },
-                { key: 'Master',     color: 'rgba(180,60,60,' }
-            ];
-
-            ctx.save();
-            for (var zSchoolName in schools) {
-                if (!schools.hasOwnProperty(zSchoolName)) continue;
-                var zSchool = schools[zSchoolName];
-                var treeMaxR = zSchool.treeMaxRadius || 0;
-                var growRange = treeMaxR - zi.ringRadius;
-                if (growRange < 1) continue;
-
-                // Determine angular span for this school from its root nodes
-                var zNodes = zSchool.nodes || [];
-                var avgAngle = 0;
-                var rootCount = 0;
-                for (var zni = 0; zni < zNodes.length; zni++) {
-                    if (zNodes[zni].isRoot) {
-                        avgAngle += Math.atan2(zNodes[zni].y, zNodes[zni].x);
-                        rootCount++;
-                    }
-                }
-                if (rootCount === 0) continue;
-                avgAngle /= rootCount;
-
-                // Draw zone arcs as 60-degree wedge centered on school direction
-                var arcSpan = Math.PI / 3; // 60 degrees
-                var arcStart = avgAngle - arcSpan / 2;
-                var arcEnd = avgAngle + arcSpan / 2;
-
-                for (var tvi = 0; tvi < tierVis.length; tvi++) {
-                    var tv = tierVis[tvi];
-                    var zone = this.settings.tierZones[tv.key];
-                    if (!zone) continue;
-
-                    var innerR = zi.ringRadius + (zone.min / 100) * growRange;
-                    var outerR = zi.ringRadius + (zone.max / 100) * growRange;
-
-                    // Outer boundary arc
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, outerR, arcStart, arcEnd);
-                    ctx.strokeStyle = tv.color + '0.3)';
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([3, 4]);
-                    ctx.stroke();
-
-                    // Inner boundary arc
-                    ctx.beginPath();
-                    ctx.arc(cx, cy, innerR, arcStart, arcEnd);
-                    ctx.strokeStyle = tv.color + '0.2)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-
-                    // Label at the midpoint of the outer arc
-                    if (tvi === 0 || tvi === 4) { // Only label Novice and Master to avoid clutter
-                        ctx.setLineDash([]);
-                        var labelAngle = avgAngle;
-                        var labelR = outerR + 6;
-                        ctx.font = '8px sans-serif';
-                        ctx.fillStyle = tv.color + '0.5)';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillText(tv.key, cx + Math.cos(labelAngle) * labelR, cy + Math.sin(labelAngle) * labelR);
-                    }
-                }
+            // Narrative labels (if enabled and chain data available)
+            if (showNarrative && chainMeta.length > 0 && lanePositions.length > 0) {
+                OracleRenderer.renderNarrativeLabels(ctx, cx, cy, chainMeta, lanePositions, opacity);
             }
-            ctx.setLineDash([]);
-            ctx.restore();
         }
     },
 
@@ -283,7 +181,7 @@ var TreeGrowthClassic = {
 
     /**
      * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate)
-     * with JS fallback if Python is unavailable.
+     * with the oracle builder command.
      */
     buildTree: function () {
         var spellData = (typeof state !== 'undefined' && state.lastSpellData)
@@ -291,7 +189,7 @@ var TreeGrowthClassic = {
             : null;
 
         if (!spellData || !spellData.spells || spellData.spells.length === 0) {
-            ClassicSettings.setStatusText('No spells scanned \u2014 scan first', '#ef4444');
+            OracleSettings.setStatusText('No spells scanned \u2014 scan first', '#ef4444');
             return;
         }
 
@@ -306,13 +204,13 @@ var TreeGrowthClassic = {
             BuildProgress.start(hasPRM);
         }
 
-        ClassicSettings.setStatusText('Building tree (Python)...', '#f59e0b');
-        var buildBtn = document.getElementById('tgClassicBuildBtn');
+        OracleSettings.setStatusText('Building tree (Python/Oracle)...', '#f59e0b');
+        var buildBtn = document.getElementById('tgBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
         // Set pending flag so onProceduralPythonComplete routes result here
         if (typeof state !== 'undefined') {
-            state._classicGrowthBuildPending = true;
+            state._oracleGrowthBuildPending = true;
         }
 
         // Apply all scan filters: blacklist, whitelist, tome
@@ -330,9 +228,9 @@ var TreeGrowthClassic = {
                 return tomedIds[s.formId || s.id];
             });
         }
-        console.log('[ClassicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
+        console.log('[OracleGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
-        // Gather grid layout info so Python can adapt branching
+        // Gather grid layout info so Python can adapt
         var gridHint = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             var previewOut = TreePreview.getOutput();
@@ -350,21 +248,23 @@ var TreeGrowthClassic = {
             }
         }
 
+        // Read LLM config from settings (written by OracleSettings UI)
+        var llmApi = (typeof settings !== 'undefined' && settings.treeGeneration && settings.treeGeneration.llm_api)
+            ? settings.treeGeneration.llm_api
+            : {};
+
         var config = {
-            shape: 'organic',
-            density: 0.6,
-            symmetry: 0.3,
-            max_children_per_node: 3,
-            top_themes_per_school: 8,
-            convergence_chance: 0.4,
-            prefer_vanilla_roots: true,
-            tier_zones: self.settings.tierZones,
-            grid_hint: gridHint,
-            selected_roots: settings.selectedRoots || {}
+            chaos: this.settings.chaos / 100,
+            batch_size: this.settings.batchSize,
+            chain_style: this.settings.chainStyle,
+            max_children_per_node: 4,
+            seed: Math.floor(Math.random() * 100000),
+            llm_api: llmApi,
+            grid_hint: gridHint
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree_classic',
+            command: 'build_tree_oracle',
             spells: spellsToProcess,
             config: config
         }));
@@ -372,39 +272,62 @@ var TreeGrowthClassic = {
 
     /**
      * Receive tree data from the C++ / Python backend callback.
-     * Runs layout and triggers a re-render.
+     * Parses chain metadata, runs layout, and triggers a re-render.
      *
-     * @param {Object} data - Raw tree structure from the backend
+     * @param {Object} data - Raw tree structure from the backend, includes
+     *                        schools[].chains[] with name/narrative metadata
+     *                        and nodes[].chain identifying chain membership
      */
     loadTreeData: function (data) {
         this._treeData = data;
-        console.log('[ClassicGrowth] loadTreeData called, schools:', data && data.schools ? Object.keys(data.schools) : 'none');
+        this._layoutData = null; // invalidate to force re-layout
+        this._positionMap = null;
+        console.log('[OracleGrowth] loadTreeData called, schools:', data && data.schools ? Object.keys(data.schools) : 'none');
+
+        // Log chain metadata if present
+        if (data && data.schools) {
+            for (var sn in data.schools) {
+                if (!data.schools.hasOwnProperty(sn)) continue;
+                var school = data.schools[sn];
+                var chainCount = school.chains ? school.chains.length : 0;
+                var nodeCount = school.nodes ? school.nodes.length : 0;
+                console.log('[OracleGrowth] School "' + sn + '": ' + nodeCount + ' nodes, ' + chainCount + ' chains');
+                if (school.chains) {
+                    for (var ci = 0; ci < school.chains.length; ci++) {
+                        var c = school.chains[ci];
+                        console.log('[OracleGrowth]   Chain "' + (c.name || ci) + '": ' +
+                            (c.nodes ? c.nodes.length : 0) + ' nodes' +
+                            (c.narrative ? ' [narrative]' : ''));
+                    }
+                }
+            }
+        }
 
         // Attempt layout against the current base grid
         var baseData = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             baseData = TreePreview.getOutput();
         }
-        console.log('[ClassicGrowth] baseData:', baseData ? 'present' : 'null',
+        console.log('[OracleGrowth] baseData:', baseData ? 'present' : 'null',
             baseData ? ('mode=' + baseData.mode + ' schools=' + (baseData.schools ? baseData.schools.length : 0) +
             ' rootNodes=' + (baseData.rootNodes ? baseData.rootNodes.length : 0)) : '');
 
         if (baseData) {
-            this._layoutData = ClassicLayout.layoutAllSchools(data, baseData, this.settings);
-            console.log('[ClassicGrowth] layoutData:', this._layoutData ? Object.keys(this._layoutData.schools || {}) : 'null');
+            this._layoutData = OracleLayout.layoutAllSchools(data, baseData, this.settings);
+            console.log('[OracleGrowth] layoutData:', this._layoutData ? Object.keys(this._layoutData.schools || {}) : 'null');
         } else {
-            console.warn('[ClassicGrowth] No baseData from TreePreview — layout skipped');
+            console.warn('[OracleGrowth] No baseData from TreePreview - layout skipped');
         }
 
         // Count positioned nodes vs total pool for status display
         var totalNodes = 0;
         var totalPool = 0;
         if (this._layoutData && this._layoutData.schools) {
-            var schools = this._layoutData.schools;
-            for (var name in schools) {
-                if (schools.hasOwnProperty(name)) {
-                    totalNodes += schools[name].nodes ? schools[name].nodes.length : 0;
-                    console.log('[ClassicGrowth] School ' + name + ': ' + (schools[name].nodes ? schools[name].nodes.length : 0) + ' nodes');
+            var layoutSchools = this._layoutData.schools;
+            for (var name in layoutSchools) {
+                if (layoutSchools.hasOwnProperty(name)) {
+                    totalNodes += layoutSchools[name].nodes ? layoutSchools[name].nodes.length : 0;
+                    console.log('[OracleGrowth] School ' + name + ': ' + (layoutSchools[name].nodes ? layoutSchools[name].nodes.length : 0) + ' nodes');
                 }
             }
         }
@@ -415,9 +338,9 @@ var TreeGrowthClassic = {
                 }
             }
         }
-        console.log('[ClassicGrowth] Total positioned nodes: ' + totalNodes + '/' + totalPool);
+        console.log('[OracleGrowth] Total positioned nodes: ' + totalNodes + '/' + totalPool);
 
-        ClassicSettings.setTreeBuilt(true, totalNodes, totalPool);
+        OracleSettings.setTreeBuilt(true, totalNodes, totalPool);
         this._zoomToFit();
 
         TreeGrowth._markDirty();
@@ -431,11 +354,7 @@ var TreeGrowthClassic = {
     applyTree: function () {
         if (!this._treeData) return;
 
-        // Build lookups from layout data:
-        //   posLookup:      formId → {x, y}
-        //   childrenLookup: formId → [childFormId, ...]  (from layout's parentFormId)
-        //   prereqLookup:   formId → [parentFormId]      (inverse of children)
-        //   placedSet:      formId → true                 (nodes actually placed by layout)
+        // Build lookups from layout data
         var posLookup = {};
         var childrenLookup = {};
         var prereqLookup = {};
@@ -451,7 +370,7 @@ var TreeGrowthClassic = {
                     posLookup[ln.formId] = { x: ln.x, y: ln.y };
                     placedSet[ln.formId] = true;
 
-                    // Build parent→children from layout's parentFormId
+                    // Build parent->children from layout's parentFormId
                     if (ln.parentFormId) {
                         if (!childrenLookup[ln.parentFormId]) childrenLookup[ln.parentFormId] = [];
                         childrenLookup[ln.parentFormId].push(ln.formId);
@@ -465,7 +384,7 @@ var TreeGrowthClassic = {
 
         var posCount = Object.keys(posLookup).length;
         var placedCount = Object.keys(placedSet).length;
-        console.log('[ClassicGrowth] applyTree: posLookup=' + posCount +
+        console.log('[OracleGrowth] applyTree: posLookup=' + posCount +
                     ', placed=' + placedCount + ', childrenEdges=' + Object.keys(childrenLookup).length);
 
         // Get base data for mode and root directions
@@ -478,7 +397,7 @@ var TreeGrowthClassic = {
         // Build output JSON with layout-derived edges and positions
         var output = {
             version: this._treeData.version || '1.0',
-            generator: 'PrismaUI ClassicGrowth',
+            generator: 'PrismaUI OracleGrowth',
             generatedAt: new Date().toISOString(),
             trustPrereqs: true,
             noRotate: (layoutMode === 'flat'),
@@ -500,7 +419,7 @@ var TreeGrowthClassic = {
             for (var rni = 0; rni < baseData.rootNodes.length; rni++) {
                 var rn = baseData.rootNodes[rni];
                 if (rn.school && rn.dir !== undefined) {
-                    rootDirBySchool[rn.school] = rn.dir; // radians
+                    rootDirBySchool[rn.school] = rn.dir;
                 }
             }
         }
@@ -531,7 +450,6 @@ var TreeGrowthClassic = {
                 // Lock prereqs = hard (mandatory)
                 var lockHardPrereqs = [];
                 var lockData = [];
-                // Locks are stored directly on the node by PreReqMaster
                 if (sn.locks && sn.locks.length > 0) {
                     lockData = sn.locks;
                     lockHardPrereqs = sn.locks.map(function(l) { return l.nodeId; });
@@ -549,6 +467,7 @@ var TreeGrowthClassic = {
                 if (lockData.length > 0) outNode.locks = lockData;
                 if (sn.skillLevel) outNode.skillLevel = sn.skillLevel;
                 if (sn.theme) outNode.theme = sn.theme;
+                if (sn.chain) outNode.chain = sn.chain;
                 if (sn.name) outNode.name = sn.name;
                 if (sn.section) outNode.section = sn.section;
                 if (sn.formId === schoolRootId) {
@@ -568,22 +487,25 @@ var TreeGrowthClassic = {
                 outNodes.push(outNode);
             }
 
-            console.log('[ClassicGrowth] School "' + schoolName + '": ' +
+            console.log('[OracleGrowth] School "' + schoolName + '": ' +
                         outNodes.length + ' nodes, ' + nodesWithPos + ' with positions');
 
             output.schools[schoolName] = {
                 root: schoolRootId,
-                layoutStyle: src.layoutStyle || 'classic',
+                layoutStyle: src.layoutStyle || 'oracle',
                 nodes: outNodes
             };
 
             // Copy color if present
             if (src.color) output.schools[schoolName].color = src.color;
 
+            // Copy chain metadata if present
+            if (src.chains) output.schools[schoolName].chains = src.chains;
+
             // Bake spoke angle from root direction so CanvasRendererV2 rotates correctly
             var dirRad = rootDirBySchool[schoolName];
             if (dirRad !== undefined && !isNaN(dirRad)) {
-                var spokeDeg = dirRad * 180 / Math.PI; // convert radians to degrees
+                var spokeDeg = dirRad * 180 / Math.PI;
                 output.schools[schoolName].spokeAngle = Math.round(spokeDeg * 100) / 100;
                 output.schools[schoolName].startAngle = Math.round((spokeDeg - sliceAngle / 2) * 100) / 100;
                 output.schools[schoolName].endAngle = Math.round((spokeDeg + sliceAngle / 2) * 100) / 100;
@@ -600,8 +522,11 @@ var TreeGrowthClassic = {
         }
 
         var appliedSchoolCount = Object.keys(output.schools).length;
-        ClassicSettings.setStatusText('Tree applied (' + posCount + ' positioned)', '#22c55e');
+        OracleSettings.setStatusText('Tree applied (' + posCount + ' positioned)', '#22c55e');
         if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeApplied', {schools: appliedSchoolCount}), 'success');
+
+        // Build position map for external use
+        this._positionMap = posLookup;
 
         // Switch to the Spell Tree tab after a brief delay
         if (typeof switchTab === 'function') {
@@ -612,7 +537,7 @@ var TreeGrowthClassic = {
     },
 
     /**
-     * Return the current layout position map (formId → {x, y}) for preview rendering.
+     * Return the current layout position map (formId -> {x, y}) for preview rendering.
      * Returns null if no tree has been built yet.
      */
     getPositionMap: function () {
@@ -636,8 +561,9 @@ var TreeGrowthClassic = {
     clearTree: function () {
         this._treeData = null;
         this._layoutData = null;
+        this._positionMap = null;
 
-        ClassicSettings.setTreeBuilt(false);
+        OracleSettings.setTreeBuilt(false);
         if (typeof updateScanStatus === 'function') updateScanStatus(t('status.treeCleared'));
 
         TreeGrowth._markDirty();
@@ -693,7 +619,7 @@ var TreeGrowthClassic = {
         TreeGrowth.panX = -centerX * zoom;
         TreeGrowth.panY = -centerY * zoom;
 
-        console.log('[ClassicGrowth] Zoom to fit: zoom=' + zoom.toFixed(2) +
+        console.log('[OracleGrowth] Zoom to fit: zoom=' + zoom.toFixed(2) +
             ' bounds=' + Math.round(treeW) + 'x' + Math.round(treeH) +
             ' center=' + Math.round(centerX) + ',' + Math.round(centerY));
     },
@@ -711,7 +637,7 @@ var TreeGrowthClassic = {
      */
     onPythonStatusChanged: function (installed, hasScript, hasPython) {
         this._pythonInstalled = installed;
-        ClassicSettings.updatePythonStatus(installed, hasScript, hasPython);
+        OracleSettings.onPythonStatusChanged(installed, hasScript, hasPython);
     },
 
     // =========================================================================
@@ -738,5 +664,5 @@ var TreeGrowthClassic = {
 // =============================================================================
 
 if (typeof TreeGrowth !== 'undefined') {
-    TreeGrowth.registerMode('classic', TreeGrowthClassic);
+    TreeGrowth.registerMode('oracle', TreeGrowthOracle);
 }

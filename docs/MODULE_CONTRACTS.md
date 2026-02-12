@@ -685,3 +685,52 @@ merged = merge_configs(
 - similarity_threshold: 0.0–1.0
 
 Invalid values are silently clamped, not rejected.
+
+## Selected Roots Contract
+
+Optional config field that lets users override automatic root selection per school.
+
+### Config Field
+
+```json
+{
+  "selected_roots": {
+    "Destruction": { "formId": "0x00012FCD", "name": "Flames", "plugin": "Skyrim.esm", "localFormId": "012FCD" },
+    "Restoration": { "formId": "0x00012FD0", "name": "Healing", "plugin": "Skyrim.esm", "localFormId": "012FD0" }
+  }
+}
+```
+
+### JS Side
+
+- Stored in `settings.selectedRoots` (persistent, auto-saved)
+- Set via TreePreview root node click → spawn-style spell search modal
+- Filtered to primed spells (post-blacklist/whitelist/tome) for the selected school
+- Passed in config dict to Python: `config.selected_roots = settings.selectedRoots || {}`
+
+### Python Side
+
+Builders check `selected_roots` before their normal root selection logic:
+
+```python
+selected_roots = config.get('selected_roots', {})
+if school in selected_roots:
+    override_id = selected_roots[school].get('formId', '')
+    if override_id in spell_pool:
+        return override_id  # Use user selection
+    # else: fall through to auto-pick
+```
+
+**Behavior:**
+- If `selected_roots[school]` exists AND its `formId` is in the filtered spell pool → use it
+- If `formId` not found (e.g. spell was blacklisted after selection) → fall through to auto-pick silently
+- If `selected_roots` is empty or missing the school → existing auto-pick behavior (unchanged)
+
+### Integrated Modules
+
+| Module | Function | Status |
+|--------|----------|--------|
+| Classic (`classic_build_tree.py`) | `_pick_root()` | Integrated |
+| Tree (`tree_builder.py`) | `_select_root()` | Integrated |
+| Graph (`graph_build_tree.py`) | — | Future (optional) |
+| Oracle (`oracle_build_tree.py`) | — | Future (optional) |

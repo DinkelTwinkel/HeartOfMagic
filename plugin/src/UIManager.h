@@ -52,6 +52,10 @@ public:
     // Focus management for main menu → game transition
     void EnsureFocusReleased();       // Call on game load to fix input lock
     
+    // Modded XP source notifications
+    void NotifyModdedSourceRegistered(const std::string& sourceId, const std::string& displayName,
+                                       float multiplier, float cap);
+
     // ISL integration notifications
     void NotifyISLDetectionStatus();  // Notify UI of ISL-DESTified mod detection
 

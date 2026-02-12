@@ -1254,10 +1254,26 @@ var CanvasRenderer = {
     },
     
     _hexToRgba: function(hex, alpha) { return hexToRgba(hex, alpha); },
-    
+
+    /**
+     * Draw an edge path between two points (straight or curved Bezier).
+     * Call between ctx.beginPath() and ctx.stroke().
+     */
+    _drawEdgePath: function(ctx, x1, y1, x2, y2, curved) {
+        ctx.moveTo(x1, y1);
+        if (curved) {
+            var cpx = (x1 + x2) / 2 + (y2 - y1) * 0.15;
+            var cpy = (y1 + y2) / 2 - (x2 - x1) * 0.15;
+            ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+        } else {
+            ctx.lineTo(x2, y2);
+        }
+    },
+
     renderEdges: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
         var learningPathColor = this._learningPathColor || '#00ffff';
         var hasLearningPaths = this._learningPathNodes instanceof Set && this._learningPathNodes.size > 0;
+        var curved = settings.edgeStyle === 'curved';
         
         // Detect heartbeat for spawning traveling pulses
         var isHeartbeating = false;
@@ -1412,8 +1428,7 @@ var CanvasRenderer = {
             }
 
             ctx.beginPath();
-            ctx.moveTo(fromNode.x, fromNode.y);
-            ctx.lineTo(toNode.x, toNode.y);
+            this._drawEdgePath(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, curved);
             ctx.stroke();
         }
 
@@ -1440,8 +1455,7 @@ var CanvasRenderer = {
                 ctx.globalAlpha = 0.5;
 
                 ctx.beginPath();
-                ctx.moveTo(nodes.fromNode.x, nodes.fromNode.y);
-                ctx.lineTo(nodes.toNode.x, nodes.toNode.y);
+                this._drawEdgePath(ctx, nodes.fromNode.x, nodes.fromNode.y, nodes.toNode.x, nodes.toNode.y, curved);
                 ctx.stroke();
             }
         }
@@ -1473,8 +1487,7 @@ var CanvasRenderer = {
                 ctx.globalAlpha = 0.7;
 
                 ctx.beginPath();
-                ctx.moveTo(fromNode.x, fromNode.y);
-                ctx.lineTo(toNode.x, toNode.y);
+                this._drawEdgePath(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, curved);
                 ctx.stroke();
             }
         }
@@ -1658,7 +1671,7 @@ var CanvasRenderer = {
     },
     
     renderNode: function(ctx, node) {
-        var schoolColor = this._getSchoolColor(node.school);
+        var schoolColor = node.themeColor || this._getSchoolColor(node.school);
         var isSelected = this.selectedNode && this.selectedNode.id === node.id;
         var isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
         var path = this._getShapePath(node.school);

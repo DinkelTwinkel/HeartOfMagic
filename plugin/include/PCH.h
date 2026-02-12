@@ -1,10 +1,20 @@
 #pragma once
 
+// Suppress winsock v1 so windows.h (pulled in by CommonLib) won't define
+// winsock1 symbols.  This lets us safely include <winsock2.h> AFTER CommonLib.
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+
 #include "RE/Skyrim.h"
 #include "SKSE/SKSE.h"
 
+// WinSock2 for TCP socket IPC (PythonBridge Wine/Proton support)
+// Safe after CommonLib because we suppressed winsock v1 above
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 // Windows API for encoding conversion (MultiByteToWideChar, WideCharToMultiByte)
-// Must come after CommonLib headers
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

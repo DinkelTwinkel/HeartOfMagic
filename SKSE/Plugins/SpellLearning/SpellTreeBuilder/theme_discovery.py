@@ -27,6 +27,15 @@ SPELL_STOP_WORDS = [
     'damage', 'point', 'points', 'second', 'seconds', 'per', 'for', 'the',
     'does', 'causes', 'cast', 'caster', 'casting', 'level', 'levels',
     'health', 'magicka', 'stamina', 'drain', 'drains',
+    # Effect description template fragments — these appear identically across
+    # all element types and drown out meaningful terms like fire/frost/shock
+    'deals', 'deal', 'dur', 'duration', 'mag', 'magnitude',
+    'nearby', 'enemies', 'enemy', 'increased', 'increases', 'increase',
+    'decreased', 'decreases', 'decrease', 'reduces', 'reduced', 'reduce',
+    'restores', 'restore', 'restored', 'absorb', 'absorbs', 'absorbed',
+    'extra', 'takes', 'take', 'time', 'over', 'while', 'also',
+    'resistance', 'chance', 'once', 'each', 'within', 'range',
+    'stronger', 'powerful', 'greater', 'lesser', 'more', 'less',
     # Skill level words (we use skillLevel field, not text)
     'novice', 'apprentice', 'adept', 'expert', 'master',
     # Common prepositions and articles
@@ -47,24 +56,33 @@ def extract_spell_text(spell: Dict[str, Any]) -> str:
         Combined text string for analysis
     """
     parts = []
-    
-    # Add spell name
+
+    # Add spell name (3x weight — spell names are the strongest theme signal)
     if 'name' in spell and spell['name']:
         parts.append(spell['name'])
-    
-    # Add effect names (simpler list)
+        parts.append(spell['name'])
+        parts.append(spell['name'])
+
+    # Add effect names (3x weight — "Fire Damage", "Frost Damage" etc. are
+    # highly discriminative, unlike descriptions which are templated)
     if 'effectNames' in spell and spell['effectNames']:
-        parts.extend(spell['effectNames'])
-    
-    # Add full effect descriptions if available
+        for en in spell['effectNames']:
+            parts.append(en)
+            parts.append(en)
+            parts.append(en)
+
+    # Add full effect descriptions (1x — these are templated across elements
+    # and contain generic fragments like "deals X damage for Y seconds")
     if 'effects' in spell and spell['effects']:
         for effect in spell['effects']:
             if isinstance(effect, dict):
                 if 'name' in effect:
+                    # Effect name again (already covered by effectNames above,
+                    # but structured effects may differ)
                     parts.append(effect['name'])
                 if 'description' in effect:
                     parts.append(effect['description'])
-    
+
     # Add keywords if available
     if 'keywords' in spell and spell['keywords']:
         # Clean keyword names (remove Magic prefix, etc.)
@@ -72,7 +90,7 @@ def extract_spell_text(spell: Dict[str, Any]) -> str:
             cleaned = re.sub(r'^Magic', '', kw)
             cleaned = re.sub(r'([A-Z])', r' \1', cleaned).strip()
             parts.append(cleaned)
-    
+
     return ' '.join(parts).lower()
 
 
@@ -234,23 +252,28 @@ VANILLA_THEME_HINTS = {
 def merge_with_hints(discovered: Dict[str, List[str]], max_themes: int = 10) -> Dict[str, List[str]]:
     """
     Merge discovered themes with vanilla hints to ensure good coverage.
-    Discovered themes take priority, hints fill gaps.
+    Hints are prioritized FIRST (they are known-good element/type names),
+    then high-quality discovered themes fill remaining slots.
     """
     merged = {}
-    
+
     for school, themes in discovered.items():
-        merged_themes = list(themes)
-        
-        # Add hints if this is a known vanilla school
         if school in VANILLA_THEME_HINTS:
-            for hint in VANILLA_THEME_HINTS[school]:
-                if hint.lower() not in [t.lower() for t in merged_themes]:
-                    merged_themes.append(hint)
-                    if len(merged_themes) >= max_themes:
+            # Start with hints as the baseline — these are curated element/type
+            # names that produce coherent groupings (fire, frost, shock, etc.)
+            hints = list(VANILLA_THEME_HINTS[school])
+            hint_lower = {h.lower() for h in hints}
+            # Then add discovered themes that aren't already covered by hints
+            for t in themes:
+                if t.lower() not in hint_lower:
+                    hints.append(t)
+                    if len(hints) >= max_themes:
                         break
-        
-        merged[school] = merged_themes[:max_themes]
-    
+            merged[school] = hints[:max_themes]
+        else:
+            # Non-vanilla school — use discovered themes as-is
+            merged[school] = list(themes[:max_themes])
+
     return merged
 
 
