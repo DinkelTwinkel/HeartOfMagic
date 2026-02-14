@@ -897,24 +897,52 @@ All settings stored in single config file, managed through UI:
 
 ```
 HeartOfMagic/
-├── plugin/src/
-│   ├── Main.cpp                     ✅ Entry point, event registration, serialization
-│   ├── PCH.h                        ✅ Precompiled header
-│   ├── PrismaUI_API.h               ✅ PrismaUI modder interface
-│   ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
-│   ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
-│   ├── UICallbacks.h                ✅ UI callback declarations (categorized)
-│   ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
-│   ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling
-│   ├── SpellEffectivenessHook.cpp/h ✅ Runtime magnitude scaling, shared_mutex
-│   ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
-│   ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
-│   ├── TreeNLP.cpp/h               ✅ Core NLP: TF-IDF, cosine sim, fuzzy matching, PRM scoring
-│   ├── TreeBuilder.cpp/h           ✅ Tree construction engine (5 builder modes)
-│   ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
-│   ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
-│   ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
-│   └── XPSource.h                   ✅ XP source interface
+├── CMakeLists.txt                 # Top-level super-build (shared config)
+├── CMakePresets.json              # Build presets (VS2022, VS2026)
+├── vcpkg.json                     # Shared vcpkg dependencies
+├── BuildRelease.ps1               # Build script
+├── plugins/
+│   ├── cmake/
+│   │   ├── CompilerFlags.cmake    # MSVC optimization flags (/GL, /LTCG, /AVX, etc.)
+│   │   ├── commonlibsse.cmake     # CommonLibSSE-NG configuration
+│   │   ├── Papyrus.cmake          # Papyrus script compilation
+│   │   └── Spriggit.cmake         # Spriggit ESP serialization
+│   ├── external/
+│   │   └── commonlibsse-ng/       # Git submodule (built once, shared by all targets)
+│   ├── spelllearning/             # Main SpellLearning plugin
+│   │   ├── CMakeLists.txt
+│   │   ├── include/PCH.h          ✅ Precompiled header
+│   │   └── src/
+│   │       ├── Main.cpp                     ✅ Entry point, event registration, serialization
+│   │       ├── PrismaUI_API.h               ✅ PrismaUI modder interface
+│   │       ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
+│   │       ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
+│   │       ├── UICallbacks.h                ✅ UI callback declarations (categorized)
+│   │       ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
+│   │       ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling
+│   │       ├── SpellEffectivenessHook.cpp/h ✅ Runtime magnitude scaling, shared_mutex
+│   │       ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
+│   │       ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
+│   │       ├── TreeNLP.cpp/h               ✅ Core NLP: TF-IDF, cosine sim, fuzzy matching, PRM scoring
+│   │       ├── TreeBuilder.cpp/h           ✅ Tree construction engine (5 builder modes)
+│   │       ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
+│   │       ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
+│   │       ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
+│   │       ├── SpellLearningAPI.h           ✅ Public C++ API header
+│   │       └── XPSource.h                   ✅ XP source interface
+│   ├── compatibility/
+│   │   └── DummyDEST/             # DEST compatibility shim
+│   │       ├── CMakeLists.txt
+│   │       └── src/
+│   │           ├── PCH.h          ✅ Precompiled header
+│   │           └── Main.cpp       ✅ Inert DontEatSpellTomes.dll replacement
+│   └── addons/
+│       └── BookXP/                # BookXP addon plugin
+│           ├── CMakeLists.txt
+│           └── src/
+│               ├── PCH.h              ✅ Precompiled header
+│               ├── Main.cpp           ✅ BookMenu watcher + API integration
+│               └── SpellLearningAPI.h ✅ Public API header (copy)
 ├── Scripts/Source/
 │   ├── SpellLearning_QuestScript.psc  ✅ Quest initialization
 │   ├── SpellLearning_Bridge.psc       ⚠️ Legacy SkyrimNet bridge (unused)
@@ -935,13 +963,15 @@ HeartOfMagic/
 │   └── custom_prompts/              ✅ LLM prompt templates
 └── docs/
     ├── ARCHITECTURE.md              ✅ This file
-    ├── OVERVIEW.md                  ✅ High-level feature overview
-    ├── DESIGN.md                    ✅ Design patterns
-    ├── PROGRESSION_DESIGN.md        ✅ XP system design
-    ├── QUICK_REFERENCE.md           ✅ Quick developer reference
-    ├── TECHNICAL_RESEARCH.md        ✅ Technical deep-dives
-    ├── COMMON-ERRORS.md             ✅ Troubleshooting guide
-    └── LLM_PROMPT_TEMPLATE.md       ✅ LLM prompt design
+    ├── DESIGN.md                    ✅ Design patterns and UI documentation
+    ├── MODULE_CONTRACTS.md          ✅ Module creation contracts
+    ├── TREE_BUILDING_SYSTEM.md      ✅ Tree building algorithms
+    ├── DEST-IMPROVEMENTS.md         ✅ DEST comparison
+    ├── PRESETS.md                    ✅ Preset system documentation
+    ├── TRANSLATING.md               ✅ Translation guide
+    ├── PLAN-PUBLIC-MODDER-API.md    ✅ Public modder API spec
+    └── research/
+        └── TREE_GENERATION_RESEARCH.md ✅ NLP/ML research
 ```
 
 ---

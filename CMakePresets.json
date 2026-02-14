@@ -1,0 +1,75 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
+        "VCPKG_INSTALL_OPTIONS": "--no-print-usage",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+
+        "CMAKE_CXX_FLAGS": "/permissive- /Zc:preprocessor /MP /W4 /utf-8",
+        "CMAKE_C_FLAGS_DEBUG": "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /DUNICODE /D_UNICODE",
+        "CMAKE_CXX_FLAGS_DEBUG": "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /DUNICODE /D_UNICODE",
+        "CMAKE_C_FLAGS_RELEASE": "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /DUNICODE /D_UNICODE",
+        "CMAKE_CXX_FLAGS_RELEASE": "/DWIN32_LEAN_AND_MEAN /DNOMINMAX /DUNICODE /D_UNICODE",
+
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF"
+      }
+    },
+    {
+      "name": "vs2022",
+      "inherits": ["base"],
+      "displayName": "Visual Studio 2022",
+      "generator": "Visual Studio 17 2022"
+    },
+    {
+      "name": "vs2026",
+      "inherits": ["base"],
+      "displayName": "Visual Studio 2026",
+      "generator": "Visual Studio 18 2026"
+    },
+    {
+      "name": "Release-2022",
+      "inherits": ["vs2022"],
+      "displayName": "Visual Studio 2022 - Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "Release-2026",
+      "inherits": ["vs2026"],
+      "displayName": "Visual Studio 2026 - Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Release-2022",
+      "configurePreset": "Release-2022",
+      "configuration": "Release"
+    },
+    {
+      "name": "Release-2026",
+      "configurePreset": "Release-2026",
+      "configuration": "Release"
+    }
+  ]
+}

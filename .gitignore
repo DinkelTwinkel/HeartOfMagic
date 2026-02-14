@@ -1,4 +1,5 @@
 # Build outputs
+build/
 plugin/build/
 plugin/build2/
 compatibility/*/build/
@@ -49,4 +50,4 @@ SKSE/Plugins/SpellLearning/SpellTreeBuilder/python/
 # Build artifacts
 plugin/build/
 *.pex
-plugin/Build_Config_Local.ps1
+Build_Config_Local.ps1
