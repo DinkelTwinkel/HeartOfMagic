@@ -1,4 +1,16 @@
 #include "PythonBridge.h"
+#include "WineDetect.h"
+
+#pragma comment(lib, "ws2_32.lib")
+
+static bool s_wsaInitialized = false;
+static void EnsureWSAStartup() {
+    if (!s_wsaInitialized) {
+        WSADATA wsaData;
+        WSAStartup(MAKEWORD(2, 2), &wsaData);
+        s_wsaInitialized = true;
+    }
+}
 
 PythonBridge* PythonBridge::GetSingleton()
 {
@@ -149,6 +161,8 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
         auto stb = owFolder / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
         pythonPaths.push_back(stb / "python" / "python.exe");
         pythonPaths.push_back(stb / ".venv" / "Scripts" / "python.exe");
+        pythonPaths.push_back(stb / ".venv" / "bin" / "python");       // Linux venv
+        pythonPaths.push_back(stb / ".venv" / "bin" / "python3");      // Linux venv
         scriptDirs.push_back(stb);
     }
 
@@ -165,6 +179,12 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
             if (std::filesystem::exists(stb / ".venv" / "Scripts" / "python.exe", ec)) {
                 pythonPaths.push_back(stb / ".venv" / "Scripts" / "python.exe");
             }
+            if (std::filesystem::exists(stb / ".venv" / "bin" / "python", ec)) {
+                pythonPaths.push_back(stb / ".venv" / "bin" / "python");   // Linux venv
+            }
+            if (std::filesystem::exists(stb / ".venv" / "bin" / "python3", ec)) {
+                pythonPaths.push_back(stb / ".venv" / "bin" / "python3");  // Linux venv
+            }
             if (std::filesystem::exists(stb / "build_tree.py", ec)) {
                 scriptDirs.push_back(stb);
                 logger::info("PythonBridge: Found SpellTreeBuilder in mod: {}", entry.path().filename().string());
@@ -176,24 +196,68 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
     auto realData = cwd / "Data" / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
     pythonPaths.push_back(realData / "python" / "python.exe");
     pythonPaths.push_back(realData / ".venv" / "Scripts" / "python.exe");
+    pythonPaths.push_back(realData / ".venv" / "bin" / "python");      // Linux venv
+    pythonPaths.push_back(realData / ".venv" / "bin" / "python3");     // Linux venv
     scriptDirs.push_back(realData);
 
     // 4. CWD relative
     auto cwdRel = cwd / "SKSE" / "Plugins" / "SpellLearning" / "SpellTreeBuilder";
     pythonPaths.push_back(cwdRel / "python" / "python.exe");
+    pythonPaths.push_back(cwdRel / ".venv" / "bin" / "python");        // Linux venv
     scriptDirs.push_back(cwdRel);
 
     PythonPaths result;
 
-    // Find python.exe
+    bool isWine = IsRunningUnderWine();
+    if (isWine) {
+        logger::info("PythonBridge: Wine/Proton detected — only Windows python.exe is usable with CreateProcess");
+    }
+
+    // Find python executable
     for (const auto& path : pythonPaths) {
         std::error_code ec;
-        if (std::filesystem::exists(path, ec)) {
-            result.pythonExe = ResolvePhysicalPath(path);
-            logger::info("PythonBridge: Found Python at: {}", result.pythonExe.string());
-            break;
+        if (!std::filesystem::exists(path, ec)) continue;
+
+        // On Wine, CreateProcess can only run PE (.exe) files.
+        // Skip Linux-native Python (e.g. .venv/bin/python -> /usr/bin/python3.9)
+        // because it's an ELF binary that CreateProcess can't execute.
+        if (isWine) {
+            auto ext = path.extension().string();
+            if (ext != ".exe" && ext != ".EXE") {
+                logger::info("PythonBridge: Skipping non-.exe Python on Wine: {}", path.string());
+                continue;
+            }
+        }
+
+        result.pythonExe = ResolvePhysicalPath(path);
+        logger::info("PythonBridge: Found Python at: {}", result.pythonExe.string());
+        break;
+    }
+
+    // Wine fallback: if no .exe found, log the Linux Python for diagnostics
+    if (isWine && result.pythonExe.empty()) {
+        for (const auto& path : pythonPaths) {
+            std::error_code ec;
+            if (std::filesystem::exists(path, ec)) {
+                logger::warn("PythonBridge: Linux Python found at {} but cannot be used by CreateProcess. "
+                    "Use Auto-Setup to install Windows Python, or manually extract the Windows embedded Python ZIP "
+                    "to SpellTreeBuilder/python/", path.string());
+                break;
+            }
         }
     }
+
+    // Sort script dirs: prefer _RELEASE folders (deploy target) over old copies
+    std::stable_sort(scriptDirs.begin(), scriptDirs.end(),
+        [](const std::filesystem::path& a, const std::filesystem::path& b) {
+            // Walk up from SpellTreeBuilder -> SpellLearning -> Plugins -> SKSE -> mod root
+            auto modNameA = a.parent_path().parent_path().parent_path().parent_path().filename().string();
+            auto modNameB = b.parent_path().parent_path().parent_path().parent_path().filename().string();
+            bool aRelease = modNameA.find("_RELEASE") != std::string::npos;
+            bool bRelease = modNameB.find("_RELEASE") != std::string::npos;
+            if (aRelease != bRelease) return aRelease;  // _RELEASE first
+            return false;  // preserve order otherwise
+        });
 
     // Find script directory — prefer directories with server.py (persistent mode)
     // over those with only build_tree.py (old versions without server.py)
@@ -202,8 +266,11 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
         std::error_code ec;
         if (std::filesystem::exists(dir / "server.py", ec)) {
             result.scriptDir = ResolvePhysicalPath(dir);
-            result.serverScript = result.scriptDir / "server.py";
+            // Resolve server.py independently — under MO2 USVFS, the directory
+            // may resolve to Overwrite/ while server.py is in the mod folder.
+            result.serverScript = ResolvePhysicalPath(dir / "server.py");
             logger::info("PythonBridge: Found script dir (server.py) at: {}", result.scriptDir.string());
+            logger::info("PythonBridge: Resolved server.py at: {}", result.serverScript.string());
             break;
         } else if (fallbackDir.empty() && std::filesystem::exists(dir / "build_tree.py", ec)) {
             fallbackDir = dir;
@@ -211,7 +278,7 @@ PythonBridge::PythonPaths PythonBridge::ResolvePythonPaths()
     }
     if (result.scriptDir.empty() && !fallbackDir.empty()) {
         result.scriptDir = ResolvePhysicalPath(fallbackDir);
-        result.serverScript = result.scriptDir / "server.py";
+        result.serverScript = ResolvePhysicalPath(fallbackDir / "server.py");
         logger::warn("PythonBridge: No server.py found, using build_tree.py dir: {}", result.scriptDir.string());
     }
 
@@ -249,8 +316,9 @@ bool PythonBridge::EnsureProcess()
 
     if (m_running.load() && !m_ready.load()) {
         // Process is starting, wait for ready
+        int readyTimeout = IsRunningUnderWine() ? READY_TIMEOUT_WINE_MS : READY_TIMEOUT_MS;
         std::unique_lock<std::mutex> lock(m_mutex);
-        m_readyCv.wait_for(lock, std::chrono::milliseconds(READY_TIMEOUT_MS), [this] {
+        m_readyCv.wait_for(lock, std::chrono::milliseconds(readyTimeout), [this] {
             return m_ready.load() || !m_running.load();
         });
         return m_ready.load();
@@ -270,88 +338,245 @@ bool PythonBridge::SpawnProcess()
     // Fix ._pth file before spawning
     FixEmbeddedPythonPthFile(paths.pythonExe);
 
-    // Create pipes for stdin/stdout
-    SECURITY_ATTRIBUTES sa = {};
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = TRUE;
+    bool isWine = IsRunningUnderWine();
 
-    HANDLE hStdinRead = nullptr;
-    HANDLE hStdoutWrite = nullptr;
+    std::filesystem::path pythonExe = paths.pythonExe;
 
-    if (!CreatePipe(&hStdinRead, &m_hStdinWrite, &sa, 0)) {
-        logger::error("PythonBridge: Failed to create stdin pipe ({})", GetLastError());
-        return false;
-    }
-    if (!CreatePipe(&m_hStdoutRead, &hStdoutWrite, &sa, 0)) {
-        logger::error("PythonBridge: Failed to create stdout pipe ({})", GetLastError());
-        CloseHandle(hStdinRead);
-        CloseHandle(m_hStdinWrite);
-        m_hStdinWrite = nullptr;
-        return false;
-    }
+    auto pythonHome = pythonExe.parent_path().wstring();
 
-    // Don't inherit our end of the pipes
-    SetHandleInformation(m_hStdinWrite, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(m_hStdoutRead, HANDLE_FLAG_INHERIT, 0);
-
-    // Build environment block with PYTHONHOME
-    auto pythonHome = paths.pythonExe.parent_path().wstring();
-
-    // Copy current environment and add/override PYTHONHOME
+    // Build environment block
     std::wstring envBlock;
     wchar_t* currentEnv = GetEnvironmentStringsW();
     if (currentEnv) {
         for (wchar_t* p = currentEnv; *p; p += wcslen(p) + 1) {
-            // Skip existing PYTHONHOME/PYTHONPATH to avoid conflicts
             if (_wcsnicmp(p, L"PYTHONHOME=", 11) == 0) continue;
             if (_wcsnicmp(p, L"PYTHONPATH=", 11) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONIOENCODING=", 17) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONUNBUFFERED=", 17) == 0) continue;
+            if (_wcsnicmp(p, L"PYTHONDONTWRITEBYTECODE=", 24) == 0) continue;
             envBlock += p;
             envBlock += L'\0';
         }
         FreeEnvironmentStringsW(currentEnv);
     }
-    envBlock += L"PYTHONHOME=" + pythonHome + L'\0';
+    if (!isWine) {
+        envBlock += L"PYTHONHOME=" + pythonHome + L'\0';
+    }
+    envBlock += L"PYTHONIOENCODING=utf-8";
+    envBlock += L'\0';
+    envBlock += L"PYTHONUNBUFFERED=1";
+    envBlock += L'\0';
+    envBlock += L"PYTHONDONTWRITEBYTECODE=1";
+    envBlock += L'\0';
+    if (isWine) {
+        // Prevent numpy/OpenBLAS crashes on Wine — these C extensions use SIMD
+        // and threading features that Wine's ucrtbase.dll may not fully support.
+        envBlock += L"OPENBLAS_NUM_THREADS=1";
+        envBlock += L'\0';
+        envBlock += L"OPENBLAS_CORETYPE=Haswell";
+        envBlock += L'\0';
+        envBlock += L"NPY_DISABLE_CPU_FEATURES=AVX512F,AVX512CD,AVX512_SKX,AVX512_CLX,AVX512_CNL,AVX512_ICL";
+        envBlock += L'\0';
+    }
     envBlock += L'\0';  // Double null terminator
 
+    // =========================================================================
+    // Wine/Proton: Use TCP socket for IPC (pipe inheritance is broken in Wine)
+    // Windows: Use anonymous pipes (standard, fast)
+    // =========================================================================
+
+    HANDLE hStdinRead = nullptr;
+    HANDLE hStdoutWrite = nullptr;
+    int tcpPort = 0;
+    SOCKET listenSock = INVALID_SOCKET;
+
+    if (isWine) {
+        // TCP socket approach — bypasses broken pipe inheritance in Wine/Proton
+        EnsureWSAStartup();
+
+        listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listenSock == INVALID_SOCKET) {
+            logger::error("PythonBridge: Failed to create TCP listen socket ({})", WSAGetLastError());
+            return false;
+        }
+
+        sockaddr_in addr = {};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;  // OS picks a free port
+
+        if (bind(listenSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR ||
+            listen(listenSock, 1) == SOCKET_ERROR) {
+            logger::error("PythonBridge: Failed to bind/listen TCP socket ({})", WSAGetLastError());
+            closesocket(listenSock);
+            return false;
+        }
+
+        sockaddr_in boundAddr = {};
+        int addrLen = sizeof(boundAddr);
+        getsockname(listenSock, reinterpret_cast<sockaddr*>(&boundAddr), &addrLen);
+        tcpPort = ntohs(boundAddr.sin_port);
+
+        logger::info("PythonBridge: Wine detected — using cmd.exe /c + CREATE_NEW_CONSOLE + TCP socket on port {}", tcpPort);
+    } else {
+        // Standard pipe approach for native Windows
+        SECURITY_ATTRIBUTES sa = {};
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+
+        if (!CreatePipe(&hStdinRead, &m_hStdinWrite, &sa, 0)) {
+            logger::error("PythonBridge: Failed to create stdin pipe ({})", GetLastError());
+            return false;
+        }
+        if (!CreatePipe(&m_hStdoutRead, &hStdoutWrite, &sa, 0)) {
+            logger::error("PythonBridge: Failed to create stdout pipe ({})", GetLastError());
+            CloseHandle(hStdinRead);
+            CloseHandle(m_hStdinWrite);
+            m_hStdinWrite = nullptr;
+            return false;
+        }
+
+        SetHandleInformation(m_hStdinWrite, HANDLE_FLAG_INHERIT, 0);
+        SetHandleInformation(m_hStdoutRead, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    // Verify resolved server.py exists before spawning
+    {
+        std::error_code ec;
+        if (!std::filesystem::exists(paths.serverScript, ec)) {
+            logger::error("PythonBridge: server.py not found at resolved path: {}", paths.serverScript.string());
+            logger::error("PythonBridge: This may indicate USVFS path resolution failed — try reinstalling the mod");
+            if (isWine && listenSock != INVALID_SOCKET) closesocket(listenSock);
+            return false;
+        }
+    }
+
     // Build command line
-    std::wstring cmdLine = L"\"" + paths.pythonExe.wstring() + L"\" \"" + paths.serverScript.wstring() + L"\"";
+    std::wstring cmdLine;
+    if (isWine) {
+        // Use cmd.exe /c wrapper WITH CREATE_NEW_CONSOLE (below). This combines:
+        // 1. cmd.exe properly chains process environment/handles to Python
+        // 2. CREATE_NEW_CONSOLE allocates a console so cmd.exe/Python get valid stdio
+        // 3. SW_HIDE keeps the console invisible in Proton's virtual desktop
+        // History:
+        //   - cmd.exe without CREATE_NEW_CONSOLE: worked from terminal, failed from Steam
+        //     (no parent console → no stdio → Python crashed silently)
+        //   - Direct python.exe with CREATE_NEW_CONSOLE: Python exits with code 1
+        //     (cmd.exe may be needed for proper Wine process chain setup)
+        cmdLine = L"cmd.exe /c \"\"" + pythonExe.wstring() + L"\" -u \""
+                + paths.serverScript.wstring() + L"\" --port "
+                + std::to_wstring(tcpPort) + L" --wine\"";
+    } else {
+        cmdLine = L"\"" + pythonExe.wstring() + L"\" -u \""
+                + paths.serverScript.wstring() + L"\"";
+    }
 
     STARTUPINFOW si = {};
     si.cb = sizeof(si);
-    si.hStdInput = hStdinRead;
-    si.hStdOutput = hStdoutWrite;
-    si.hStdError = hStdoutWrite;  // Merge stderr into stdout
-    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
+    if (isWine) {
+        // CREATE_NEW_CONSOLE (below) allocates a console for cmd.exe, which Python
+        // inherits — giving both valid stdin/stdout/stderr handles. SW_HIDE prevents
+        // the console window from showing in Proton's virtual desktop.
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+    } else {
+        si.hStdInput = hStdinRead;
+        si.hStdOutput = hStdoutWrite;
+        si.hStdError = hStdoutWrite;
+        si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+    }
 
     PROCESS_INFORMATION pi = {};
 
     logger::info("PythonBridge: Spawning: {}", std::filesystem::path(cmdLine).string());
+
+    DWORD createFlags = CREATE_UNICODE_ENVIRONMENT;
+    if (isWine) {
+        // CREATE_NEW_CONSOLE: allocate a new console for cmd.exe so the cmd→Python
+        // chain gets valid stdio handles. Without this, Steam/Proton has no console,
+        // and cmd.exe/Python crash before reaching server.py's TCP connect code.
+        createFlags |= CREATE_NEW_CONSOLE;
+    } else {
+        createFlags |= CREATE_NO_WINDOW;
+    }
 
     BOOL ok = CreateProcessW(
         nullptr,
         cmdLine.data(),
         nullptr,
         nullptr,
-        TRUE,  // Inherit handles (for pipes)
-        CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+        isWine ? FALSE : TRUE,  // Wine: no handle inheritance needed (TCP for IPC); Windows: inherit pipe handles
+        createFlags,
         envBlock.data(),
         paths.scriptDir.wstring().c_str(),
         &si,
         &pi
     );
 
-    // Close child's ends of pipes
-    CloseHandle(hStdinRead);
-    CloseHandle(hStdoutWrite);
+    // Close inherited handles (child has its own copies now)
+    if (hStdinRead) CloseHandle(hStdinRead);
+    if (hStdoutWrite) CloseHandle(hStdoutWrite);
 
     if (!ok) {
-        logger::error("PythonBridge: CreateProcess failed ({})", GetLastError());
-        CloseHandle(m_hStdinWrite);
-        CloseHandle(m_hStdoutRead);
-        m_hStdinWrite = nullptr;
-        m_hStdoutRead = nullptr;
+        DWORD err = GetLastError();
+        logger::error("PythonBridge: CreateProcess failed ({})", err);
+        if (isWine) {
+            logger::error("PythonBridge: Wine/Proton detected — ensure Windows python.exe is installed. "
+                "Use the Auto-Setup button or manually extract the Python embed ZIP (3.11.9 for Wine).");
+            closesocket(listenSock);
+        } else {
+            CloseHandle(m_hStdinWrite);
+            CloseHandle(m_hStdoutRead);
+            m_hStdinWrite = nullptr;
+            m_hStdoutRead = nullptr;
+        }
         return false;
+    }
+
+    // On Wine, accept the incoming TCP connection from Python
+    if (isWine) {
+        int tcpTimeoutSec = isWine ? TCP_CONNECT_TIMEOUT_WINE_S : TCP_CONNECT_TIMEOUT_S;
+        logger::info("PythonBridge: Waiting for Python to connect on port {} (timeout: {}s)...", tcpPort, tcpTimeoutSec);
+
+        fd_set readSet;
+        FD_ZERO(&readSet);
+        FD_SET(listenSock, &readSet);
+        timeval timeout = {tcpTimeoutSec, 0};
+
+        int selResult = select(0, &readSet, nullptr, nullptr, &timeout);
+        if (selResult <= 0) {
+            // Check if Python already exited (crashed before connecting)
+            DWORD exitCode = STILL_ACTIVE;
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+            if (exitCode != STILL_ACTIVE) {
+                logger::error("PythonBridge: Python process exited with code {} (0x{:X}) before connecting — likely crashed during startup",
+                    exitCode, exitCode);
+                // Hint the user to check server.log for details
+                logger::error("PythonBridge: Check SpellTreeBuilder/python/server.log or %%TEMP%%/SpellLearning_server.log for crash details");
+            } else {
+                logger::error("PythonBridge: Python did not connect to TCP socket within {}s (process still running — may be stuck)", tcpTimeoutSec);
+            }
+            closesocket(listenSock);
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            return false;
+        }
+
+        m_socket = accept(listenSock, nullptr, nullptr);
+        closesocket(listenSock);
+
+        if (m_socket == INVALID_SOCKET) {
+            logger::error("PythonBridge: Failed to accept TCP connection ({})", WSAGetLastError());
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            return false;
+        }
+
+        m_useSocket = true;
+        logger::info("PythonBridge: TCP connection established with Python");
     }
 
     m_hProcess = pi.hProcess;
@@ -365,14 +590,15 @@ bool PythonBridge::SpawnProcess()
     // Start reader thread
     m_readerThread = std::thread(&PythonBridge::ReaderThread, this);
 
-    // Wait for ready signal
+    // Wait for ready signal (Wine: much longer due to numpy/sklearn subprocess tests)
     {
+        int readyTimeout = isWine ? READY_TIMEOUT_WINE_MS : READY_TIMEOUT_MS;
         std::unique_lock<std::mutex> lock(m_mutex);
-        bool gotReady = m_readyCv.wait_for(lock, std::chrono::milliseconds(READY_TIMEOUT_MS), [this] {
+        bool gotReady = m_readyCv.wait_for(lock, std::chrono::milliseconds(readyTimeout), [this] {
             return m_ready.load() || !m_running.load();
         });
         if (!gotReady || !m_ready.load()) {
-            logger::error("PythonBridge: Python process did not become ready within {}ms", READY_TIMEOUT_MS);
+            logger::error("PythonBridge: Python process did not become ready within {}ms", readyTimeout);
             lock.unlock();  // Must release before KillProcess (it locks m_mutex internally)
             KillProcess();
             return false;
@@ -387,6 +613,14 @@ void PythonBridge::KillProcess()
 {
     m_running = false;
     m_ready = false;
+
+    // Close socket if using TCP mode
+    if (m_useSocket && m_socket != INVALID_SOCKET) {
+        shutdown(m_socket, SD_BOTH);
+        closesocket(m_socket);
+        m_socket = INVALID_SOCKET;
+        m_useSocket = false;
+    }
 
     if (m_hStdinWrite) {
         CloseHandle(m_hStdinWrite);
@@ -438,10 +672,19 @@ void PythonBridge::ReaderThread()
     DWORD bytesRead;
 
     while (m_running.load()) {
-        BOOL ok = ReadFile(m_hStdoutRead, buf, sizeof(buf) - 1, &bytesRead, nullptr);
-        if (!ok || bytesRead == 0) break;
+        int received = 0;
+        if (m_useSocket) {
+            // TCP socket mode (Wine/Proton)
+            received = recv(m_socket, buf, sizeof(buf) - 1, 0);
+            if (received <= 0) break;
+        } else {
+            // Pipe mode (native Windows)
+            BOOL ok = ReadFile(m_hStdoutRead, buf, sizeof(buf) - 1, &bytesRead, nullptr);
+            if (!ok || bytesRead == 0) break;
+            received = static_cast<int>(bytesRead);
+        }
 
-        buf[bytesRead] = '\0';
+        buf[received] = '\0';
         lineBuffer += buf;
 
         // Process complete lines
@@ -468,6 +711,36 @@ void PythonBridge::ReaderThread()
                 // Ready signal
                 if (id == "__ready__") {
                     logger::info("PythonBridge: Received ready signal from Python");
+
+                    // Log registered commands and import errors from ready payload
+                    if (j.contains("result")) {
+                        auto& result = j["result"];
+                        if (result.contains("commands")) {
+                            std::string cmds;
+                            for (auto& c : result["commands"]) {
+                                if (!cmds.empty()) cmds += ", ";
+                                cmds += c.get<std::string>();
+                            }
+                            logger::info("PythonBridge: Registered commands: [{}]", cmds);
+                        }
+                        if (result.contains("log_file")) {
+                            logger::info("PythonBridge: Python log file: {}", result["log_file"].get<std::string>());
+                        }
+                        if (result.contains("prisma_modules")) {
+                            std::string mods;
+                            for (auto& m : result["prisma_modules"]) {
+                                if (!mods.empty()) mods += ", ";
+                                mods += m.get<std::string>();
+                            }
+                            logger::info("PythonBridge: PrismaUI module dirs: [{}]", mods);
+                        }
+                        if (result.contains("import_errors")) {
+                            for (auto& [cmd, err] : result["import_errors"].items()) {
+                                logger::error("PythonBridge: Import failed for '{}': {}", cmd, err.get<std::string>());
+                            }
+                        }
+                    }
+
                     m_ready = true;
                     m_readyCv.notify_all();
                     continue;
@@ -508,6 +781,19 @@ void PythonBridge::ReaderThread()
                 // Not JSON — treat as debug/log output from Python
                 logger::info("PythonBridge [python]: {}", line.substr(0, 200));
             }
+        }
+    }
+
+    // Process any remaining data in the buffer (partial lines from crash output)
+    if (!lineBuffer.empty()) {
+        logger::info("PythonBridge [python-final]: {}", lineBuffer.substr(0, 500));
+    }
+
+    // Log exit code for diagnostics
+    if (m_hProcess) {
+        DWORD exitCode = 0;
+        if (GetExitCodeProcess(m_hProcess, &exitCode)) {
+            logger::info("PythonBridge: Process exit code: {} (0x{:X})", exitCode, exitCode);
         }
     }
 
@@ -574,11 +860,23 @@ void PythonBridge::SendCommand(const std::string& command, const std::string& pa
         m_inflightRequests[id] = {id, callback, std::chrono::steady_clock::now()};
     }
 
-    // Write to stdin pipe
-    DWORD written;
-    BOOL ok = WriteFile(m_hStdinWrite, line.c_str(), static_cast<DWORD>(line.size()), &written, nullptr);
-    if (!ok) {
-        logger::error("PythonBridge: Failed to write to stdin pipe ({})", GetLastError());
+    // Write to Python (socket or pipe)
+    bool writeOk = false;
+    if (m_useSocket) {
+        int sent = send(m_socket, line.c_str(), static_cast<int>(line.size()), 0);
+        writeOk = (sent > 0);
+        if (!writeOk) {
+            logger::error("PythonBridge: Failed to send via TCP socket ({})", WSAGetLastError());
+        }
+    } else {
+        DWORD written;
+        writeOk = WriteFile(m_hStdinWrite, line.c_str(), static_cast<DWORD>(line.size()), &written, nullptr);
+        if (!writeOk) {
+            logger::error("PythonBridge: Failed to write to stdin pipe ({})", GetLastError());
+        }
+    }
+
+    if (!writeOk) {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_inflightRequests.erase(id);
         callback(false, "Failed to send command to Python");
@@ -599,8 +897,10 @@ void PythonBridge::Shutdown()
     m_shutdownRequested = true;
 
     // Send shutdown command
-    if (m_hStdinWrite) {
-        std::string cmd = "{\"id\":\"__shutdown__\",\"command\":\"shutdown\"}\n";
+    std::string cmd = "{\"id\":\"__shutdown__\",\"command\":\"shutdown\"}\n";
+    if (m_useSocket && m_socket != INVALID_SOCKET) {
+        send(m_socket, cmd.c_str(), static_cast<int>(cmd.size()), 0);
+    } else if (m_hStdinWrite) {
         DWORD written;
         WriteFile(m_hStdinWrite, cmd.c_str(), static_cast<DWORD>(cmd.size()), &written, nullptr);
     }

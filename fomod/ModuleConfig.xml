@@ -13,52 +13,36 @@
     </requiredInstallFiles>
 
     <!-- ================================================================== -->
-    <!-- CONDITIONAL — auto-install ISL compatibility patch                  -->
-    <!-- ================================================================== -->
-    <!-- If DEST_ISL.esp or the original DontEatSpellTomes DLL is detected, -->
-    <!-- overwrite it with our inert shim.  SpellLearning.dll provides the  -->
-    <!-- DEST Papyrus API that ISL needs, so ISL works without changes.     -->
-    <!-- ================================================================== -->
-    <conditionalFileInstalls>
-        <patterns>
-            <pattern>
-                <dependencies operator="Or">
-                    <fileDependency file="DEST_ISL.esp"             state="Active"/>
-                    <fileDependency file="DontEatSpellTomes.esp"    state="Active"/>
-                    <fileDependency file="SKSE\Plugins\DontEatSpellTomes.dll" state="Active"/>
-                </dependencies>
-                <files>
-                    <folder source="optional\ISLPatch\SKSE" destination="SKSE" priority="1"/>
-                    <folder source="optional\ISLPatch\Scripts" destination="Scripts" priority="1"/>
-                </files>
-            </pattern>
-        </patterns>
-    </conditionalFileInstalls>
-
-    <!-- ================================================================== -->
     <!-- INSTALL STEPS — optional user choices                               -->
     <!-- ================================================================== -->
     <installSteps order="Explicit">
-        <installStep name="ISL / DEST Compatibility">
+        <installStep name="Compatibility Patches">
             <optionalFileGroups order="Explicit">
-                <group name="Immersive Spell Learning (ISL) Compatibility" type="SelectAny">
+                <group name="ISL / DEST / Sit Down and Read / GTS Traits" type="SelectAny">
                     <plugins order="Explicit">
-                        <plugin name="Install ISL Compatibility Patch">
+                        <plugin name="Merged ISL Compatibility Patch">
                             <description>
-Replaces DontEatSpellTomes.dll with an inert shim so Heart of Magic's spell tome hook doesn't conflict with ISL's.
+Merged compatibility patch for ISL-DESTified, Sit Down and Read, and GTS Trait Rebalanced.
 
-ISL's study system (menus, animations, time passage) continues to work. Spell tomes grant XP through Heart of Magic's progression system.
+Replaces DontEatSpellTomes.dll with an inert shim and installs a merged study script that preserves ALL features from every mod:
 
-IMPORTANT: In your mod manager, make sure Heart of Magic overwrites (loads after) Immersive Spell Learning so the patched scripts take priority.
+- Heart of Magic: Spell XP from studying, progression integration
+- Sit Down and Read: GPMA/OAR animations, ImprovedCameraSE and TrueDirectionalMovement support, 1st-person study
+- GTS Trait Rebalanced: Bookworm trait study speed bonus
+- Bug fix: Save-load re-registration (prevents spell tome hook from silently breaking)
 
-This is auto-selected if ISL or DEST was detected. If you don't use ISL, leave this unchecked.
+All features degrade gracefully — if a mod is not installed, its features are simply inactive.
+
+IMPORTANT: Load Heart of Magic AFTER ISL/DEST/GTS/SDR so the merged scripts take priority.
+
+Auto-selected if ISL or DEST is detected. If you don't use ISL, leave this unchecked.
                             </description>
                             <conditionFlags>
                                 <flag name="ISLDetected">On</flag>
                             </conditionFlags>
                             <files>
                                 <folder source="optional\ISLPatch\SKSE" destination="SKSE" priority="1"/>
-                    <folder source="optional\ISLPatch\Scripts" destination="Scripts" priority="1"/>
+                                <folder source="optional\ISLPatch\Scripts" destination="Scripts" priority="1"/>
                             </files>
                             <typeDescriptor>
                                 <dependencyType>
@@ -81,5 +65,24 @@ This is auto-selected if ISL or DEST was detected. If you don't use ISL, leave t
             </optionalFileGroups>
         </installStep>
     </installSteps>
+
+    <!-- ================================================================== -->
+    <!-- CONDITIONAL — auto-install ISL compatibility patch                  -->
+    <!-- ================================================================== -->
+    <conditionalFileInstalls>
+        <patterns>
+            <pattern>
+                <dependencies operator="Or">
+                    <fileDependency file="DEST_ISL.esp"             state="Active"/>
+                    <fileDependency file="DontEatSpellTomes.esp"    state="Active"/>
+                    <fileDependency file="SKSE\Plugins\DontEatSpellTomes.dll" state="Active"/>
+                </dependencies>
+                <files>
+                    <folder source="optional\ISLPatch\SKSE" destination="SKSE" priority="1"/>
+                    <folder source="optional\ISLPatch\Scripts" destination="Scripts" priority="1"/>
+                </files>
+            </pattern>
+        </patterns>
+    </conditionalFileInstalls>
 
 </config>

@@ -24,32 +24,32 @@ var TreeSettings = {
         var H = TreePreviewUtils.settingHTML;
 
         return '' +
-            '<div class="tree-preview-settings-title">Tree Growth Settings</div>' +
+            '<div class="tree-preview-settings-title">' + t('preview.tree.title') + '</div>' +
             '<div class="tree-preview-settings-grid">' +
-                H('Trunk Thickness', 'tgTreeTrunkThickness', 1, 100, 1, thickness, '%') +
-                H('Branch Spread', 'tgTreeBranchSpread', 0, 10, 0.5, spread, 'x') +
-                H('Root Spread', 'tgTreeRootSpread', 0, 10, 0.5, rootSpread, 'x') +
-                H('Ghost Opacity', 'tgTreeOpacity', 0, 100, 5, opacity, '%') +
-                H('Node Size', 'tgTreeNodeSize', 1, 20, 1, nodeSize) +
+                H(t('preview.tree.trunkThickness'), 'tgTreeTrunkThickness', 1, 100, 1, thickness, '%') +
+                H(t('preview.tree.branchSpread'), 'tgTreeBranchSpread', 0, 10, 0.5, spread, 'x') +
+                H(t('preview.tree.rootSpread'), 'tgTreeRootSpread', 0, 10, 0.5, rootSpread, 'x') +
+                H(t('preview.ghostOpacity'), 'tgTreeOpacity', 0, 100, 5, opacity, '%') +
+                H(t('preview.nodeSize'), 'tgTreeNodeSize', 1, 20, 1, nodeSize) +
             '</div>' +
-            '<div class="tree-preview-settings-title" style="margin-top:8px;">Section Allocation</div>' +
+            '<div class="tree-preview-settings-title" style="margin-top:8px;">' + t('preview.tree.sectionAllocation') + '</div>' +
             '<div id="tgTreeAllocBar" style="display:flex; height:36px; border:1px solid rgba(184,168,120,0.2); border-radius:4px; overflow:hidden; cursor:col-resize; user-select:none;">' +
                 '<div id="tgTreeAllocBranch" style="background:rgba(74,124,74,0.4); flex-basis:30%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">' +
-                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">Branches</span>' +
+                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">' + t('preview.tree.branches') + '</span>' +
                     '<span class="tg-tree-alloc-pct" style="font-size:10px; color:#b8a878;">30%</span>' +
                 '</div>' +
                 '<div class="tg-tree-alloc-divider" data-left="branch" data-right="trunk" style="width:12px; background:rgba(184,168,120,0.15); cursor:col-resize; flex-shrink:0; display:flex; align-items:center; justify-content:center;"><span style="color:rgba(184,168,120,0.5); font-size:10px; pointer-events:none;">&#x2807;</span></div>' +
                 '<div id="tgTreeAllocTrunk" style="background:rgba(138,112,64,0.4); flex-basis:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">' +
-                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">Trunk</span>' +
+                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">' + t('preview.tree.trunk') + '</span>' +
                     '<span class="tg-tree-alloc-pct" style="font-size:10px; color:#b8a878;">50%</span>' +
                 '</div>' +
                 '<div class="tg-tree-alloc-divider" data-left="trunk" data-right="root" style="width:12px; background:rgba(184,168,120,0.15); cursor:col-resize; flex-shrink:0; display:flex; align-items:center; justify-content:center;"><span style="color:rgba(184,168,120,0.5); font-size:10px; pointer-events:none;">&#x2807;</span></div>' +
                 '<div id="tgTreeAllocRoot" style="background:rgba(160,96,48,0.4); flex-basis:20%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">' +
-                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">Root</span>' +
+                    '<span style="font-size:9px; color:rgba(184,168,120,0.7);">' + t('preview.tree.root') + '</span>' +
                     '<span class="tg-tree-alloc-pct" style="font-size:10px; color:#b8a878;">20%</span>' +
                 '</div>' +
             '</div>' +
-            '<div style="text-align:center; margin-top:2px; font-size:9px; color:rgba(184,168,120,0.3);">drag dividers to adjust</div>';
+            '<div style="text-align:center; margin-top:2px; font-size:9px; color:rgba(184,168,120,0.3);">' + t('preview.dragDividers') + '</div>';
     },
 
     /** Bind click handlers on buttons, change handlers on sliders, and drag on allocation bar. */

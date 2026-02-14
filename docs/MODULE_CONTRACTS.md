@@ -454,6 +454,102 @@ if (typeof TreePreviewSun !== 'undefined') {
 - [ ] Script tag added to `index.html` before the orchestrator
 - [ ] Orchestrator EOF section has a check for your global
 
+## Python Builder Contract
+
+Growth modules can bundle a Python tree builder in a `python/` subfolder. `server.py` auto-discovers these dirs at startup and adds them to `sys.path`.
+
+### File Layout
+
+```
+modules/mymode/
+├── mymodeMain.js
+├── mymodeSettings.js
+└── python/
+    └── mymode_build_tree.py    ← Python builder for this mode
+```
+
+### Builder Interface
+
+Each builder must export a function matching this signature:
+
+```python
+def mymode_build_tree_from_data(spells: list, config: dict) -> dict:
+    """Build spell trees for MyMode.
+
+    Args:
+        spells: List of spell dicts with formId, name, school, skillLevel, etc.
+        config: Configuration dict from JS (mode-specific settings).
+
+    Returns:
+        dict: Tree data in standard format:
+            {
+                'version': '1.0',
+                'schools': {
+                    'SchoolName': {
+                        'root': 'formId',
+                        'nodes': [{ formId, name, children, prerequisites, tier, ... }],
+                        'layoutStyle': 'my_style'
+                    }
+                },
+                'seed': 12345,
+                'validation': { 'all_valid': True, ... }
+            }
+    """
+```
+
+Output JSON must match the standard tree format so JS layout, apply, and PRM systems work unchanged.
+
+### Shared Modules
+
+Builders reuse shared modules from `SpellTreeBuilder/` (already on `sys.path`):
+
+| Module | Import | Purpose |
+|--------|--------|---------|
+| `core.node` | `from core.node import TreeNode, link_nodes` | Node data model |
+| `theme_discovery` | `from theme_discovery import discover_themes_per_school` | NLP theme extraction |
+| `validator` | `from validator import validate_tree, fix_unreachable_nodes` | Tree validation |
+| `config` | `from config import TreeBuilderConfig` | Config parsing |
+
+### Command Routing
+
+1. JS sends `command: 'build_tree_mymode'` in the `ProceduralPythonGenerate` request
+2. `UIManager.cpp` reads the `command` field and passes it to PythonBridge
+3. `server.py` routes the command to the correct builder function
+
+To add a new command, update `server.py`:
+
+```python
+# Import
+from mymode_build_tree import mymode_build_tree_from_data
+
+# In command routing:
+elif command == "build_tree_mymode":
+    result = mymode_build_tree_from_data(spells, config)
+    send_response(request_id, True, result)
+```
+
+### Error Handling
+
+Use `_handleBuildFailure()` in `proceduralTreeBuilder.js` for shared error + retry UI:
+
+```javascript
+_handleBuildFailure(
+    error,                    // Error string
+    '_myModeBuildPending',    // State key for retry routing
+    MyModeSettings,           // Settings module (has .setStatusText)
+    { command: 'build_tree_mymode', config: retryConfig },
+    'myModeBuildBtn',         // Button ID to re-enable
+    '[MyMode]'                // Log prefix
+);
+```
+
+### Existing Builders
+
+| Builder | Command | Algorithm |
+|---------|---------|-----------|
+| `classic_build_tree.py` | `build_tree_classic` | Tier-first: depth = tier index. NLP within-tier parent selection. No sklearn. |
+| `tree_build_tree.py` | `build_tree` | NLP thematic: TF-IDF similarity drives parent→child links. Requires sklearn. |
+
 ## File Reference
 
 | File | Role |
@@ -464,5 +560,177 @@ if (typeof TreePreviewSun !== 'undefined') {
 | `modules/treePreviewUtils.js` | Shared UI helpers (drag inputs) |
 | `modules/treeGrowth.js` | Tree growth orchestrator |
 | `modules/classic/classicMain.js` | CLASSIC growth module |
+| `modules/classic/python/classic_build_tree.py` | CLASSIC Python builder (tier-first) |
 | `modules/treeGrowthTree.js` | TREE growth module |
+| `modules/tree/python/tree_build_tree.py` | TREE Python builder (NLP) |
+| `modules/proceduralTreeBuilder.js` | Shared callback routing + error handler |
 | `modules/sunGrid*.js` | SUN grid sub-modules |
+
+## Python Builder Contract
+
+Each growth module can bundle a Python tree builder in a `python/` subfolder.
+Server.py auto-discovers `modules/*/python/` directories and adds them to sys.path.
+
+### Function Signature
+
+```python
+def {mode}_build_tree_from_data(spells: list, config: dict) -> dict:
+```
+
+### Input: `spells`
+
+List of spell dicts, each with:
+```json
+{
+  "formId": "0x00012FCD",
+  "name": "Flames",
+  "school": "Destruction",
+  "skillLevel": "Novice",
+  "effectNames": ["Fire Damage"],
+  "effects": [{"name": "Fire Damage", "description": "..."}],
+  "keywords": ["MagicDamageFire"]
+}
+```
+
+### Input: `config`
+
+Dict with builder options. Common fields:
+- `max_children_per_node` (int): Soft cap on children per node (default 3)
+- `top_themes_per_school` (int): Max themes to discover (default 8)
+- `prefer_vanilla_roots` (bool): Prefer low-load-order spells as roots
+- `seed` (int|null): Random seed for reproducibility
+- `grid_hint` (dict|null): Grid metadata from JS layout (mode, schoolCount, etc.)
+
+### Output Schema
+
+```json
+{
+  "version": "1.0",
+  "schools": {
+    "SchoolName": {
+      "root": "formId",
+      "nodes": [
+        {
+          "formId": "0x...",
+          "name": "Spell Name",
+          "children": ["0x...", "0x..."],
+          "prerequisites": ["0x..."],
+          "tier": 1,
+          "skillLevel": "Novice",
+          "theme": "fire",
+          "section": "root|trunk|branch"
+        }
+      ],
+      "layoutStyle": "tier_first|organic"
+    }
+  },
+  "seed": 123456,
+  "generatedAt": "ISO8601",
+  "generator": "BuilderName",
+  "validation": {
+    "all_valid": true,
+    "total_nodes": 50,
+    "reachable_nodes": 50
+  }
+}
+```
+
+### Command Registration
+
+Builders self-register with server.py on import:
+
+```python
+# At module scope, after function definition:
+try:
+    from server import register_command
+    register_command('build_tree_mymode', mymode_build_tree_from_data)
+except ImportError:
+    pass  # Running standalone
+```
+
+Server.py routes commands via the registry. Built-in commands (ping, shutdown, prm_score) are handled directly.
+
+### Shared Modules
+
+Builders import shared infrastructure from `SpellTreeBuilder/`:
+- `core.node` — TreeNode, link_nodes
+- `theme_discovery` — discover_themes_per_school, extract_spell_text, merge_with_hints
+- `prereq_master_scorer` — tokenize, build_text, compute_tfidf, cosine_similarity, char_ngram_similarity
+- `spell_grouper` — get_spell_primary_theme, calculate_theme_score
+- `config` — TreeBuilderConfig, merge_configs
+- `validator` — validate_tree, fix_unreachable_nodes
+
+## Config Conventions
+
+### Deep Merge
+
+`merge_configs(base, override)` recursively merges nested dicts. Partial overrides
+preserve sibling keys from defaults:
+
+```python
+from config import merge_configs
+merged = merge_configs(
+    {'scoring': {'theme': True, 'nlp': True, 'tier': True}},
+    {'scoring': {'nlp': False}}
+)
+# Result: {'scoring': {'theme': True, 'nlp': False, 'tier': True}}
+```
+
+### Range Validation
+
+`TreeBuilderConfig.from_dict()` clamps values to safe ranges:
+- density: 0.0–1.0
+- max_children_per_node: 1–8
+- convergence_chance: 0.0–1.0
+- similarity_threshold: 0.0–1.0
+
+Invalid values are silently clamped, not rejected.
+
+## Selected Roots Contract
+
+Optional config field that lets users override automatic root selection per school.
+
+### Config Field
+
+```json
+{
+  "selected_roots": {
+    "Destruction": { "formId": "0x00012FCD", "name": "Flames", "plugin": "Skyrim.esm", "localFormId": "012FCD" },
+    "Restoration": { "formId": "0x00012FD0", "name": "Healing", "plugin": "Skyrim.esm", "localFormId": "012FD0" }
+  }
+}
+```
+
+### JS Side
+
+- Stored in `settings.selectedRoots` (persistent, auto-saved)
+- Set via TreePreview root node click → spawn-style spell search modal
+- Filtered to primed spells (post-blacklist/whitelist/tome) for the selected school
+- Passed in config dict to Python: `config.selected_roots = settings.selectedRoots || {}`
+
+### Python Side
+
+Builders check `selected_roots` before their normal root selection logic:
+
+```python
+selected_roots = config.get('selected_roots', {})
+if school in selected_roots:
+    override_id = selected_roots[school].get('formId', '')
+    if override_id in spell_pool:
+        return override_id  # Use user selection
+    # else: fall through to auto-pick
+```
+
+**Behavior:**
+- If `selected_roots[school]` exists AND its `formId` is in the filtered spell pool → use it
+- If `formId` not found (e.g. spell was blacklisted after selection) → fall through to auto-pick silently
+- If `selected_roots` is empty or missing the school → existing auto-pick behavior (unchanged)
+
+### Integrated Modules
+
+| Module | Function | Status |
+|--------|----------|--------|
+| Classic (`classic_build_tree.py`) | `_pick_root()` | Integrated |
+| Tree (`tree_builder.py`) | `_select_root()` | Integrated |
+| Graph (`graph_build_tree.py`) | — | Future (optional) |
+| Oracle (`oracle_build_tree.py`) | — | Future (optional) |

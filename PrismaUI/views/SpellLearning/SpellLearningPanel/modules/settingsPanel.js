@@ -19,6 +19,65 @@
  */
 
 // =============================================================================
+// SEGMENTED TOGGLE HELPER
+// =============================================================================
+
+/**
+ * Initialize a segmented toggle control.
+ * @param {string} containerId - The id of the .segmented-toggle div
+ * @param {string} activeValue - The currently active value
+ * @param {function} onChange - Callback with selected value string
+ */
+function initSegmentedToggle(containerId, activeValue, onChange) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var btns = container.querySelectorAll('.seg-btn');
+    // Set initial active state
+    for (var i = 0; i < btns.length; i++) {
+        if (btns[i].getAttribute('data-value') === activeValue) {
+            btns[i].classList.add('active');
+        } else {
+            btns[i].classList.remove('active');
+        }
+    }
+    // Click handlers
+    container.addEventListener('click', function(e) {
+        var btn = e.target.closest('.seg-btn');
+        if (!btn || btn.classList.contains('active')) return;
+        var siblings = container.querySelectorAll('.seg-btn');
+        for (var j = 0; j < siblings.length; j++) siblings[j].classList.remove('active');
+        btn.classList.add('active');
+        if (onChange) onChange(btn.getAttribute('data-value'));
+    });
+}
+
+/**
+ * Set the active button on a segmented toggle without triggering callbacks.
+ */
+function setSegmentedToggleValue(containerId, value) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var btns = container.querySelectorAll('.seg-btn');
+    for (var i = 0; i < btns.length; i++) {
+        if (btns[i].getAttribute('data-value') === value) {
+            btns[i].classList.add('active');
+        } else {
+            btns[i].classList.remove('active');
+        }
+    }
+}
+
+/**
+ * Enable or disable (dim) a segmented toggle.
+ */
+function setSegmentedToggleEnabled(containerId, enabled) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    container.style.opacity = enabled ? '1' : '0.5';
+    container.style.pointerEvents = enabled ? '' : 'none';
+}
+
+// =============================================================================
 // SETTINGS PANEL
 // =============================================================================
 
@@ -772,7 +831,10 @@ function initializeSettings() {
     
     // Early Spell Learning Settings
     try { initializeEarlyLearningSettings(); } catch(e) { console.error('[SpellLearning] Early learning settings init error:', e); }
-    
+
+    // Passive Learning Settings
+    try { initializePassiveLearningSettings(); } catch(e) { console.error('[SpellLearning] Passive learning settings init error:', e); }
+
     // Settings Presets
     try { if (typeof initializeSettingsPresets === 'function') initializeSettingsPresets(); } catch(e) { console.error('[SpellLearning] Settings presets init error:', e); }
 
@@ -848,36 +910,28 @@ function initializeSettings() {
     // Heart Animation Settings Popup
     initializeHeartSettings();
     
-    // Progression settings - Learning Mode
-    var learningModeSelect = document.getElementById('learningModeSelect');
-    if (learningModeSelect) {
-        learningModeSelect.value = settings.learningMode;
-        learningModeSelect.addEventListener('change', function() {
-            settings.learningMode = this.value;
-            console.log('[SpellLearning] Learning mode:', settings.learningMode);
-            autoSaveSettings();
-        });
-    }
+    // Progression settings - Learning Mode (segmented toggle)
+    initSegmentedToggle('learningModeToggle', settings.learningMode, function(value) {
+        settings.learningMode = value;
+        console.log('[SpellLearning] Learning mode:', value);
+        autoSaveSettings();
+    });
 
     // Progression settings - Auto-Advance Learning Target
     var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
-    var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
     if (autoAdvanceToggle) {
         autoAdvanceToggle.checked = settings.autoAdvanceLearning;
         autoAdvanceToggle.addEventListener('change', function() {
             settings.autoAdvanceLearning = this.checked;
-            if (autoAdvanceModeSelect) autoAdvanceModeSelect.disabled = !this.checked;
+            setSegmentedToggleEnabled('autoAdvanceModeToggle', this.checked);
             autoSaveSettings();
         });
     }
-    if (autoAdvanceModeSelect) {
-        autoAdvanceModeSelect.value = settings.autoAdvanceMode || 'branch';
-        autoAdvanceModeSelect.disabled = !settings.autoAdvanceLearning;
-        autoAdvanceModeSelect.addEventListener('change', function() {
-            settings.autoAdvanceMode = this.value;
-            autoSaveSettings();
-        });
-    }
+    initSegmentedToggle('autoAdvanceModeToggle', settings.autoAdvanceMode || 'branch', function(value) {
+        settings.autoAdvanceMode = value;
+        autoSaveSettings();
+    });
+    setSegmentedToggleEnabled('autoAdvanceModeToggle', settings.autoAdvanceLearning);
 
     // Progression settings - XP Multiplier Sliders
     function updateSliderFill(slider) {
@@ -1165,6 +1219,8 @@ function saveUnifiedConfig() {
         xpCapAny: settings.xpCapAny,
         xpCapSchool: settings.xpCapSchool,
         xpCapDirect: settings.xpCapDirect,
+        // Modded XP sources
+        moddedXPSources: settings.moddedXPSources,
         // Tier XP requirements
         xpNovice: settings.xpNovice,
         xpApprentice: settings.xpApprentice,
@@ -1223,7 +1279,10 @@ function saveUnifiedConfig() {
         
         // Early spell learning
         earlySpellLearning: settings.earlySpellLearning,
-        
+
+        // Passive learning
+        passiveLearning: settings.passiveLearning,
+
         // Spell tome learning
         spellTomeLearning: settings.spellTomeLearning,
         
@@ -1325,29 +1384,25 @@ function resetSettings() {
     if (cheatInfo) cheatInfo.classList.add('hidden');
     
     // Update progression settings UI
-    var learningModeSelect = document.getElementById('learningModeSelect');
     var xpDirectSlider = document.getElementById('xpDirectSlider');
     var xpSchoolSlider = document.getElementById('xpSchoolSlider');
     var xpAnySlider = document.getElementById('xpAnySlider');
     var globalMultSlider = document.getElementById('xpGlobalMultiplierSlider');
-    
+
     // Helper to update slider fill visual
     function updateSliderFillReset(slider) {
         if (!slider) return;
         var percent = (slider.value - slider.min) / (slider.max - slider.min) * 100;
         slider.style.setProperty('--slider-fill', percent + '%');
     }
-    
-    if (learningModeSelect) learningModeSelect.value = 'perSchool';
+
+    setSegmentedToggleValue('learningModeToggle', 'perSchool');
 
     // Auto-advance reset
     var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
-    var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
     if (autoAdvanceToggle) autoAdvanceToggle.checked = true;
-    if (autoAdvanceModeSelect) {
-        autoAdvanceModeSelect.value = 'branch';
-        autoAdvanceModeSelect.disabled = false;
-    }
+    setSegmentedToggleValue('autoAdvanceModeToggle', 'branch');
+    setSegmentedToggleEnabled('autoAdvanceModeToggle', true);
 
     // Global multiplier
     if (globalMultSlider) {
@@ -1481,7 +1536,14 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         } else {
             xpOverrides = {};
         }
-        
+
+        // Modded XP sources
+        if (data.moddedXPSources && typeof data.moddedXPSources === 'object') {
+            settings.moddedXPSources = data.moddedXPSources;
+            rebuildModdedXPSourcesUI();
+            console.log('[SpellLearning] Loaded modded XP sources:', Object.keys(settings.moddedXPSources).length);
+        }
+
         // Window position and size
         settings.windowX = data.windowX !== undefined ? data.windowX : null;
         settings.windowY = data.windowY !== undefined ? data.windowY : null;
@@ -1774,7 +1836,23 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         updateEarlyLearningUI();
         // Update power steps UI if function exists
         if (typeof renderPowerSteps === 'function') renderPowerSteps();
-        
+
+        // Passive learning settings
+        if (data.passiveLearning && typeof data.passiveLearning === 'object') {
+            var pl = data.passiveLearning;
+            settings.passiveLearning.enabled = pl.enabled !== undefined ? pl.enabled : false;
+            settings.passiveLearning.scope = pl.scope || 'novice';
+            settings.passiveLearning.xpPerGameHour = pl.xpPerGameHour !== undefined ? pl.xpPerGameHour : 5;
+            if (pl.maxByTier && typeof pl.maxByTier === 'object') {
+                settings.passiveLearning.maxByTier.novice = pl.maxByTier.novice !== undefined ? pl.maxByTier.novice : 100;
+                settings.passiveLearning.maxByTier.apprentice = pl.maxByTier.apprentice !== undefined ? pl.maxByTier.apprentice : 75;
+                settings.passiveLearning.maxByTier.adept = pl.maxByTier.adept !== undefined ? pl.maxByTier.adept : 50;
+                settings.passiveLearning.maxByTier.expert = pl.maxByTier.expert !== undefined ? pl.maxByTier.expert : 25;
+                settings.passiveLearning.maxByTier.master = pl.maxByTier.master !== undefined ? pl.maxByTier.master : 5;
+            }
+        }
+        if (typeof updatePassiveLearningUI === 'function') updatePassiveLearningUI();
+
         // Spell tome learning settings
         if (data.spellTomeLearning && typeof data.spellTomeLearning === 'object') {
             var stl = data.spellTomeLearning;
@@ -1814,28 +1892,24 @@ window.onUnifiedConfigLoaded = function(dataStr) {
         if (cheatInfo) cheatInfo.classList.toggle('hidden', !settings.cheatMode);
         
         // Update progression settings UI
-        var learningModeSelect = document.getElementById('learningModeSelect');
         var xpDirectSlider = document.getElementById('xpDirectSlider');
         var xpSchoolSlider = document.getElementById('xpSchoolSlider');
         var xpAnySlider = document.getElementById('xpAnySlider');
-        
+
         // Helper to update slider fill visual
         function updateSliderFillVisual(slider) {
             if (!slider) return;
             var percent = (slider.value - slider.min) / (slider.max - slider.min) * 100;
             slider.style.setProperty('--slider-fill', percent + '%');
         }
-        
-        if (learningModeSelect) learningModeSelect.value = settings.learningMode;
+
+        setSegmentedToggleValue('learningModeToggle', settings.learningMode);
 
         // Auto-advance learning target
         var autoAdvanceToggle = document.getElementById('autoAdvanceLearningToggle');
-        var autoAdvanceModeSelect = document.getElementById('autoAdvanceModeSelect');
         if (autoAdvanceToggle) autoAdvanceToggle.checked = settings.autoAdvanceLearning;
-        if (autoAdvanceModeSelect) {
-            autoAdvanceModeSelect.value = settings.autoAdvanceMode;
-            autoAdvanceModeSelect.disabled = !settings.autoAdvanceLearning;
-        }
+        setSegmentedToggleValue('autoAdvanceModeToggle', settings.autoAdvanceMode);
+        setSegmentedToggleEnabled('autoAdvanceModeToggle', settings.autoAdvanceLearning);
 
         // Global multiplier slider
         var globalMultSlider = document.getElementById('xpGlobalMultiplierSlider');
@@ -2050,6 +2124,14 @@ window.onUnifiedConfigLoaded = function(dataStr) {
             settings.pluginWhitelist = [];
         }
 
+        // Selected root spells per school
+        if (data.selectedRoots && typeof data.selectedRoots === 'object' && !Array.isArray(data.selectedRoots)) {
+            settings.selectedRoots = data.selectedRoots;
+            console.log('[SpellLearning] Loaded selected roots:', Object.keys(settings.selectedRoots).length, 'schools');
+        } else {
+            settings.selectedRoots = {};
+        }
+
         // === Dynamic Tree Building Settings ===
         if (data.treeGeneration && typeof data.treeGeneration === 'object') {
             var tg = data.treeGeneration;
@@ -2175,6 +2257,145 @@ window.onLLMConfigLoaded = function(dataStr) {
             state.llmConfig.maxTokens = data.maxTokens || state.llmConfig.maxTokens;
         }
     } catch (e) { }
+};
+
+// =============================================================================
+// MODDED XP SOURCES - Dynamic UI for external mod XP sources
+// =============================================================================
+
+/**
+ * Add a single modded XP source row to the UI.
+ * Called when a source is registered (from C++) or loaded from config.
+ */
+function addModdedXPSourceUI(sourceId, displayName, multiplier, cap, enabled) {
+    var section = document.getElementById('moddedXPSourcesSection');
+    var list = document.getElementById('moddedXPSourcesList');
+    if (!section || !list) return;
+
+    section.style.display = '';  // Show section
+
+    // Check if already exists
+    if (document.getElementById('moddedSrc_' + sourceId)) return;
+
+    var row = document.createElement('div');
+    row.id = 'moddedSrc_' + sourceId;
+    row.className = 'modded-xp-source-row';
+    row.innerHTML =
+        '<div class="modded-source-header">' +
+            '<label class="toggle-switch toggle-sm">' +
+                '<input type="checkbox" id="moddedEnabled_' + sourceId + '"' + (enabled ? ' checked' : '') + '>' +
+                '<span class="toggle-slider"></span>' +
+            '</label>' +
+            '<span class="modded-source-name">' + displayName + '</span>' +
+        '</div>' +
+        '<div class="slider-grid slider-grid-2">' +
+            '<div class="slider-compact">' +
+                '<span class="slider-compact-label">Multiplier</span>' +
+                '<div class="slider-compact-control">' +
+                    '<input type="range" id="moddedMult_' + sourceId + '" min="0" max="200" value="' + multiplier + '" class="setting-slider">' +
+                    '<span id="moddedMultVal_' + sourceId + '" class="slider-value">' + multiplier + '%</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="slider-compact">' +
+                '<span class="slider-compact-label">Cap</span>' +
+                '<div class="slider-compact-control">' +
+                    '<input type="range" id="moddedCap_' + sourceId + '" min="0" max="100" value="' + cap + '" class="setting-slider">' +
+                    '<span id="moddedCapVal_' + sourceId + '" class="slider-value">' + cap + '%</span>' +
+                '</div>' +
+            '</div>' +
+        '</div>';
+    list.appendChild(row);
+
+    // Wire enable toggle
+    var enableToggle = document.getElementById('moddedEnabled_' + sourceId);
+    if (enableToggle) {
+        enableToggle.addEventListener('change', function() {
+            if (settings.moddedXPSources[sourceId]) {
+                settings.moddedXPSources[sourceId].enabled = this.checked;
+            }
+            if (typeof scheduleAutoSave === 'function') scheduleAutoSave();
+        });
+    }
+
+    // Wire multiplier slider
+    var multSlider = document.getElementById('moddedMult_' + sourceId);
+    var multVal = document.getElementById('moddedMultVal_' + sourceId);
+    if (multSlider) {
+        updateSliderFillGlobal(multSlider);
+        multSlider.addEventListener('input', function() {
+            if (multVal) multVal.textContent = this.value + '%';
+            updateSliderFillGlobal(this);
+            if (settings.moddedXPSources[sourceId]) {
+                settings.moddedXPSources[sourceId].multiplier = parseInt(this.value);
+            }
+        });
+        multSlider.addEventListener('change', function() {
+            if (typeof scheduleAutoSave === 'function') scheduleAutoSave();
+        });
+    }
+
+    // Wire cap slider
+    var capSlider = document.getElementById('moddedCap_' + sourceId);
+    var capVal = document.getElementById('moddedCapVal_' + sourceId);
+    if (capSlider) {
+        updateSliderFillGlobal(capSlider);
+        capSlider.addEventListener('input', function() {
+            if (capVal) capVal.textContent = this.value + '%';
+            updateSliderFillGlobal(this);
+            if (settings.moddedXPSources[sourceId]) {
+                settings.moddedXPSources[sourceId].cap = parseInt(this.value);
+            }
+        });
+        capSlider.addEventListener('change', function() {
+            if (typeof scheduleAutoSave === 'function') scheduleAutoSave();
+        });
+    }
+}
+
+/**
+ * Rebuild all modded XP source UI rows from settings.moddedXPSources.
+ * Called when loading config or applying presets.
+ */
+// Internal sources that use the modded cap system but have their own UI section
+var INTERNAL_XP_SOURCES = { 'passive': true };
+
+function rebuildModdedXPSourcesUI() {
+    var list = document.getElementById('moddedXPSourcesList');
+    var section = document.getElementById('moddedXPSourcesSection');
+    if (list) list.innerHTML = '';
+
+    var hasAny = false;
+    for (var srcId in settings.moddedXPSources) {
+        if (!settings.moddedXPSources.hasOwnProperty(srcId)) continue;
+        if (INTERNAL_XP_SOURCES[srcId]) continue;
+        var src = settings.moddedXPSources[srcId];
+        addModdedXPSourceUI(srcId, src.displayName || srcId, src.multiplier, src.cap, src.enabled);
+        hasAny = true;
+    }
+
+    if (section) section.style.display = hasAny ? '' : 'none';
+}
+
+/**
+ * C++ -> JS callback when a modded XP source is registered.
+ */
+window.onModdedXPSourceRegistered = function(dataStr) {
+    try {
+        var data = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr;
+        if (INTERNAL_XP_SOURCES[data.sourceId]) return;
+        if (!settings.moddedXPSources[data.sourceId]) {
+            settings.moddedXPSources[data.sourceId] = {
+                displayName: data.displayName,
+                enabled: data.enabled !== false,
+                multiplier: data.multiplier || 100,
+                cap: data.cap || 25
+            };
+        }
+        addModdedXPSourceUI(data.sourceId, data.displayName,
+            data.multiplier || 100, data.cap || 25, data.enabled !== false);
+    } catch (e) {
+        console.error('[SpellLearning] Failed to parse modded XP source data:', e);
+    }
 };
 
 // =============================================================================
@@ -2907,6 +3128,19 @@ function initializeHeartSettings() {
         });
     }
 
+    // Edge style toggle (straight vs curved)
+    var edgeStyleToggle = document.getElementById('edge-style-toggle');
+    if (edgeStyleToggle) {
+        edgeStyleToggle.checked = settings.edgeStyle === 'curved';
+        edgeStyleToggle.addEventListener('change', function() {
+            settings.edgeStyle = this.checked ? 'curved' : 'straight';
+            if (state.treeData && typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
     // === Globe Settings ===
 
     // Core Size slider (controls heart ring visual size)
@@ -3043,6 +3277,20 @@ function initializeHeartSettings() {
             settings.globeBgFill = this.checked;
             if (typeof CanvasRenderer !== 'undefined') {
                 CanvasRenderer._globeBgFill = this.checked;
+                CanvasRenderer._needsRender = true;
+            }
+            autoSaveSettings();
+        });
+    }
+
+    // Particle core toggle (replaces center text with vibrating particles)
+    var particleCoreToggle = document.getElementById('popup-particle-core');
+    if (particleCoreToggle) {
+        particleCoreToggle.checked = settings.particleCoreEnabled === true;
+        particleCoreToggle.addEventListener('change', function() {
+            settings.particleCoreEnabled = this.checked;
+            if (typeof CanvasRenderer !== 'undefined') {
+                CanvasRenderer._particleCoreEnabled = this.checked;
                 CanvasRenderer._needsRender = true;
             }
             autoSaveSettings();
@@ -4088,6 +4336,7 @@ function applyHeartSettingsToRenderer() {
         CanvasRenderer._magicTextColor = settings.magicTextColor || settings.heartRingColor || '#ffecb3';
         CanvasRenderer._globeText = settings.globeText || 'HEART';
         CanvasRenderer._globeTextSize = settings.globeTextSize || 16;
+        CanvasRenderer._particleCoreEnabled = settings.particleCoreEnabled === true;
         
         // Starfield settings
         CanvasRenderer._starfieldEnabled = settings.starfieldEnabled !== false;

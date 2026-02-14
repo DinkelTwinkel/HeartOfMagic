@@ -1080,8 +1080,20 @@ var CanvasRenderer = {
                 pulse = (beat1 + beat2 * 0.6) * 0.08;  // Max ~8% scale change
             }
             scale = 1 + pulse;
+
+            // Global rising-edge detection — fires once per beat start
+            var nowBeatingGlobal = cyclePos < beatDuration && cyclePos < 0.5;
+            if (nowBeatingGlobal && !this._lastHeartbeatGlobal) {
+                // Scatter globe particles on every heartbeat
+                if (typeof Globe3D !== 'undefined' && Globe3D.onHeartbeat) {
+                    Globe3D.onHeartbeat(1.0);
+                }
+                // Boost particle core flash on heartbeat
+                this._coreFlashBoost = 1.0;
+            }
+            this._lastHeartbeatGlobal = nowBeatingGlobal;
         }
-        
+
         // Keep animation running for heartbeat or globe (throttled to reduce CPU)
         var globeEnabled = this._globeEnabled && (typeof Globe3D !== 'undefined') && Globe3D.enabled;
         if (this._heartAnimationEnabled || globeEnabled) {
@@ -1129,23 +1141,28 @@ var CanvasRenderer = {
         ctx.lineWidth = 2.5;
         ctx.stroke();
         
-        // Globe text - use separate text color if set, supports \n for line breaks
-        var textColor = this._magicTextColor || ringColor;
-        var fontSize = this._globeTextSize || 16;
-        var globeText = this._globeText || 'HoM';
-        ctx.fillStyle = textColor;
-        ctx.font = 'bold ' + fontSize + 'px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
-        // Split by \n for multi-line support
-        var lines = globeText.replace(/\\n/g, '\n').split('\n');
-        var lineHeight = fontSize * 1.2;
-        var totalHeight = (lines.length - 1) * lineHeight;
-        var startY = -totalHeight / 2;
-        
-        for (var i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], 0, startY + i * lineHeight);
+        // Center content: particle core OR text
+        if (this._particleCoreEnabled) {
+            this._renderParticleCore(ctx, pulse);
+        } else {
+            // Globe text - use separate text color if set, supports \n for line breaks
+            var textColor = this._magicTextColor || ringColor;
+            var fontSize = this._globeTextSize || 16;
+            var globeText = this._globeText || 'HoM';
+            ctx.fillStyle = textColor;
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Split by \n for multi-line support
+            var lines = globeText.replace(/\\n/g, '\n').split('\n');
+            var lineHeight = fontSize * 1.2;
+            var totalHeight = (lines.length - 1) * lineHeight;
+            var startY = -totalHeight / 2;
+
+            for (var i = 0; i < lines.length; i++) {
+                ctx.fillText(lines[i], 0, startY + i * lineHeight);
+            }
         }
         
         // 3D Globe particle effect (uses Globe3D module)
@@ -1237,10 +1254,26 @@ var CanvasRenderer = {
     },
     
     _hexToRgba: function(hex, alpha) { return hexToRgba(hex, alpha); },
-    
+
+    /**
+     * Draw an edge path between two points (straight or curved Bezier).
+     * Call between ctx.beginPath() and ctx.stroke().
+     */
+    _drawEdgePath: function(ctx, x1, y1, x2, y2, curved) {
+        ctx.moveTo(x1, y1);
+        if (curved) {
+            var cpx = (x1 + x2) / 2 + (y2 - y1) * 0.15;
+            var cpy = (y1 + y2) / 2 - (x2 - x1) * 0.15;
+            ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+        } else {
+            ctx.lineTo(x2, y2);
+        }
+    },
+
     renderEdges: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
         var learningPathColor = this._learningPathColor || '#00ffff';
         var hasLearningPaths = this._learningPathNodes instanceof Set && this._learningPathNodes.size > 0;
+        var curved = settings.edgeStyle === 'curved';
         
         // Detect heartbeat for spawning traveling pulses
         var isHeartbeating = false;
@@ -1251,10 +1284,9 @@ var CanvasRenderer = {
             var cycleLength = beatDuration + pulseDelay;
             var cyclePos = this._heartbeatPhase % cycleLength;
             
-            // Detect start of heartbeat (rising edge)
+            // Detect start of heartbeat (rising edge) for learning path particles
             var nowBeating = cyclePos < beatDuration && cyclePos < 0.5;
             if (nowBeating && !this._lastHeartbeatPulse) {
-                // Detach globe particle to travel along learning path
                 this._detachGlobeParticleToLearningPath();
             }
             this._lastHeartbeatPulse = nowBeating;
@@ -1396,8 +1428,7 @@ var CanvasRenderer = {
             }
 
             ctx.beginPath();
-            ctx.moveTo(fromNode.x, fromNode.y);
-            ctx.lineTo(toNode.x, toNode.y);
+            this._drawEdgePath(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, curved);
             ctx.stroke();
         }
 
@@ -1424,8 +1455,7 @@ var CanvasRenderer = {
                 ctx.globalAlpha = 0.5;
 
                 ctx.beginPath();
-                ctx.moveTo(nodes.fromNode.x, nodes.fromNode.y);
-                ctx.lineTo(nodes.toNode.x, nodes.toNode.y);
+                this._drawEdgePath(ctx, nodes.fromNode.x, nodes.fromNode.y, nodes.toNode.x, nodes.toNode.y, curved);
                 ctx.stroke();
             }
         }
@@ -1457,8 +1487,7 @@ var CanvasRenderer = {
                 ctx.globalAlpha = 0.7;
 
                 ctx.beginPath();
-                ctx.moveTo(fromNode.x, fromNode.y);
-                ctx.lineTo(toNode.x, toNode.y);
+                this._drawEdgePath(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, curved);
                 ctx.stroke();
             }
         }
@@ -1490,14 +1519,45 @@ var CanvasRenderer = {
                 // Chain-link parameters
                 var linkW = 5;       // Link width (along chain)
                 var linkH = 3.2;     // Link height (perpendicular)
-                var linkThick = 1.8; // Stroke thickness of each link
                 var linkSpacing = linkW * 1.15; // Center-to-center distance
                 var numLinks = Math.max(3, Math.round(dist / linkSpacing));
                 var angle = Math.atan2(dy, dx);
 
+                // Lazy-create chain link sprite (once, ~12x10px offscreen canvas)
+                if (!this._chainSprite) {
+                    var linkThick = 1.8;
+                    var pad = Math.ceil(linkThick) + 1;
+                    var sprW = Math.ceil(linkW + pad * 2); if (sprW % 2 !== 0) sprW++;
+                    var sprH = Math.ceil(linkH + pad * 2); if (sprH % 2 !== 0) sprH++;
+                    var sc = document.createElement('canvas'); sc.width = sprW; sc.height = sprH;
+                    var sctx = sc.getContext('2d');
+                    var scx = sprW / 2, scy = sprH / 2;
+                    var hw = linkW * 0.5, hh = linkH * 0.5, cr = Math.min(hw, hh) * 0.8;
+                    sctx.beginPath();
+                    sctx.moveTo(scx-hw+cr, scy-hh); sctx.lineTo(scx+hw-cr, scy-hh);
+                    sctx.arcTo(scx+hw, scy-hh, scx+hw, scy-hh+cr, cr); sctx.lineTo(scx+hw, scy+hh-cr);
+                    sctx.arcTo(scx+hw, scy+hh, scx+hw-cr, scy+hh, cr); sctx.lineTo(scx-hw+cr, scy+hh);
+                    sctx.arcTo(scx-hw, scy+hh, scx-hw, scy+hh-cr, cr); sctx.lineTo(scx-hw, scy-hh+cr);
+                    sctx.arcTo(scx-hw, scy-hh, scx-hw+cr, scy-hh, cr); sctx.closePath();
+                    sctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
+                    sctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
+                    sctx.lineWidth = linkThick; sctx.fill(); sctx.stroke();
+                    var ihw = hw * 0.45, ihh = hh * 0.35, ir = Math.min(ihw, ihh) * 0.6;
+                    sctx.beginPath();
+                    sctx.moveTo(scx-ihw+ir, scy-ihh); sctx.lineTo(scx+ihw-ir, scy-ihh);
+                    sctx.arcTo(scx+ihw, scy-ihh, scx+ihw, scy-ihh+ir, ir); sctx.lineTo(scx+ihw, scy+ihh-ir);
+                    sctx.arcTo(scx+ihw, scy+ihh, scx+ihw-ir, scy+ihh, ir); sctx.lineTo(scx-ihw+ir, scy+ihh);
+                    sctx.arcTo(scx-ihw, scy+ihh, scx-ihw, scy+ihh-ir, ir); sctx.lineTo(scx-ihw, scy-ihh+ir);
+                    sctx.arcTo(scx-ihw, scy-ihh, scx-ihw+ir, scy-ihh, ir); sctx.closePath();
+                    sctx.fillStyle = 'rgba(20, 20, 30, 0.7)'; sctx.fill();
+                    this._chainSprite = sc;
+                }
+                var spr = this._chainSprite;
+                var sprHW = spr.width / 2, sprHH = spr.height / 2;
+
                 ctx.globalAlpha = 0.8;
 
-                // Draw interlocking chain links (alternating orientation)
+                // Draw chain links using pre-rendered sprite
                 for (var cl = 0; cl < numLinks; cl++) {
                     var t = (cl + 0.5) / numLinks;
                     var cx = fromNode.x + dx * t;
@@ -1506,55 +1566,8 @@ var CanvasRenderer = {
                     ctx.save();
                     ctx.translate(cx, cy);
                     ctx.rotate(angle);
-
-                    // Alternate: even links are horizontal (along chain), odd are rotated 90 degrees
-                    if (cl % 2 !== 0) {
-                        ctx.rotate(Math.PI / 2);
-                    }
-
-                    // Draw a rounded-rectangle chain link (pill shape)
-                    var hw = linkW * 0.5;
-                    var hh = linkH * 0.5;
-                    var r = Math.min(hw, hh) * 0.8; // corner radius
-
-                    ctx.beginPath();
-                    ctx.moveTo(-hw + r, -hh);
-                    ctx.lineTo(hw - r, -hh);
-                    ctx.arcTo(hw, -hh, hw, -hh + r, r);
-                    ctx.lineTo(hw, hh - r);
-                    ctx.arcTo(hw, hh, hw - r, hh, r);
-                    ctx.lineTo(-hw + r, hh);
-                    ctx.arcTo(-hw, hh, -hw, hh - r, r);
-                    ctx.lineTo(-hw, -hh + r);
-                    ctx.arcTo(-hw, -hh, -hw + r, -hh, r);
-                    ctx.closePath();
-
-                    // Gray fill + darker stroke = solid chain look
-                    ctx.fillStyle = 'rgba(130, 130, 140, 0.6)';
-                    ctx.strokeStyle = 'rgba(80, 80, 90, 0.9)';
-                    ctx.lineWidth = linkThick;
-                    ctx.fill();
-                    ctx.stroke();
-
-                    // Inner cutout (hollow center of each link)
-                    var ihw = hw * 0.45;
-                    var ihh = hh * 0.35;
-                    var ir = Math.min(ihw, ihh) * 0.6;
-                    ctx.beginPath();
-                    ctx.moveTo(-ihw + ir, -ihh);
-                    ctx.lineTo(ihw - ir, -ihh);
-                    ctx.arcTo(ihw, -ihh, ihw, -ihh + ir, ir);
-                    ctx.lineTo(ihw, ihh - ir);
-                    ctx.arcTo(ihw, ihh, ihw - ir, ihh, ir);
-                    ctx.lineTo(-ihw + ir, ihh);
-                    ctx.arcTo(-ihw, ihh, -ihw, ihh - ir, ir);
-                    ctx.lineTo(-ihw, -ihh + ir);
-                    ctx.arcTo(-ihw, -ihh, -ihw + ir, -ihh, ir);
-                    ctx.closePath();
-
-                    ctx.fillStyle = 'rgba(20, 20, 30, 0.7)';
-                    ctx.fill();
-
+                    if (cl % 2 !== 0) ctx.rotate(Math.PI / 2);
+                    ctx.drawImage(spr, -sprHW, -sprHH);
                     ctx.restore();
                 }
             }
@@ -1658,7 +1671,7 @@ var CanvasRenderer = {
     },
     
     renderNode: function(ctx, node) {
-        var schoolColor = this._getSchoolColor(node.school);
+        var schoolColor = node.themeColor || this._getSchoolColor(node.school);
         var isSelected = this.selectedNode && this.selectedNode.id === node.id;
         var isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
         var path = this._getShapePath(node.school);
@@ -2155,6 +2168,70 @@ var CanvasRenderer = {
                         Math.round(rgb.b * 0.4) + ')';
     },
     
+    // =========================================================================
+    // PARTICLE CORE (replaces center text when enabled)
+    // =========================================================================
+
+    _initParticleCore: function() {
+        this._coreParticles = [];
+        var count = 35;
+        for (var i = 0; i < count; i++) {
+            var r = Math.random() * 8;
+            var angle = Math.random() * Math.PI * 2;
+            this._coreParticles.push({
+                baseX: Math.cos(angle) * r,
+                baseY: Math.sin(angle) * r,
+                size: 1 + Math.random() * 1.5,
+                flashPhase: Math.random() * Math.PI * 2,
+                flashSpeed: 0.08 + Math.random() * 0.15,
+                jitterAmount: 1.5 + Math.random() * 3
+            });
+        }
+        this._coreFrame = 0;
+        this._coreFlashBoost = 0;
+    },
+
+    _renderParticleCore: function(ctx, pulse) {
+        if (!this._coreParticles) this._initParticleCore();
+
+        this._coreFrame++;
+
+        // Decay heartbeat boost
+        if (this._coreFlashBoost > 0.01) {
+            this._coreFlashBoost *= 0.9;
+        } else {
+            this._coreFlashBoost = 0;
+        }
+
+        var boost = this._coreFlashBoost || 0;
+        var jitterMult = 1 + boost * 3;    // Heartbeat amplifies jitter
+        var speedMult = 1 + boost * 2;     // Heartbeat speeds up flash
+        var frame = this._coreFrame;
+
+        for (var i = 0; i < this._coreParticles.length; i++) {
+            var p = this._coreParticles[i];
+
+            // Vibrate position
+            var jx = p.jitterAmount * jitterMult * (Math.random() - 0.5);
+            var jy = p.jitterAmount * jitterMult * (Math.random() - 0.5);
+            var x = p.baseX + jx;
+            var y = p.baseY + jy;
+
+            // Flash between black and white
+            var flash = Math.sin(frame * p.flashSpeed * speedMult + p.flashPhase);
+            var brightness = Math.round((flash * 0.5 + 0.5) * 255);
+            var alpha = 0.6 + Math.abs(flash) * 0.4;
+
+            // Slight size variation
+            var size = p.size * (0.8 + Math.random() * 0.4);
+
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(' + brightness + ',' + brightness + ',' + brightness + ',' + alpha.toFixed(2) + ')';
+            ctx.fill();
+        }
+    },
+
     parseColor: function(color) {
         if (!color) return null;
         if (color.startsWith('#')) {

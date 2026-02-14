@@ -229,6 +229,17 @@ body {
     background: var(--text-bright);
 }
 
+/* Warning button for orphan repair */
+.header-btn-warn {
+    color: #ff9944;
+    border: 1px solid rgba(255, 153, 68, 0.4);
+}
+.header-btn-warn:hover {
+    color: #fff;
+    background: rgba(255, 153, 68, 0.3);
+    border-color: rgba(255, 153, 68, 0.7);
+}
+
 /* =============================================================================
    TAB NAVIGATION - Skyrim-style tabs
    ============================================================================= */
@@ -1629,13 +1640,14 @@ body {
 }
 
 /* Multi-column compact rows for settings popup */
-.popup-row-2, .popup-row-3 {
+.popup-row-2, .popup-row-3, .popup-row-4 {
     display: grid;
     gap: 4px 10px;
     margin-bottom: 8px;
 }
 .popup-row-2 { grid-template-columns: 1fr 1fr; }
 .popup-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.popup-row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
 
 .popup-cell {
     display: flex;
@@ -2824,6 +2836,106 @@ body {
 }
 
 /* =============================================================================
+   FIND SPELL MODAL (Spell Tree Search)
+   ============================================================================= */
+
+.find-spell-modal {
+    width: 360px;
+}
+
+.find-spell-modal .modal-header {
+    position: relative;
+}
+
+.find-spell-hint {
+    position: absolute;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.65em;
+    color: var(--text-muted);
+    border: 1px solid var(--divider);
+    padding: 1px 6px;
+    border-radius: 2px;
+    opacity: 0.6;
+}
+
+.find-spell-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--divider);
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.find-spell-item:last-child {
+    border-bottom: none;
+}
+
+.find-spell-item:hover,
+.find-spell-item.selected {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.find-spell-item.selected {
+    border-left: 2px solid var(--accent);
+}
+
+.find-spell-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.find-spell-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.find-spell-name {
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.find-spell-name mark {
+    background: none;
+    color: var(--accent);
+    font-weight: bold;
+}
+
+.find-spell-info {
+    font-size: 0.7em;
+    color: var(--text-secondary);
+    margin-top: 1px;
+}
+
+.find-spell-info span {
+    margin-right: 8px;
+}
+
+.find-spell-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-style: italic;
+}
+
+.find-spell-tier {
+    font-size: 0.65em;
+    color: var(--text-muted);
+    border: 1px solid var(--divider);
+    padding: 0 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+/* =============================================================================
    BLACKLIST MODAL
    ============================================================================= */
 
@@ -3310,6 +3422,28 @@ body {
     grid-template-columns: 1fr 1fr 1fr;
 }
 
+/* Modded XP Source rows */
+.modded-xp-source-row {
+    border: 1px solid rgba(184, 168, 120, 0.15);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.modded-source-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.modded-source-name {
+    font-size: 12px;
+    color: #d4c8a0;
+    font-weight: 500;
+}
+
 .slider-compact {
     display: flex;
     flex-direction: column;
@@ -3570,6 +3704,39 @@ body {
     font-size: 0.65em;
     color: var(--text-muted, #8a8070);
     margin-top: -2px;
+}
+/* ===== SEGMENTED TOGGLE (replaces select dropdowns) ===== */
+.segmented-toggle {
+    display: inline-flex;
+}
+.segmented-toggle .seg-btn {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 0.75em;
+    cursor: pointer;
+    border: 1px solid rgba(184,168,120,0.3);
+    transition: background 0.15s, color 0.15s;
+    background: transparent;
+    color: rgba(184,168,120,0.4);
+    white-space: nowrap;
+    user-select: none;
+}
+.segmented-toggle .seg-btn:first-child {
+    border-radius: 3px 0 0 3px;
+}
+.segmented-toggle .seg-btn:last-child {
+    border-radius: 0 3px 3px 0;
+}
+.segmented-toggle .seg-btn + .seg-btn {
+    border-left: none;
+}
+.segmented-toggle .seg-btn.active {
+    background: rgba(184,168,120,0.25);
+    color: rgba(184,168,120,0.9);
+}
+.segmented-toggle .seg-btn:hover:not(.active) {
+    background: rgba(184,168,120,0.1);
+    color: rgba(184,168,120,0.6);
 }
 /* ===== END DISABLED FEATURES ===== */
 

@@ -114,7 +114,7 @@ var TreeGrowthClassic = {
             ctx.fillStyle = 'rgba(184, 168, 120, 0.5)';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Scan spells to see preview', w / 2, h / 2);
+            ctx.fillText(t('preview.scanToPreview'), w / 2, h / 2);
             ctx.restore();
             return;
         }
@@ -332,6 +332,24 @@ var TreeGrowthClassic = {
         }
         console.log('[ClassicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
+        // Gather grid layout info so Python can adapt branching
+        var gridHint = null;
+        if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
+            var previewOut = TreePreview.getOutput();
+            if (previewOut) {
+                var avgPts = 0;
+                var schoolCount = previewOut.schools ? previewOut.schools.length : 0;
+                if (previewOut.gridPoints && schoolCount > 0) {
+                    avgPts = Math.round(previewOut.gridPoints.length / schoolCount);
+                }
+                gridHint = {
+                    mode: previewOut.mode || 'sun',
+                    schoolCount: schoolCount,
+                    avgPointsPerSchool: avgPts
+                };
+            }
+        }
+
         var config = {
             shape: 'organic',
             density: 0.6,
@@ -339,10 +357,14 @@ var TreeGrowthClassic = {
             max_children_per_node: 3,
             top_themes_per_school: 8,
             convergence_chance: 0.4,
-            prefer_vanilla_roots: true
+            prefer_vanilla_roots: true,
+            tier_zones: self.settings.tierZones,
+            grid_hint: gridHint,
+            selected_roots: settings.selectedRoots || {}
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({
+            command: 'build_tree_classic',
             spells: spellsToProcess,
             config: config
         }));
@@ -529,7 +551,12 @@ var TreeGrowthClassic = {
                 if (sn.theme) outNode.theme = sn.theme;
                 if (sn.name) outNode.name = sn.name;
                 if (sn.section) outNode.section = sn.section;
-                if (sn.formId === schoolRootId) outNode.isRoot = true;
+                if (sn.formId === schoolRootId) {
+                    outNode.isRoot = true;
+                    outNode.prerequisites = [];
+                    outNode.softPrereqs = [];
+                    outNode.softNeeded = 0;
+                }
 
                 // Bake layout position
                 var pos = posLookup[sn.formId];

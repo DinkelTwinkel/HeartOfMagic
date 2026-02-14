@@ -207,8 +207,8 @@ var Globe3D = {
             p.driftTheta += p.driftSpeedTheta;
             p.driftPhi += p.driftSpeedPhi;
 
-            // Heartbeat scatter: decay back to sphere
-            if (p.scatterOffset > 0.1) {
+            // Heartbeat scatter: apply velocity then decay back to sphere
+            if (p.scatterVelocity > 0.1 || p.scatterOffset > 0.1) {
                 p.scatterOffset += p.scatterVelocity;
                 p.scatterVelocity *= 0.92;
                 p.scatterOffset *= 0.95;
@@ -428,36 +428,72 @@ var Globe3D = {
      */
     render: function(ctx) {
         if (!this.enabled || !this.particles) return;
-        
+
         // Update rotation and project
         this.update();
         this.project();
-        
+
         var rgb = this.color;
-        
-        // Draw particles (sorted back to front - all particles visible)
+        var centerZ = this.globeCenterZ;
+        var radius = this.radius;
+        var minScale = this._minScale || 0.5;
+        var maxScale = this._maxScale || 1.5;
+        var scaleRange = maxScale - minScale;
+        if (scaleRange < 0.01) scaleRange = 1;
+
+        // Frontmost particles get radial gradient glow (capped for performance)
+        var glowStart = Math.max(0, this.particles.length - 18);
+
+        // Draw particles (sorted back to front)
         for (var i = 0; i < this.particles.length; i++) {
             var p = this.particles[i];
-            
-            // Skip regenerating particles
+
+            // Skip regenerating particles that are too small
             if (p.regenerating && p.size < 0.5) continue;
-            
-            // Calculate size with projection
-            var size = p.size * p.projScale;
-            
-            // Alpha based on depth and projection (creates natural depth fade)
-            var alpha = Math.min(1, p.alpha * p.projScale * 0.9);
-            
-            // Draw particle
-            ctx.beginPath();
-            ctx.arc(p.projX, p.projY, Math.max(0.5, size), 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + alpha.toFixed(2) + ')';
-            ctx.fill();
+
+            // Depth factor: 0 (far back) to 1 (closest)
+            var depthNorm = (p.projScale - minScale) / scaleRange;
+            if (depthNorm < 0) depthNorm = 0;
+            if (depthNorm > 1) depthNorm = 1;
+
+            // Fresnel: edge particles brighter, center particles dimmer
+            // Surface normal Z component vs camera view direction (0,0,-1)
+            var normalZ = (p.z - centerZ) / radius;
+            if (normalZ > 1) normalZ = 1;
+            if (normalZ < -1) normalZ = -1;
+            var fresnel = 1 - Math.abs(normalZ);  // 0 at front/back poles, 1 at silhouette edge
+            var fresnelFactor = 0.35 + 0.65 * fresnel;  // 0.35 center, 1.0 edge
+
+            // Size with projection, using lifecycle currentSize
+            var size = (p.currentSize || p.size) * p.projScale;
+
+            // Alpha: combine depth, lifecycle, and fresnel
+            var alpha = p.alpha * (0.15 + 0.85 * depthNorm) * fresnelFactor;
+            if (alpha > 1) alpha = 1;
+
+            if (i >= glowStart && size > 1.5) {
+                // Radial gradient glow for frontmost particles
+                var glowRadius = size * 2.5;
+                var grad = ctx.createRadialGradient(p.projX, p.projY, 0, p.projX, p.projY, glowRadius);
+                grad.addColorStop(0, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (alpha * 0.9).toFixed(2) + ')');
+                grad.addColorStop(0.4, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (alpha * 0.4).toFixed(2) + ')');
+                grad.addColorStop(1, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0)');
+                ctx.beginPath();
+                ctx.arc(p.projX, p.projY, glowRadius, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+            } else {
+                // Simple fill for back/mid particles
+                ctx.beginPath();
+                ctx.arc(p.projX, p.projY, Math.max(0.5, size), 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + alpha.toFixed(2) + ')';
+                ctx.fill();
+            }
         }
-        
+
         // Draw orbiting stars on top (if enabled)
         this._renderOrbitingStars(ctx);
-        
+
         // NOTE: Detached particles are rendered separately by canvasRenderer
         // in the wheel's rotated context (not here in the hub's context)
     },
@@ -489,6 +525,35 @@ var Globe3D = {
     clearDetachedParticles: function() {
         this.detachedParticles = [];
         console.log('[Globe3D] Cleared detached particles');
+    },
+
+    /**
+     * React to heartbeat — scatter particles outward
+     * @param {number} intensity - Beat intensity 0-1 (typically 1.0)
+     */
+    onHeartbeat: function(intensity) {
+        if (!this.particles) return;
+
+        var baseForce = 3.0 + (intensity || 1.0) * 5.0;
+        var minScale = this._minScale || 0.5;
+        var maxScale = this._maxScale || 1.5;
+        var scaleRange = maxScale - minScale;
+        if (scaleRange < 0.01) scaleRange = 1;
+
+        for (var i = 0; i < this.particles.length; i++) {
+            var p = this.particles[i];
+            if (p.regenerating) continue;
+
+            // Depth factor: front particles (high projScale) scatter more,
+            // back particles scatter less — mimics perspective amplification
+            var depthFactor = (p.projScale - minScale) / scaleRange;
+            depthFactor = 0.2 + depthFactor * 0.8;  // Range 0.2 (back) to 1.0 (front)
+
+            // Wide random variation so particles don't move in unison
+            var reactivity = 0.15 + Math.random() * 0.85;
+
+            p.scatterVelocity += baseForce * depthFactor * reactivity;
+        }
     },
     
     /**
@@ -561,14 +626,14 @@ var Globe3D = {
         }
         
         // Create detached particle - follows path from center outward
+        // Size is fixed slightly larger than learning path line (3px), not affected by globe dot size
         this.detachedParticles.push({
             pathSegments: pathSegments,
             progress: initialProgress,
             speed: speed || 0.015,
-            // Visual properties - use same size as globe particle
-            size: particle.size,
+            size: 4,
             alpha: 1.0,
-            color: particleColor,  // Use learning color if provided
+            color: particleColor,
             trail: initialTrail
         });
         

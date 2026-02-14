@@ -496,13 +496,14 @@ window.updateTreeData = function(json) {
             PreReqMaster.updateStatus('Tree loaded - ready');
         }
         
-        // Apply procedural prereq injection if enabled — but NEVER on trustPrereqs data
-        // trustPrereqs trees already have authoritative prereqs from the build pipeline
-        if (settings.proceduralPrereqInjection && !data.trustPrereqs && typeof injectProceduralPrerequisites === 'function') {
-            console.log('[SpellLearning] Running procedural prerequisite injection...');
+        // Analyze orphans after tree loads and update repair button
+        if (typeof analyzeOrphans === 'function') {
             setTimeout(function() {
-                injectProceduralPrerequisites();
-            }, 100);  // Small delay to let tree render first
+                analyzeOrphans();
+                if (typeof updateOrphanRepairButton === 'function') {
+                    updateOrphanRepairButton();
+                }
+            }, 200);
         }
         
         // Force hide empty state after loading

@@ -289,7 +289,8 @@ function saveSettingsPreset(name) {
         // Nested objects (deep copy)
         earlySpellLearning: JSON.parse(JSON.stringify(settings.earlySpellLearning)),
         spellTomeLearning: JSON.parse(JSON.stringify(settings.spellTomeLearning)),
-        notifications: JSON.parse(JSON.stringify(settings.notifications || {}))
+        notifications: JSON.parse(JSON.stringify(settings.notifications || {})),
+        moddedXPSources: JSON.parse(JSON.stringify(settings.moddedXPSources || {}))
     };
 
     settingsPresets[name] = preset;
@@ -373,6 +374,14 @@ function applySettingsPreset(name) {
             if (ps.notifications.hasOwnProperty(k)) {
                 settings.notifications[k] = ps.notifications[k];
             }
+        }
+    }
+
+    // --- Modded XP Sources ---
+    if (ps.moddedXPSources) {
+        settings.moddedXPSources = JSON.parse(JSON.stringify(ps.moddedXPSources));
+        if (typeof rebuildModdedXPSourcesUI === 'function') {
+            rebuildModdedXPSourcesUI();
         }
     }
 
@@ -774,11 +783,8 @@ function updateProgressionSettingsUI() {
         }
     }
 
-    // Learning mode select
-    var learningModeSelect = document.getElementById('learningModeSelect');
-    if (learningModeSelect) {
-        learningModeSelect.value = settings.learningMode;
-    }
+    // Learning mode toggle
+    setSegmentedToggleValue('learningModeToggle', settings.learningMode);
 
     // Update spell tome learning UI if function exists
     if (typeof updateSpellTomeLearningUI === 'function') {

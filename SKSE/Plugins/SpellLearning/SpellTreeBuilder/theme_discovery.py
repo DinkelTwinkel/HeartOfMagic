@@ -8,10 +8,16 @@ This identifies words that are unique and meaningful to each school,
 like "fire", "frost", "flesh", "paralyze" etc.
 """
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-import numpy as np
 import re
 from typing import List, Dict, Any, Optional
+
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    import numpy as np
+    HAS_SKLEARN = True
+except ImportError as _sklearn_err:
+    HAS_SKLEARN = False
+    _SKLEARN_ERROR = str(_sklearn_err)
 
 
 # Common words to exclude beyond sklearn's english stop words
@@ -20,7 +26,16 @@ SPELL_STOP_WORDS = [
     'spell', 'magic', 'magical', 'target', 'targets', 'effect', 'effects',
     'damage', 'point', 'points', 'second', 'seconds', 'per', 'for', 'the',
     'does', 'causes', 'cast', 'caster', 'casting', 'level', 'levels',
-    'health', 'magicka', 'stamina', 'restore', 'restores', 'drain', 'drains',
+    'health', 'magicka', 'stamina', 'drain', 'drains',
+    # Effect description template fragments — these appear identically across
+    # all element types and drown out meaningful terms like fire/frost/shock
+    'deals', 'deal', 'dur', 'duration', 'mag', 'magnitude',
+    'nearby', 'enemies', 'enemy', 'increased', 'increases', 'increase',
+    'decreased', 'decreases', 'decrease', 'reduces', 'reduced', 'reduce',
+    'restores', 'restore', 'restored', 'absorb', 'absorbs', 'absorbed',
+    'extra', 'takes', 'take', 'time', 'over', 'while', 'also',
+    'resistance', 'chance', 'once', 'each', 'within', 'range',
+    'stronger', 'powerful', 'greater', 'lesser', 'more', 'less',
     # Skill level words (we use skillLevel field, not text)
     'novice', 'apprentice', 'adept', 'expert', 'master',
     # Common prepositions and articles
@@ -41,24 +56,33 @@ def extract_spell_text(spell: Dict[str, Any]) -> str:
         Combined text string for analysis
     """
     parts = []
-    
-    # Add spell name
+
+    # Add spell name (3x weight — spell names are the strongest theme signal)
     if 'name' in spell and spell['name']:
         parts.append(spell['name'])
-    
-    # Add effect names (simpler list)
+        parts.append(spell['name'])
+        parts.append(spell['name'])
+
+    # Add effect names (3x weight — "Fire Damage", "Frost Damage" etc. are
+    # highly discriminative, unlike descriptions which are templated)
     if 'effectNames' in spell and spell['effectNames']:
-        parts.extend(spell['effectNames'])
-    
-    # Add full effect descriptions if available
+        for en in spell['effectNames']:
+            parts.append(en)
+            parts.append(en)
+            parts.append(en)
+
+    # Add full effect descriptions (1x — these are templated across elements
+    # and contain generic fragments like "deals X damage for Y seconds")
     if 'effects' in spell and spell['effects']:
         for effect in spell['effects']:
             if isinstance(effect, dict):
                 if 'name' in effect:
+                    # Effect name again (already covered by effectNames above,
+                    # but structured effects may differ)
                     parts.append(effect['name'])
                 if 'description' in effect:
                     parts.append(effect['description'])
-    
+
     # Add keywords if available
     if 'keywords' in spell and spell['keywords']:
         # Clean keyword names (remove Magic prefix, etc.)
@@ -66,7 +90,7 @@ def extract_spell_text(spell: Dict[str, Any]) -> str:
             cleaned = re.sub(r'^Magic', '', kw)
             cleaned = re.sub(r'([A-Z])', r' \1', cleaned).strip()
             parts.append(cleaned)
-    
+
     return ' '.join(parts).lower()
 
 
@@ -75,31 +99,41 @@ def discover_themes(
     top_n: int = 8,
     min_df: int = 1,
     max_df: float = 0.8,
-    ngram_range: tuple = (1, 2)
+    ngram_range: tuple = (1, 2),
+    fallback: bool = False
 ) -> List[str]:
     """
     Discover the most significant themes/keywords in a set of spells
     using TF-IDF analysis.
-    
+
     Args:
         spells: List of spell dictionaries
         top_n: Number of top themes to extract
         min_df: Minimum document frequency (spells containing the term)
         max_df: Maximum document frequency ratio (ignore terms in >80% of spells)
         ngram_range: Range of n-grams to consider (1,2) = unigrams and bigrams
-        
+        fallback: If True, use word frequency counting instead of TF-IDF
+
     Returns:
         List of theme keywords, sorted by importance
     """
     if not spells:
         return []
-    
+
+    if not HAS_SKLEARN:
+        if fallback:
+            return _fallback_keyword_extraction(spells, top_n)
+        raise ImportError(
+            f"sklearn is required for theme discovery but is not installed: {_SKLEARN_ERROR}. "
+            f"Install the Python Addon from the mod page, or click 'Retry with Fallback' to use basic word-frequency analysis."
+        )
+
     # Build corpus from spell texts
     corpus = [extract_spell_text(spell) for spell in spells]
-    
+
     # Filter out empty texts
     corpus = [text for text in corpus if text.strip()]
-    
+
     if len(corpus) < 2:
         # Not enough data for TF-IDF
         return _fallback_keyword_extraction(spells, top_n)
@@ -171,7 +205,8 @@ def _fallback_keyword_extraction(spells: List[Dict[str, Any]], top_n: int) -> Li
 
 def discover_themes_per_school(
     spells: List[Dict[str, Any]],
-    top_n: int = 8
+    top_n: int = 8,
+    fallback: bool = False
 ) -> Dict[str, List[str]]:
     """
     Discover themes for each magic school separately.
@@ -183,12 +218,13 @@ def discover_themes_per_school(
     Returns:
         Dictionary mapping school name to list of themes
     """
-    # Group spells by school
+    # Group spells by school (only the 5 vanilla magic schools)
+    VALID_SCHOOLS = {'Alteration', 'Conjuration', 'Destruction', 'Illusion', 'Restoration'}
     schools: Dict[str, List[Dict[str, Any]]] = {}
     for spell in spells:
-        school = spell.get('school', 'Unknown')
-        if not school or school in ('null', 'undefined', 'None', ''):
-            school = 'Hedge Wizard'
+        school = spell.get('school', '')
+        if school not in VALID_SCHOOLS:
+            continue
         if school not in schools:
             schools[school] = []
         schools[school].append(spell)
@@ -196,7 +232,7 @@ def discover_themes_per_school(
     # Discover themes for each school
     school_themes = {}
     for school_name, school_spells in schools.items():
-        themes = discover_themes(school_spells, top_n=top_n)
+        themes = discover_themes(school_spells, top_n=top_n, fallback=fallback)
         school_themes[school_name] = themes
         print(f"[ThemeDiscovery] {school_name}: {len(school_spells)} spells -> themes: {themes}")
     
@@ -217,23 +253,28 @@ VANILLA_THEME_HINTS = {
 def merge_with_hints(discovered: Dict[str, List[str]], max_themes: int = 10) -> Dict[str, List[str]]:
     """
     Merge discovered themes with vanilla hints to ensure good coverage.
-    Discovered themes take priority, hints fill gaps.
+    Hints are prioritized FIRST (they are known-good element/type names),
+    then high-quality discovered themes fill remaining slots.
     """
     merged = {}
-    
+
     for school, themes in discovered.items():
-        merged_themes = list(themes)
-        
-        # Add hints if this is a known vanilla school
         if school in VANILLA_THEME_HINTS:
-            for hint in VANILLA_THEME_HINTS[school]:
-                if hint.lower() not in [t.lower() for t in merged_themes]:
-                    merged_themes.append(hint)
-                    if len(merged_themes) >= max_themes:
+            # Start with hints as the baseline — these are curated element/type
+            # names that produce coherent groupings (fire, frost, shock, etc.)
+            hints = list(VANILLA_THEME_HINTS[school])
+            hint_lower = {h.lower() for h in hints}
+            # Then add discovered themes that aren't already covered by hints
+            for t in themes:
+                if t.lower() not in hint_lower:
+                    hints.append(t)
+                    if len(hints) >= max_themes:
                         break
-        
-        merged[school] = merged_themes[:max_themes]
-    
+            merged[school] = hints[:max_themes]
+        else:
+            # Non-vanilla school — use discovered themes as-is
+            merged[school] = list(themes[:max_themes])
+
     return merged
 
 

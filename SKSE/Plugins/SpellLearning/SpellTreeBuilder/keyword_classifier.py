@@ -231,12 +231,13 @@ def classify_all_schools(
         themes = discover_themes_per_school(spells, top_n=top_themes)
         themes = merge_with_hints(themes, max_themes=top_themes + 4)
 
-    # Group spells by school
+    # Group spells by school (only the 5 vanilla magic schools)
+    VALID_SCHOOLS = {'Alteration', 'Conjuration', 'Destruction', 'Illusion', 'Restoration'}
     school_spells: Dict[str, List[Dict[str, Any]]] = {}
     for spell in spells:
-        school = spell.get('school', 'Unknown')
-        if not school or school in ('null', 'undefined', 'None', ''):
-            school = 'Hedge Wizard'
+        school = spell.get('school', '')
+        if school not in VALID_SCHOOLS:
+            continue
         if school not in school_spells:
             school_spells[school] = []
         school_spells[school].append(spell)

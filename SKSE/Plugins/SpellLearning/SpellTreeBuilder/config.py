@@ -159,6 +159,12 @@ class TreeBuilderConfig:
     # Vanilla root preference
     prefer_vanilla_roots: bool = True
 
+    # NLP similarity threshold (minimum score to store in similarity matrix)
+    similarity_threshold: float = 0.05
+
+    # Name morphology weight (0.0 = word-level only, 1.0 = char n-gram only)
+    name_similarity_weight: float = 0.3
+
     # Tree Generation Settings (from UI - Tier 4)
     tree_generation: Dict[str, Any] = field(default_factory=lambda: {
         # Theme Discovery
@@ -184,6 +190,7 @@ class TreeBuilderConfig:
         "convergence_enabled": True,        # Expert/Master get 2+ prereqs
         "convergence_chance": 40,           # 0-100%
         "convergence_min_tier": 3,          # 0=Novice, 3=Expert, 4=Master
+        "convergence_cross_theme": True,    # Convergence ignores element_isolation
 
         # Scoring Factors
         "scoring": {
@@ -309,7 +316,7 @@ class TreeBuilderConfig:
             merged_tree_gen.update(tree_generation)
             tree_generation = merged_tree_gen
 
-        return cls(
+        cfg = cls(
             seed=d.get('seed'),
             shape=d.get('shape', 'organic'),
             max_children_per_node=d.get('max_children_per_node', 3),
@@ -328,9 +335,24 @@ class TreeBuilderConfig:
             min_node_spacing=d.get('min_node_spacing', 1.0),
             prevent_overlap=d.get('prevent_overlap', True),
             prefer_vanilla_roots=d.get('prefer_vanilla_roots', True),
+            similarity_threshold=d.get('similarity_threshold', 0.05),
+            name_similarity_weight=d.get('name_similarity_weight', 0.3),
             tree_generation=tree_generation,
             _raw_config=d,  # Store raw config for non-typed access
         )
+
+        # Validate ranges — clamp to safe bounds
+        cfg.density = max(0.0, min(1.0, cfg.density))
+        cfg.symmetry = max(0.0, min(1.0, cfg.symmetry))
+        cfg.max_children_per_node = max(1, min(8, cfg.max_children_per_node))
+        cfg.convergence_chance = max(0.0, min(1.0, cfg.convergence_chance))
+        cfg.convergence_at_tier = max(0, min(4, cfg.convergence_at_tier))
+        cfg.theme_coherence = max(0.0, min(1.0, cfg.theme_coherence))
+        cfg.top_themes_per_school = max(1, min(30, cfg.top_themes_per_school))
+        cfg.similarity_threshold = max(0.0, min(1.0, cfg.similarity_threshold))
+        cfg.name_similarity_weight = max(0.0, min(1.0, cfg.name_similarity_weight))
+
+        return cfg
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary (excluding raw config)."""
@@ -384,10 +406,15 @@ def load_config(config_dict: Optional[Dict[str, Any]] = None) -> TreeBuilderConf
 
 def merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Merge two configuration dictionaries.
-    
-    Override values take precedence over base values.
+    Recursively merge two configuration dictionaries.
+
+    Override values take precedence. Nested dicts are merged recursively
+    so partial overrides don't lose sibling keys from the base.
     """
     result = base.copy()
-    result.update(override)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = merge_configs(result[key], value)
+        else:
+            result[key] = value
     return result

@@ -10,6 +10,8 @@
 #include "PapyrusAPI.h"
 #include "PythonInstaller.h"
 #include "PythonBridge.h"
+#include "WineDetect.h"
+#include "PassiveLearningSource.h"
 
 // =============================================================================
 // JSON HELPER - Safe value accessor that handles null values
@@ -1401,6 +1403,18 @@ json GenerateDefaultConfig() {
             {"requireAllPrereqs", true},
             {"requireSkillLevel", false}
         }},
+        {"passiveLearning", {
+            {"enabled", false},
+            {"scope", "novice"},
+            {"xpPerGameHour", 5},
+            {"maxByTier", {
+                {"novice", 100},
+                {"apprentice", 75},
+                {"adept", 50},
+                {"expert", 25},
+                {"master", 5}
+            }}
+        }},
         {"notifications", {
             {"weakenedSpellNotifications", true},
             {"weakenedSpellInterval", 10.0f}
@@ -1527,8 +1541,10 @@ void UIManager::OnLoadUnifiedConfig(const char* argument)
     xpSettings.xpAdept = SafeJsonValue<int>(unifiedConfig, "xpAdept", 400);
     xpSettings.xpExpert = SafeJsonValue<int>(unifiedConfig, "xpExpert", 800);
     xpSettings.xpMaster = SafeJsonValue<int>(unifiedConfig, "xpMaster", 1500);
+    // Preserve modded sources registered by API consumers before config loaded
+    xpSettings.moddedSources = ProgressionManager::GetSingleton()->GetXPSettings().moddedSources;
     ProgressionManager::GetSingleton()->SetXPSettings(xpSettings);
-    
+
     // Update SpellEffectivenessHook with early learning settings
     if (unifiedConfig.contains("earlySpellLearning") && !unifiedConfig["earlySpellLearning"].is_null()) {
         auto& elConfig = unifiedConfig["earlySpellLearning"];
@@ -1579,6 +1595,29 @@ void UIManager::OnLoadUnifiedConfig(const char* argument)
             tomeSettings.useProgressionSystem, tomeSettings.requirePrereqs, tomeSettings.requireAllPrereqs, tomeSettings.requireSkillLevel);
     }
     
+    // Update PassiveLearningSource with passive learning settings
+    if (unifiedConfig.contains("passiveLearning") && !unifiedConfig["passiveLearning"].is_null()) {
+        auto& plConfig = unifiedConfig["passiveLearning"];
+        SpellLearning::PassiveLearningSource::Settings plSettings;
+        plSettings.enabled = SafeJsonValue<bool>(plConfig, "enabled", false);
+        plSettings.scope = SafeJsonValue<std::string>(plConfig, "scope", "novice");
+        plSettings.xpPerGameHour = SafeJsonValue<float>(plConfig, "xpPerGameHour", 5.0f);
+        if (plConfig.contains("maxByTier") && plConfig["maxByTier"].is_object()) {
+            auto& tiers = plConfig["maxByTier"];
+            plSettings.maxNovice = SafeJsonValue<float>(tiers, "novice", 100.0f);
+            plSettings.maxApprentice = SafeJsonValue<float>(tiers, "apprentice", 75.0f);
+            plSettings.maxAdept = SafeJsonValue<float>(tiers, "adept", 50.0f);
+            plSettings.maxExpert = SafeJsonValue<float>(tiers, "expert", 25.0f);
+            plSettings.maxMaster = SafeJsonValue<float>(tiers, "master", 5.0f);
+        }
+        auto* passiveSource = SpellLearning::PassiveLearningSource::GetSingleton();
+        if (passiveSource) {
+            passiveSource->SetSettings(plSettings);
+        }
+        logger::info("UIManager: Applied passive learning settings - enabled: {}, scope: {}, xp/hr: {}",
+            plSettings.enabled, plSettings.scope, plSettings.xpPerGameHour);
+    }
+
     // Update SpellCastHandler with notification settings
     if (unifiedConfig.contains("notifications") && !unifiedConfig["notifications"].is_null()) {
         auto& notifConfig = unifiedConfig["notifications"];
@@ -1589,11 +1628,37 @@ void UIManager::OnLoadUnifiedConfig(const char* argument)
             castHandler->GetWeakenedNotificationsEnabled(), castHandler->GetNotificationInterval());
     }
     
+    // Strip internal sources from config before sending to UI (they have their own UI sections)
+    if (unifiedConfig.contains("moddedXPSources") && unifiedConfig["moddedXPSources"].is_object()) {
+        auto& sources = ProgressionManager::GetSingleton()->GetXPSettings().moddedSources;
+        for (auto it = unifiedConfig["moddedXPSources"].begin(); it != unifiedConfig["moddedXPSources"].end();) {
+            if (sources.count(it.key()) && sources.at(it.key()).internal) {
+                it = unifiedConfig["moddedXPSources"].erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     // Send to UI
     std::string configStr = unifiedConfig.dump();
     logger::info("UIManager: Sending unified config to UI ({} bytes)", configStr.size());
     instance->m_prismaUI->InteropCall(instance->m_view, "onUnifiedConfigLoaded", configStr.c_str());
-    
+
+    // Re-notify all registered external modded XP sources to the UI.
+    // Sources registered before PrismaUI was ready had their notifications dropped,
+    // so we push them all now that the view is live. Skip internal sources (e.g. passive).
+    auto& moddedSources = ProgressionManager::GetSingleton()->GetXPSettings().moddedSources;
+    int notifiedCount = 0;
+    for (auto& [srcId, srcConfig] : moddedSources) {
+        if (srcConfig.internal) continue;
+        instance->NotifyModdedSourceRegistered(srcId, srcConfig.displayName, srcConfig.multiplier, srcConfig.cap);
+        notifiedCount++;
+    }
+    if (notifiedCount > 0) {
+        logger::info("UIManager: Re-notified {} modded XP sources to UI", notifiedCount);
+    }
+
     // Notify UI of ISL detection status (fresh detection, not from saved config)
     instance->NotifyISLDetectionStatus();
 }
@@ -1712,8 +1777,28 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
         xpSettings.xpAdept = SafeJsonValue<int>(newConfig, "xpAdept", 400);
         xpSettings.xpExpert = SafeJsonValue<int>(newConfig, "xpExpert", 800);
         xpSettings.xpMaster = SafeJsonValue<int>(newConfig, "xpMaster", 1500);
+
+        // Load modded XP source settings from config
+        if (newConfig.contains("moddedXPSources") && newConfig["moddedXPSources"].is_object()) {
+            for (auto& [srcId, srcData] : newConfig["moddedXPSources"].items()) {
+                ProgressionManager::ModdedSourceConfig config;
+                config.displayName = SafeJsonValue<std::string>(srcData, "displayName", srcId);
+                config.enabled = SafeJsonValue<bool>(srcData, "enabled", true);
+                config.multiplier = SafeJsonValue<float>(srcData, "multiplier", 100.0f);
+                config.cap = SafeJsonValue<float>(srcData, "cap", 25.0f);
+                xpSettings.moddedSources[srcId] = config;
+            }
+            logger::info("UIManager: Loaded {} modded XP source configs", xpSettings.moddedSources.size());
+        }
+
+        // Preserve modded sources registered by API consumers that aren't in the saved config
+        for (auto& [srcId, srcConfig] : ProgressionManager::GetSingleton()->GetXPSettings().moddedSources) {
+            if (xpSettings.moddedSources.find(srcId) == xpSettings.moddedSources.end()) {
+                xpSettings.moddedSources[srcId] = srcConfig;
+            }
+        }
         ProgressionManager::GetSingleton()->SetXPSettings(xpSettings);
-        
+
         // Update early learning settings in SpellEffectivenessHook if changed
         if (newConfig.contains("earlySpellLearning") && !newConfig["earlySpellLearning"].is_null()) {
             auto& elConfig = newConfig["earlySpellLearning"];
@@ -1763,6 +1848,29 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
             logger::info("UIManager: Applied SpellTomeHook settings from save");
         }
         
+        // Update passive learning settings if changed
+        if (newConfig.contains("passiveLearning") && !newConfig["passiveLearning"].is_null()) {
+            auto& plConfig = newConfig["passiveLearning"];
+            SpellLearning::PassiveLearningSource::Settings plSettings;
+            plSettings.enabled = SafeJsonValue<bool>(plConfig, "enabled", false);
+            plSettings.scope = SafeJsonValue<std::string>(plConfig, "scope", "novice");
+            plSettings.xpPerGameHour = SafeJsonValue<float>(plConfig, "xpPerGameHour", 5.0f);
+            if (plConfig.contains("maxByTier") && plConfig["maxByTier"].is_object()) {
+                auto& tiers = plConfig["maxByTier"];
+                plSettings.maxNovice = SafeJsonValue<float>(tiers, "novice", 100.0f);
+                plSettings.maxApprentice = SafeJsonValue<float>(tiers, "apprentice", 75.0f);
+                plSettings.maxAdept = SafeJsonValue<float>(tiers, "adept", 50.0f);
+                plSettings.maxExpert = SafeJsonValue<float>(tiers, "expert", 25.0f);
+                plSettings.maxMaster = SafeJsonValue<float>(tiers, "master", 5.0f);
+            }
+            auto* passiveSource = SpellLearning::PassiveLearningSource::GetSingleton();
+            if (passiveSource) {
+                passiveSource->SetSettings(plSettings);
+            }
+            logger::info("UIManager: Applied passive learning settings from save - enabled: {}",
+                plSettings.enabled);
+        }
+
         // Update notification settings if changed
         if (newConfig.contains("notifications") && !newConfig["notifications"].is_null()) {
             auto& notifConfig = newConfig["notifications"];
@@ -2132,13 +2240,33 @@ void UIManager::NotifyLearningTargetCleared(RE::FormID formId)
     UpdateSpellState(formIdStr, "available");
 }
 
+void UIManager::NotifyModdedSourceRegistered(const std::string& sourceId,
+                                              const std::string& displayName,
+                                              float multiplier, float cap)
+{
+    if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
+        logger::warn("UIManager: Cannot notify modded source registered - PrismaUI not valid");
+        return;
+    }
+
+    nlohmann::json j;
+    j["sourceId"] = sourceId;
+    j["displayName"] = displayName;
+    j["multiplier"] = multiplier;
+    j["cap"] = cap;
+    j["enabled"] = true;
+
+    logger::info("UIManager: Notifying UI - modded XP source registered: '{}' ('{}')", sourceId, displayName);
+    m_prismaUI->InteropCall(m_view, "onModdedXPSourceRegistered", j.dump().c_str());
+}
+
 void UIManager::NotifyMainMenuLoaded()
 {
     if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
         logger::warn("UIManager: Cannot notify main menu loaded - PrismaUI not valid");
         return;
     }
-    
+
     logger::info("UIManager: Notifying UI - main menu loaded, resetting tree states");
     m_prismaUI->InteropCall(m_view, "onResetTreeStates", "");
 }
@@ -2631,19 +2759,29 @@ void UIManager::OnProceduralPythonGenerate(const char* argument)
     try {
         nlohmann::json request = nlohmann::json::parse(argument);
 
+        // Read command from JS request — defaults to "build_tree" (Tree Growth mode)
+        // Classic Growth sends "build_tree_classic" for tier-first ordering
+        std::string pythonCommand = "build_tree";
+        if (request.contains("command") && request["command"].is_string()) {
+            pythonCommand = request["command"].get<std::string>();
+        }
+
         nlohmann::json payload;
         payload["spells"] = request.value("spells", nlohmann::json::array());
         payload["config"] = request.value("config", nlohmann::json::object());
+        if (request.contains("fallback") && request["fallback"].is_boolean()) {
+            payload["fallback"] = request["fallback"];
+        }
 
-        logger::info("UIManager: Sending build_tree to PythonBridge ({} spells)", payload["spells"].size());
+        logger::info("UIManager: Sending {} to PythonBridge ({} spells)", pythonCommand, payload["spells"].size());
 
         // Signal JS whether Python is already running (so UI can skip startup stage)
         bool pythonAlreadyReady = PythonBridge::GetSingleton()->IsReady();
         std::string statusJson = pythonAlreadyReady ? R"({"ready":true})" : R"({"ready":false})";
         instance->m_prismaUI->InteropCall(instance->m_view, "onPythonBridgeStatus", statusJson.c_str());
 
-        PythonBridge::GetSingleton()->SendCommand("build_tree", payload.dump(),
-            [instance, startTime](bool success, const std::string& result) {
+        PythonBridge::GetSingleton()->SendCommand(pythonCommand, payload.dump(),
+            [instance, startTime, pythonCommand](bool success, const std::string& result) {
                 auto endTime = std::chrono::high_resolution_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
 
@@ -2652,11 +2790,11 @@ void UIManager::OnProceduralPythonGenerate(const char* argument)
                     response["success"] = true;
                     response["treeData"] = result;  // Already JSON string from PythonBridge
                     response["elapsed"] = elapsed;
-                    logger::info("UIManager: build_tree completed in {:.2f}s", elapsed);
+                    logger::info("UIManager: {} completed in {:.2f}s", pythonCommand, elapsed);
                 } else {
                     response["success"] = false;
                     response["error"] = result;
-                    logger::error("UIManager: build_tree failed: {}", result);
+                    logger::error("UIManager: {} failed: {}", pythonCommand, result);
                 }
 
                 instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
@@ -2855,6 +2993,8 @@ void UIManager::CheckPythonAddonStatus()
         // Check for Python: venv > embedded > system (but don't assume system)
         // For embedded, also verify install completed (marker file) to catch partial installs
         std::string venvPython = toolDir + "/.venv/Scripts/python.exe";
+        std::string venvPythonLinux = toolDir + "/.venv/bin/python";       // Linux venv
+        std::string venvPythonLinux3 = toolDir + "/.venv/bin/python3";     // Linux venv
         std::string embeddedPython = toolDir + "/python/python.exe";
         std::string embeddedMarker = toolDir + "/python/.install_complete";
 
@@ -2862,10 +3002,26 @@ void UIManager::CheckPythonAddonStatus()
         // which is only visible via absolute path resolution
         auto absMarker = std::filesystem::absolute(std::filesystem::path(embeddedMarker));
 
+        // On Wine, Linux-native Python (ELF binary) can't be used by CreateProcess.
+        // Only report Windows .exe Python as usable.
+        bool wineMode = IsRunningUnderWine();
+
         if (std::filesystem::exists(venvPython)) {
             hasPython = true;
             pythonSource = "venv";
-            logger::info("UIManager: Python addon check - venv Python found");
+            logger::info("UIManager: Python addon check - Windows venv Python found");
+        } else if (!wineMode && (std::filesystem::exists(venvPythonLinux) ||
+                                  std::filesystem::exists(venvPythonLinux3))) {
+            hasPython = true;
+            pythonSource = "venv";
+            logger::info("UIManager: Python addon check - Linux venv Python found");
+        } else if (wineMode && (std::filesystem::exists(venvPythonLinux) ||
+                                 std::filesystem::exists(venvPythonLinux3))) {
+            // Linux Python exists but can't be used with CreateProcess on Wine
+            hasPython = false;
+            pythonSource = "none";
+            logger::warn("UIManager: Python addon check - Linux venv found but not usable on Wine/Proton. "
+                "Use Auto-Setup to install Windows Python.");
         } else if (std::filesystem::exists(embeddedPython) &&
                    (std::filesystem::exists(embeddedMarker) || std::filesystem::exists(absMarker))) {
             hasPython = true;

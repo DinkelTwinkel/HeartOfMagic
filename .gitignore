@@ -1,6 +1,8 @@
 # Build outputs
 plugin/build/
 plugin/build2/
+compatibility/*/build/
+addons/*/plugin/build/
 *.obj
 *.pdb
 *.lib

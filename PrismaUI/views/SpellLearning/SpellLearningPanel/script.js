@@ -797,6 +797,21 @@ function initializeTabs() {
             switchTab('spellTree');
         });
     }
+
+    // Orphan repair button
+    var orphanBtn = document.getElementById('orphanRepairBtn');
+    if (orphanBtn) {
+        orphanBtn.addEventListener('click', function() {
+            if (typeof repairOrphans !== 'function') return;
+            var result = repairOrphans();
+            var msg = 'Repaired: removed ' + result.removedPrereqs + ' bad prereqs, reconnected ' +
+                result.reconnectedSubtrees + ' subtrees (' + result.nodesRecovered + ' nodes recovered)';
+            console.log('[OrphanRepair] ' + msg);
+            if (typeof updateOrphanRepairButton === 'function') {
+                updateOrphanRepairButton();
+            }
+        });
+    }
 }
 
 function switchTab(tabId) {
@@ -1063,6 +1078,116 @@ function initializeResizing() {
 }
 
 // =============================================================================
+// PASSIVE LEARNING SETTINGS
+// =============================================================================
+
+function initializePassiveLearningSettings() {
+    // Enable toggle
+    var enableToggle = document.getElementById('passiveLearningToggle');
+    if (enableToggle) {
+        enableToggle.checked = settings.passiveLearning.enabled;
+        enableToggle.addEventListener('change', function() {
+            settings.passiveLearning.enabled = this.checked;
+            updatePassiveLearningVisibility();
+            console.log('[SpellLearning] Passive learning enabled:', this.checked);
+            autoSaveSettings();
+        });
+    }
+
+    // Scope toggle (segmented)
+    initSegmentedToggle('passiveScopeToggle', settings.passiveLearning.scope, function(value) {
+        settings.passiveLearning.scope = value;
+        console.log('[SpellLearning] Passive learning scope:', value);
+        autoSaveSettings();
+    });
+
+    // XP per game hour slider
+    var xpSlider = document.getElementById('passiveXpPerHourSlider');
+    var xpValue = document.getElementById('passiveXpPerHourValue');
+    if (xpSlider) {
+        xpSlider.value = settings.passiveLearning.xpPerGameHour;
+        if (xpValue) xpValue.textContent = settings.passiveLearning.xpPerGameHour;
+        updateSliderFillGlobal(xpSlider);
+        xpSlider.addEventListener('input', function() {
+            var val = parseInt(this.value);
+            settings.passiveLearning.xpPerGameHour = val;
+            if (xpValue) xpValue.textContent = val;
+            updateSliderFillGlobal(this);
+            autoSaveSettings();
+        });
+    }
+
+    // Max tier inputs
+    var tierMap = {
+        'passiveMaxNovice': 'novice',
+        'passiveMaxApprentice': 'apprentice',
+        'passiveMaxAdept': 'adept',
+        'passiveMaxExpert': 'expert',
+        'passiveMaxMaster': 'master'
+    };
+    for (var elId in tierMap) {
+        (function(elementId, tierKey) {
+            var input = document.getElementById(elementId);
+            if (input) {
+                input.value = settings.passiveLearning.maxByTier[tierKey];
+                input.addEventListener('change', function() {
+                    var val = Math.max(0, Math.min(100, parseInt(this.value) || 0));
+                    this.value = val;
+                    settings.passiveLearning.maxByTier[tierKey] = val;
+                    console.log('[SpellLearning] Passive max ' + tierKey + ':', val);
+                    autoSaveSettings();
+                });
+            }
+        })(elId, tierMap[elId]);
+    }
+
+    // Initial visibility
+    updatePassiveLearningVisibility();
+    console.log('[SpellLearning] Passive learning settings initialized');
+}
+
+function updatePassiveLearningVisibility() {
+    var controls = document.querySelector('.passive-learning-controls');
+    if (!controls) return;
+    var rows = controls.querySelectorAll('.setting-row-inline, .setting-row, .slider-row, .settings-subsection, .tier-xp-grid');
+    var isEnabled = settings.passiveLearning.enabled;
+    // Skip the first row (the enable toggle itself)
+    for (var i = 1; i < rows.length; i++) {
+        rows[i].style.opacity = isEnabled ? '1' : '0.5';
+        rows[i].style.pointerEvents = isEnabled ? '' : 'none';
+    }
+}
+
+function updatePassiveLearningUI() {
+    var enableToggle = document.getElementById('passiveLearningToggle');
+    if (enableToggle) enableToggle.checked = settings.passiveLearning.enabled;
+
+    setSegmentedToggleValue('passiveScopeToggle', settings.passiveLearning.scope);
+
+    var xpSlider = document.getElementById('passiveXpPerHourSlider');
+    var xpValue = document.getElementById('passiveXpPerHourValue');
+    if (xpSlider) {
+        xpSlider.value = settings.passiveLearning.xpPerGameHour;
+        if (xpValue) xpValue.textContent = settings.passiveLearning.xpPerGameHour;
+        updateSliderFillGlobal(xpSlider);
+    }
+
+    var tierMap = {
+        'passiveMaxNovice': 'novice',
+        'passiveMaxApprentice': 'apprentice',
+        'passiveMaxAdept': 'adept',
+        'passiveMaxExpert': 'expert',
+        'passiveMaxMaster': 'master'
+    };
+    for (var elId in tierMap) {
+        var input = document.getElementById(elId);
+        if (input) input.value = settings.passiveLearning.maxByTier[tierMap[elId]];
+    }
+
+    updatePassiveLearningVisibility();
+}
+
+// =============================================================================
 // EARLY SPELL LEARNING SETTINGS
 // =============================================================================
 
@@ -1160,7 +1285,7 @@ function renderPowerSteps() {
         // Stage label
         var labelSpan = document.createElement('span');
         labelSpan.className = 'power-step-label';
-        labelSpan.textContent = 'Stage ' + (index + 1);
+        labelSpan.textContent = t('progression.stageN', {n: index + 1});
         
         // XP threshold input
         var xpInput = document.createElement('input');
@@ -1175,7 +1300,7 @@ function renderPowerSteps() {
         
         var xpUnit = document.createElement('span');
         xpUnit.className = 'power-step-unit';
-        xpUnit.textContent = '% XP';
+        xpUnit.textContent = t('progression.xpUnit');
         
         // Power level input
         var powerInput = document.createElement('input');
@@ -1190,14 +1315,14 @@ function renderPowerSteps() {
         
         var powerUnit = document.createElement('span');
         powerUnit.className = 'power-step-unit';
-        powerUnit.textContent = '% Power';
+        powerUnit.textContent = t('progression.powerUnit');
         
         // Name input
         var nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.className = 'power-step-name';
         nameInput.value = step.label;
-        nameInput.placeholder = 'Stage name';
+        nameInput.placeholder = t('progression.stageNamePlaceholder');
         nameInput.dataset.index = index;
         nameInput.dataset.field = 'label';
         nameInput.addEventListener('change', onPowerStepInputChange);
@@ -1219,22 +1344,22 @@ function renderPowerSteps() {
     
     var masteredLabel = document.createElement('span');
     masteredLabel.className = 'power-step-label';
-    masteredLabel.textContent = 'Final';
+    masteredLabel.textContent = t('progression.stageFinal');
     masteredLabel.style.color = 'var(--accent-gold, #ffd700)';
     
     var masteredXp = document.createElement('span');
     masteredXp.className = 'power-step-unit';
-    masteredXp.textContent = '100% XP';
+    masteredXp.textContent = t('progression.fullXp');
     masteredXp.style.marginLeft = '10px';
     
     var masteredPower = document.createElement('span');
     masteredPower.className = 'power-step-unit';
-    masteredPower.textContent = '100% Power';
+    masteredPower.textContent = t('progression.fullPower');
     masteredPower.style.marginLeft = '20px';
     
     var masteredName = document.createElement('span');
     masteredName.className = 'power-step-unit';
-    masteredName.textContent = 'Mastered (fixed)';
+    masteredName.textContent = t('progression.masteredFixed');
     masteredName.style.marginLeft = '20px';
     
     masteredRow.appendChild(masteredLabel);

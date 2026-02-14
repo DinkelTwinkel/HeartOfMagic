@@ -41,46 +41,46 @@ var TreePreviewFlat = {
         var isHoriz = s.direction === 'horizontal';
         var H = TreePreviewUtils.settingHTML;
         return '' +
-            '<div class="tree-preview-settings-title">Root Line Settings</div>' +
+            '<div class="tree-preview-settings-title">' + t('preview.flat.title') + '</div>' +
 
             // --- Toggles at top ---
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Direction</label>' +
+                '<label class="tree-preview-label">' + t('preview.flat.direction') + '</label>' +
                 '<div class="tree-preview-toggle-row">' +
                     '<button class="tree-preview-toggle-btn' + (isHoriz ? ' active' : '') + '" ' +
-                        'id="tpFlatDirH" data-dir="horizontal">Horizontal</button>' +
+                        'id="tpFlatDirH" data-dir="horizontal">' + t('preview.flat.horizontal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (!isHoriz ? ' active' : '') + '" ' +
-                        'id="tpFlatDirV" data-dir="vertical">Vertical</button>' +
+                        'id="tpFlatDirV" data-dir="vertical">' + t('preview.flat.vertical') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Section Split</label>' +
+                '<label class="tree-preview-label">' + t('preview.sectionSplit') + '</label>' +
                 '<div class="tree-preview-toggle-row">' +
                     '<button class="tree-preview-toggle-btn' + (!s.proportional ? ' active' : '') + '" ' +
-                        'id="tpFlatSplitEqual">Equal</button>' +
+                        'id="tpFlatSplitEqual">' + t('preview.equal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.proportional ? ' active' : '') + '" ' +
-                        'id="tpFlatSplitProp">Proportional</button>' +
+                        'id="tpFlatSplitProp">' + t('preview.proportional') + '</button>' +
                 '</div>' +
             '</div>' +
 
             '<div class="tree-preview-setting">' +
-                '<label class="tree-preview-label">Growth Direction</label>' +
+                '<label class="tree-preview-label">' + t('preview.growthDirection') + '</label>' +
                 '<div class="tree-preview-toggle-row tree-preview-toggle-wrap">' +
                     '<button class="tree-preview-toggle-btn' + (!s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpFlatGrowNormal">Normal</button>' +
+                        'id="tpFlatGrowNormal">' + t('preview.flat.normal') + '</button>' +
                     '<button class="tree-preview-toggle-btn' + (s.invertGrowth ? ' active' : '') + '" ' +
-                        'id="tpFlatGrowInvert">Invert</button>' +
+                        'id="tpFlatGrowInvert">' + t('preview.flat.invert') + '</button>' +
                 '</div>' +
             '</div>' +
 
             // --- Numeric inputs in responsive grid ---
             '<div class="tree-preview-settings-grid">' +
-                H('Line Length', 'tpFlatLength', 5, 9999, 5, s.linePoints) +
-                H('Node Size', 'tpFlatNodeSize', 1, 9999, 1, s.nodeSize) +
-                H('Roots / School', 'tpFlatRoots', 1, 9999, 1, s.rootsPerSchool) +
-                H('Clumping', 'tpFlatClump', 0, 100, 1, s.rootClumping, '%') +
-                H('Randomness', 'tpFlatRand', 0, 100, 1, s.rootRandomness, '%') +
+                H(t('preview.flat.lineLength'), 'tpFlatLength', 5, 9999, 5, s.linePoints) +
+                H(t('preview.nodeSize'), 'tpFlatNodeSize', 1, 9999, 1, s.nodeSize) +
+                H(t('preview.rootsPerSchool'), 'tpFlatRoots', 1, 9999, 1, s.rootsPerSchool) +
+                H(t('preview.clumping'), 'tpFlatClump', 0, 100, 1, s.rootClumping, '%') +
+                H(t('preview.randomness'), 'tpFlatRand', 0, 100, 1, s.rootRandomness, '%') +
             '</div>';
     },
 
@@ -175,10 +175,6 @@ var TreePreviewFlat = {
         var lineLength = s.linePoints * gridSpacing;
         var halfLen = lineLength / 2;
 
-        // Grid fills the entire visible area (square cells)
-        var maxExtent = Math.max(w, h) * 3;
-        var gridCountAlong = Math.ceil(maxExtent / gridSpacing);
-        var gridCountCross = Math.ceil(maxExtent / gridSpacing);
 
         // --- Calculate school segments early (needed for grid point coloring) ---
         var segmentSizes = [];
@@ -212,6 +208,14 @@ var TreePreviewFlat = {
             schoolRgba.push(this._hexToRgba(this._schoolColors[schools[ci]] || '#888888', 0.2));
         }
 
+        // Free any leftover offscreen canvas from previous caching approach
+        if (this._gridCanvas) { this._gridCanvas = null; this._gridCacheKey = null; }
+
+        // Rendering dots: reduced for performance (~4K dots vs 20K)
+        var renderDotsPerAxis = Math.min(32, Math.ceil(Math.max(w, h) / gridSpacing));
+        // Layout dots: full extent for classic layout placement
+        var layoutDotsPerAxis = Math.floor((Math.sqrt(20000) - 1) / 2);
+
         // Cache for getGridData()
         this._lastRenderData = {
             schools: schools,
@@ -223,53 +227,66 @@ var TreePreviewFlat = {
             direction: s.direction
         };
 
-        // --- Draw square grid ---
+        // --- Draw square grid directly (lightweight, no massive offscreen canvas) ---
+        // Grid lines: limit to visible area + margin
+        var renderExtent = Math.max(w, h) * 1.5;
+        var renderGridCount = Math.ceil(renderExtent / gridSpacing);
 
-        // Lines along the root direction (fills canvas)
-        for (var g = -gridCountAlong; g <= gridCountAlong; g++) {
+        // Grid lines: batch by style into single paths
+        var alongOn = { b: true };  // "along" lines on the school line
+        var alongOff = { b: true }; // "along" lines off the school line
+        for (var g = -renderGridCount; g <= renderGridCount; g++) {
             var pos = g * gridSpacing;
-            var isOnLine = (pos >= -halfLen - 0.5 && pos <= halfLen + 0.5);
-            ctx.beginPath();
+            var target = (pos >= -halfLen - 0.5 && pos <= halfLen + 0.5) ? alongOn : alongOff;
+            if (!target.p) { target.p = []; }
             if (isHoriz) {
-                ctx.moveTo(cx + pos, cy - maxExtent);
-                ctx.lineTo(cx + pos, cy + maxExtent);
+                target.p.push(cx + pos, cy - renderExtent, cx + pos, cy + renderExtent);
             } else {
-                ctx.moveTo(cx - maxExtent, cy + pos);
-                ctx.lineTo(cx + maxExtent, cy + pos);
+                target.p.push(cx - renderExtent, cy + pos, cx + renderExtent, cy + pos);
             }
-            ctx.strokeStyle = isOnLine
-                ? 'rgba(184, 168, 120, 0.06)'
-                : 'rgba(184, 168, 120, 0.03)';
-            ctx.lineWidth = 1;
+        }
+        ctx.lineWidth = 1;
+        if (alongOn.p) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.06)';
+            ctx.beginPath();
+            for (var ai = 0; ai < alongOn.p.length; ai += 4) { ctx.moveTo(alongOn.p[ai], alongOn.p[ai+1]); ctx.lineTo(alongOn.p[ai+2], alongOn.p[ai+3]); }
+            ctx.stroke();
+        }
+        if (alongOff.p) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.03)';
+            ctx.beginPath();
+            for (var ao = 0; ao < alongOff.p.length; ao += 4) { ctx.moveTo(alongOff.p[ao], alongOff.p[ao+1]); ctx.lineTo(alongOff.p[ao+2], alongOff.p[ao+3]); }
             ctx.stroke();
         }
 
-        // Cross lines (perpendicular, same spacing = square cells, fills canvas)
-        for (var c = -gridCountCross; c <= gridCountCross; c++) {
+        var crossCenter = [];
+        var crossOther = [];
+        for (var c = -renderGridCount; c <= renderGridCount; c++) {
             var cPos = c * gridSpacing;
-            var isCenterLine = (c === 0);
-            ctx.beginPath();
+            var cTarget = (c === 0) ? crossCenter : crossOther;
             if (isHoriz) {
-                ctx.moveTo(cx - maxExtent, cy + cPos);
-                ctx.lineTo(cx + maxExtent, cy + cPos);
+                cTarget.push(cx - renderExtent, cy + cPos, cx + renderExtent, cy + cPos);
             } else {
-                ctx.moveTo(cx + cPos, cy - maxExtent);
-                ctx.lineTo(cx + cPos, cy + maxExtent);
+                cTarget.push(cx + cPos, cy - renderExtent, cx + cPos, cy + renderExtent);
             }
-            ctx.strokeStyle = isCenterLine
-                ? 'rgba(184, 168, 120, 0.15)'
-                : 'rgba(184, 168, 120, 0.04)';
-            ctx.lineWidth = 1;
+        }
+        if (crossCenter.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.15)';
+            ctx.beginPath();
+            for (var ci = 0; ci < crossCenter.length; ci += 4) { ctx.moveTo(crossCenter[ci], crossCenter[ci+1]); ctx.lineTo(crossCenter[ci+2], crossCenter[ci+3]); }
+            ctx.stroke();
+        }
+        if (crossOther.length > 0) {
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.04)';
+            ctx.beginPath();
+            for (var co = 0; co < crossOther.length; co += 4) { ctx.moveTo(crossOther[co], crossOther[co+1]); ctx.lineTo(crossOther[co+2], crossOther[co+3]); }
             ctx.stroke();
         }
 
-        // Grid dots extending endlessly, colored by school (batched by column)
-        var maxDots = 20000;
-        var dotPerAxis = Math.floor((Math.sqrt(maxDots) - 1) / 2);
-        for (var da = -dotPerAxis; da <= dotPerAxis; da++) {
+        // Grid dots: batch by color — single path per color instead of individual fillRect
+        var dotBuckets = {};
+        for (var da = -renderDotsPerAxis; da <= renderDotsPerAxis; da++) {
             var alongPos = da * gridSpacing;
-
-            // One fillStyle per column — school color if within line, neutral otherwise
             var colColor = 'rgba(184, 168, 120, 0.08)';
             if (schoolCount > 0 && alongPos >= -halfLen - 0.5 && alongPos <= halfLen + 0.5) {
                 for (var dsi = 0; dsi < schoolCount; dsi++) {
@@ -279,20 +296,38 @@ var TreePreviewFlat = {
                     }
                 }
             }
-            ctx.fillStyle = colColor;
-
-            for (var dc = -dotPerAxis; dc <= dotPerAxis; dc++) {
+            if (!dotBuckets[colColor]) dotBuckets[colColor] = [];
+            var bucket = dotBuckets[colColor];
+            for (var dc = -renderDotsPerAxis; dc <= renderDotsPerAxis; dc++) {
                 var crossPos = dc * gridSpacing;
-                var dx = isHoriz ? cx + alongPos : cx + crossPos;
-                var dy = isHoriz ? cy + crossPos : cy + alongPos;
-                ctx.fillRect(dx - 1, dy - 1, 3, 3);
+                bucket.push(
+                    isHoriz ? cx + alongPos : cx + crossPos,
+                    isHoriz ? cy + crossPos : cy + alongPos
+                );
             }
         }
+        for (var bColor in dotBuckets) {
+            var bPts = dotBuckets[bColor];
+            ctx.fillStyle = bColor;
+            ctx.beginPath();
+            for (var bi = 0; bi < bPts.length; bi += 2) {
+                ctx.rect(bPts[bi] - 1, bPts[bi + 1] - 1, 3, 3);
+            }
+            ctx.fill();
+        }
 
-        // Collect grid point positions for downstream modules
-        this._lastRenderData.gridPoints = this._collectFlatGridPoints(
-            gridSpacing, dotPerAxis, isHoriz, schools, segStarts, segmentSizes, halfLen
-        );
+        // Collect grid point positions (cached — full extent for layout, not rendering)
+        var gpCacheKey = s.linePoints + '|' + s.direction + '|' + schoolCount + '|' +
+            (s.proportional ? 1 : 0) + '|' + schools.join(',');
+        if (this._gridPointCache && this._gridPointCacheKey === gpCacheKey) {
+            this._lastRenderData.gridPoints = this._gridPointCache;
+        } else {
+            this._lastRenderData.gridPoints = this._collectFlatGridPoints(
+                gridSpacing, layoutDotsPerAxis, isHoriz, schools, segStarts, segmentSizes, halfLen
+            );
+            this._gridPointCache = this._lastRenderData.gridPoints;
+            this._gridPointCacheKey = gpCacheKey;
+        }
 
         // --- Draw the root line (on top of grid) ---
         ctx.beginPath();

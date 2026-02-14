@@ -71,40 +71,45 @@ var ClassicSettings = {
         var btnOff = 'background:transparent; color:rgba(184,168,120,0.4);';
 
         return '' +
-            '<div class="tree-preview-settings-title">Classic Growth Settings</div>' +
+            '<div class="tree-preview-settings-title">' + t('preview.classic.title') + '</div>' +
 
             // --- Spell Matching toggle (3-way) ---
-            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; padding:0 4px;">' +
-                '<span style="font-size:10px; color:rgba(184,168,120,0.6); white-space:nowrap;">Spell Matching</span>' +
+            '<div style="display:flex; align-items:center; gap:8px; margin-bottom:2px; padding:0 4px;">' +
+                '<span style="font-size:10px; color:rgba(184,168,120,0.6); white-space:nowrap;">' + t('preview.classic.spellMatching') + '</span>' +
                 '<div style="display:flex;">' +
-                    '<div id="tgClassicMatchSimple" style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (spellMatching === 'simple' ? btnAct : btnOff) + '">Simple</div>' +
-                    '<div id="tgClassicMatchLayered" style="' + btnBase + ' border-left:none; ' + (spellMatching === 'layered' ? btnAct : btnOff) + '">Layered</div>' +
-                    '<div id="tgClassicMatchSmart" style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (spellMatching === 'smart' ? btnAct : btnOff) + '">Smart</div>' +
+                    '<div id="tgClassicMatchSimple" style="' + btnBase + ' border-radius:3px 0 0 3px; ' + (spellMatching === 'simple' ? btnAct : btnOff) + '">' + t('preview.classic.simple') + '</div>' +
+                    '<div id="tgClassicMatchLayered" style="' + btnBase + ' border-left:none; ' + (spellMatching === 'layered' ? btnAct : btnOff) + '">' + t('preview.classic.layered') + '</div>' +
+                    '<div id="tgClassicMatchSmart" style="' + btnBase + ' border-radius:0 3px 3px 0; border-left:none; ' + (spellMatching === 'smart' ? btnAct : btnOff) + '">' + t('preview.classic.smart') + '</div>' +
                 '</div>' +
+            '</div>' +
+            '<div id="tgClassicMatchDesc" style="font-size:9px; color:rgba(184,168,120,0.35); padding:0 4px 4px; min-height:22px;">' +
+                (spellMatching === 'simple' ? 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.' :
+                 spellMatching === 'smart' ? 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.' :
+                 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.') +
             '</div>' +
 
             // --- Slider grid ---
             '<div class="tree-preview-settings-grid">' +
-                H('Ghost Opacity', 'tgClassicOpacity', 0, 100, 5, opacity, '%') +
-                H('Node Size', 'tgClassicNodeSize', 1, 20, 1, nodeSize) +
-                H('Spread', 'tgClassicSpread', 0, 100, 5, spread) +
-                H('Radial Bias', 'tgClassicRadialBias', 0, 100, 5, radialBias) +
-                H('Globe Mask', 'tgClassicCenterMask', 0, 10, 1, centerMask, ' tiers') +
+                H(t('preview.ghostOpacity'), 'tgClassicOpacity', 0, 100, 5, opacity, '%') +
+                H(t('preview.nodeSize'), 'tgClassicNodeSize', 1, 20, 1, nodeSize) +
+                H(t('preview.classic.spread'), 'tgClassicSpread', 0, 100, 5, spread) +
+                H(t('preview.classic.radialBias'), 'tgClassicRadialBias', 0, 100, 5, radialBias) +
+                H(t('preview.classic.globeMask'), 'tgClassicCenterMask', 0, 10, 1, centerMask, ' tiers') +
             '</div>' +
 
             // --- Dynamic Grid Expansion toggle ---
             '<div style="display:flex; align-items:center; gap:8px; margin:4px 4px 6px; font-size:10px;">' +
                 '<label style="display:flex; align-items:center; gap:5px; cursor:pointer; color:rgba(184,168,120,0.6);">' +
                     '<input type="checkbox" id="tgClassicDynExpand"' + (dynamicExpansion ? ' checked' : '') + '>' +
-                    'Dynamic Grid Expansion' +
+                    t('preview.classic.dynamicExpansion') +
                 '</label>' +
                 '<span style="color:rgba(184,168,120,0.3); font-size:9px;" title="Automatically expand grid when a school runs out of placement space (e.g. large Destruction trees)">(?)</span>' +
             '</div>' +
 
             // --- Tier zone bar chart ---
-            '<div class="tree-preview-settings-title" style="margin-top:8px;">Tier Placement Zones</div>' +
+            '<div class="tree-preview-settings-title" style="margin-top:8px;">' + t('preview.classic.tierZones') + '</div>' +
             this._buildTierChartHTML(s) +
-            '<div style="text-align:center; margin-top:2px; font-size:9px; color:rgba(184,168,120,0.3);">drag handles to adjust</div>';
+            '<div style="text-align:center; margin-top:2px; font-size:9px; color:rgba(184,168,120,0.3);">' + t('preview.dragHandles') + '</div>';
     },
 
     /** Build the tier zone bar chart HTML. @private */
@@ -146,7 +151,7 @@ var ClassicSettings = {
                 '</div>' +
 
                 // Label below the bar
-                '<div class="classic-tier-label" style="font-size:9px; color:rgba(184,168,120,0.7); margin-top:3px; white-space:nowrap;">' + cfg.label + '</div>' +
+                '<div class="classic-tier-label" style="font-size:9px; color:rgba(184,168,120,0.7); margin-top:3px; white-space:nowrap;">' + t('preview.classic.tier' + cfg.key) + '</div>' +
             '</div>';
         }
 
@@ -213,13 +218,23 @@ var ClassicSettings = {
                     .replace(/color:[^;]+/, isAct ? actCol : offCol);
             }
         };
+        var matchDescs = {
+            simple: 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.',
+            layered: 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.',
+            smart: 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.'
+        };
+        var descEl = document.getElementById('tgClassicMatchDesc');
         var modes = ['simple', 'layered', 'smart'];
         for (var mi = 0; mi < modes.length; mi++) {
             (function (mode) {
                 if (matchBtns[mode]) {
                     matchBtns[mode].addEventListener('click', function () {
                         setMatchActive(mode);
+                        if (descEl) descEl.textContent = matchDescs[mode];
                         onChanged('spellMatching', mode);
+                    });
+                    matchBtns[mode].addEventListener('mouseenter', function () {
+                        if (descEl) descEl.textContent = matchDescs[mode];
                     });
                 }
             })(modes[mi]);

@@ -7,7 +7,10 @@ Thank you for helping translate Heart of Magic! This guide explains how to creat
 1. Copy `en.json` and rename it to your language code (e.g. `fr.json`, `de.json`, `es.json`, `pt-br.json`)
 2. Translate the values (right side of each line) - **do NOT change the keys** (left side)
 3. Update the `_meta` section with your language name and your name as author
-4. Test in-game by changing the locale setting
+4. Edit `lang/locale.js` and change `'en'` to your locale code (e.g. `'fr'`)
+5. Test in-game by opening the Heart of Magic panel
+
+**Important:** Only edit `locale.js` to set your language - do NOT edit `index.html`. The `locale.js` file is safe to overwrite and will not be changed by mod updates.
 
 ## File Format
 
@@ -73,10 +76,14 @@ If a key is missing from your translation file, the English text from the HTML w
 ## Testing Your Translation
 
 1. Place your translation file (e.g. `fr.json`) in the `lang/` folder
-2. In `index.html`, find the line `<script>initI18n('en');</script>`
-3. Change `'en'` to your locale code: `<script>initI18n('fr');</script>`
-4. Launch the game and open the Heart of Magic panel
-5. Check the browser console (F12 in dev harness) for any `[i18n]` messages
+2. Edit `lang/locale.js` and change `'en'` to your locale code:
+   ```js
+   window._i18nLocale = 'fr';
+   ```
+3. Launch the game and open the Heart of Magic panel
+4. Check the browser console (F12 in dev harness) for any `[i18n]` messages
+
+**Note:** You do NOT need to edit `index.html`. The `locale.js` file controls which language is loaded. This file is specifically designed to be overwritten by translators and will not be changed by mod updates.
 
 ## Key Naming Convention
 

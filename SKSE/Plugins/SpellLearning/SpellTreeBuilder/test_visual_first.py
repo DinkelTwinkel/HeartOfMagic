@@ -605,12 +605,13 @@ def generate_and_assess(spells: List[Dict], config: SchoolConfig, seed: int = 12
     
     start_time = time.time()
     
-    # Group by school
+    # Group by school (only the 5 vanilla magic schools)
+    VALID_SCHOOLS = {'Alteration', 'Conjuration', 'Destruction', 'Illusion', 'Restoration'}
     by_school = {}
     for spell in spells:
-        school = spell.get("school", "Unknown")
-        if not school or school in ("null", "None", ""):
-            school = "Hedge Wizard"
+        school = spell.get("school", "")
+        if school not in VALID_SCHOOLS:
+            continue
         if school not in by_school:
             by_school[school] = []
         by_school[school].append(spell)

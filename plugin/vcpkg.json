@@ -8,6 +8,7 @@
         "rapidcsv",
         "xbyak",
         "directxmath",
-        "directxtk"
+        "directxtk",
+        "miniz"
     ]
 }

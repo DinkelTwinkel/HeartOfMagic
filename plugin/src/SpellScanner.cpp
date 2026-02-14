@@ -298,6 +298,20 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
     // HELPER FUNCTIONS
     // =============================================================================
 
+    bool IsValidMagicSchool(RE::ActorValue school)
+    {
+        switch (school) {
+            case RE::ActorValue::kAlteration:
+            case RE::ActorValue::kConjuration:
+            case RE::ActorValue::kDestruction:
+            case RE::ActorValue::kIllusion:
+            case RE::ActorValue::kRestoration:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     std::string GetSchoolName(RE::ActorValue school)
     {
         switch (school) {
@@ -779,16 +793,9 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 }
             }
 
-            if (school == RE::ActorValue::kNone) {
+            if (!IsValidMagicSchool(school)) {
                 skipNoSchool++;
                 skippedCount++;
-                continue;
-            }
-            
-            // Filter out spells with absurdly high magicka costs (usually NPC-only)
-            float magickaCost = spell->CalculateMagickaCost(nullptr);
-            if (magickaCost > 1000.0f) {
-                filteredCount++;
                 continue;
             }
             
@@ -1017,8 +1024,8 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 }
             }
 
-            // Skip non-magic spells
-            if (school == RE::ActorValue::kNone) continue;
+            // Skip non-magic spells (only allow the 5 vanilla schools)
+            if (!IsValidMagicSchool(school)) continue;
 
             // Build spell JSON (same format as ScanSpellsToJson)
             json spellJson;

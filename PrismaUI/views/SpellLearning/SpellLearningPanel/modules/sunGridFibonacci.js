@@ -49,13 +49,11 @@ var SunGridFibonacci = {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // --- Spiral dots (fillRect for perf) ---
-        var lastColor = '';
+        // --- Spiral dots — batch by color for single path per color ---
+        var fibBuckets = {};
         for (var i = 1; i <= totalPoints; i++) {
             var r = maxRadius * Math.sqrt(i / totalPoints);
             var a = i * goldenAngle;
-            var px = cx + Math.cos(a) * r;
-            var py = cy + Math.sin(a) * r;
             var color;
             if (opts.pointColorFn) {
                 color = opts.pointColorFn(a);
@@ -64,8 +62,17 @@ var SunGridFibonacci = {
                     ? 'rgba(184, 168, 120, 0.35)'
                     : 'rgba(184, 168, 120, 0.15)';
             }
-            if (color !== lastColor) { ctx.fillStyle = color; lastColor = color; }
-            ctx.fillRect(px - 1, py - 1, 3, 3);
+            if (!fibBuckets[color]) fibBuckets[color] = [];
+            fibBuckets[color].push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+        }
+        for (var fbColor in fibBuckets) {
+            var fbPts = fibBuckets[fbColor];
+            ctx.fillStyle = fbColor;
+            ctx.beginPath();
+            for (var fbi = 0; fbi < fbPts.length; fbi += 2) {
+                ctx.rect(fbPts[fbi] - 1, fbPts[fbi + 1] - 1, 3, 3);
+            }
+            ctx.fill();
         }
 
         // --- Center dot ---

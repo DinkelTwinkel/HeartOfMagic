@@ -133,19 +133,17 @@ var ClassicLayout = {
                 }
             } else {
                 var growsOutward = this._isOutward(schoolRoots[0]);
-                var minLayoutR, maxLayoutR;
+                var minLayoutR;
                 if (growsOutward) {
                     minLayoutR = ringRadius - tierSpacing;
-                    maxLayoutR = ringRadius + tierSpacing * 25;
                 } else {
                     minLayoutR = tierSpacing;
-                    maxLayoutR = ringRadius + tierSpacing;
                 }
                 for (var gpi2 = 0; gpi2 < allGridPoints.length; gpi2++) {
                     var gp = allGridPoints[gpi2];
                     if (gp.school !== schoolName) continue;
                     var gpR = Math.sqrt(gp.x * gp.x + gp.y * gp.y);
-                    if (gpR >= minLayoutR && gpR <= maxLayoutR) {
+                    if (gpR >= minLayoutR) {
                         schoolGridPts.push(gp);
                     }
                 }
@@ -236,10 +234,25 @@ var ClassicLayout = {
 
         // Count tree nodes to check if grid has enough capacity
         var nodeCount = schoolTree.nodes ? schoolTree.nodes.length : 0;
-        if (nodeCount > schoolGridPts.length) {
-            var deficit = nodeCount - schoolGridPts.length;
+        var deficit = nodeCount - schoolGridPts.length;
+        // Also check grid depth: estimate tiers needed and ensure grid extends far enough
+        if (nodeCount > 0) {
+            var estimatedTiers = Math.ceil(Math.sqrt(nodeCount)) + 5;
+            var neededRadius = ringRadius + tierSpacing * estimatedTiers;
+            var currentMaxR = 0;
+            for (var cri = 0; cri < schoolGridPts.length; cri++) {
+                var crp = schoolGridPts[cri];
+                var crr = Math.sqrt(crp.x * crp.x + crp.y * crp.y);
+                if (crr > currentMaxR) currentMaxR = crr;
+            }
+            if (currentMaxR < neededRadius) {
+                var depthDeficit = Math.ceil((neededRadius - currentMaxR) / tierSpacing) * 4;
+                deficit = Math.max(deficit, depthDeficit);
+            }
+        }
+        if (deficit > 0) {
             console.log('[ClassicLayout] Grid deficit: ' + nodeCount + ' nodes vs ' +
-                schoolGridPts.length + ' points, densifying by ' + deficit);
+                schoolGridPts.length + ' points, expanding by ' + deficit);
             schoolGridPts = this._densifyGrid(schoolGridPts, deficit, tierSpacing);
         }
 
@@ -295,6 +308,14 @@ var ClassicLayout = {
         var occupied = {};  // grid point index -> true
         var queued = {};    // formId -> true (in BFS queue, prevents double-assign)
         var spells = this._getSpellData();
+        // Build spell lookup map for O(1) access instead of O(N) linear scan
+        var spellMap = {};
+        if (spells) {
+            for (var smi = 0; smi < spells.length; smi++) {
+                if (spells[smi].formId) spellMap[spells[smi].formId] = spells[smi];
+            }
+        }
+        this._spellMap = spellMap;
         var deferredNodes = []; // shared across phases 1-3
 
         // ==== Phase 1: Seed ALL physical roots before any BFS ====
@@ -636,6 +657,18 @@ var ClassicLayout = {
                             }
                         }
 
+                        // Tier ordering: parent should be at lower or equal tier
+                        var dfTierOrdMap = { 'Novice': 1, 'Apprentice': 2, 'Adept': 3, 'Expert': 4, 'Master': 5 };
+                        var defTierVal = dfTierOrdMap[def.skillLevel] || 3;
+                        var pnTierVal = dfTierOrdMap[pn.skillLevel] || 3;
+                        if (pnTierVal > defTierVal) {
+                            // Parent tier higher than child — wrong direction
+                            dfScore -= 300;
+                        } else if (pnTierVal === defTierVal - 1) {
+                            // Ideal: immediate predecessor tier
+                            dfScore += 30;
+                        }
+
                         // Fan-out cap: strongly discourage parents already at limit
                         var pnCC = parentChildCount[pn.formId] || 0;
                         if (pnCC >= FAN_OUT_CAP) {
@@ -741,7 +774,6 @@ var ClassicLayout = {
             });
 
             var expansionAttempts = 0;
-            var MAX_EXPANSIONS = 3;
 
             // For each unplaced node, find nearest open grid point to any placed neighbor
             for (var fp = 0; fp < unplacedIds.length && openGridPts.length > 0; fp++) {
@@ -777,6 +809,16 @@ var ClassicLayout = {
                         if (fpCandTheme === fpTheme) fpScore += 100;
                         else if (fpCandTheme && fpCandTheme !== '_none') fpScore -= 20;
                     }
+                    // Tier ordering: parent should be at lower or equal tier
+                    var fpTierMap = { 'Novice': 1, 'Apprentice': 2, 'Adept': 3, 'Expert': 4, 'Master': 5 };
+                    var fpNodeTier = fpTierMap[fpNode ? (fpNode.skillLevel || '') : ''] || 3;
+                    var fpCandTier = fpTierMap[fpCandidate.skillLevel || ''] || 3;
+                    if (fpCandTier > fpNodeTier) {
+                        fpScore -= 300; // Wrong direction
+                    } else if (fpCandTier === fpNodeTier - 1) {
+                        fpScore += 30; // Ideal predecessor tier
+                    }
+
                     // Fan-out cap: strongly discourage parents already at limit
                     var fpCandCC = parentChildCount[fpCandidate.formId] || 0;
                     if (fpCandCC >= FAN_OUT_CAP) fpScore -= 500;
@@ -796,12 +838,20 @@ var ClassicLayout = {
                     nearGridIdx = openGridPts[0];
                 }
 
-                // Dynamic grid expansion: grow grid when out of space
-                if (nearGridIdx < 0 && this._dynamicGridExpansion && expansionAttempts < MAX_EXPANSIONS) {
+                // Dynamic grid expansion: grow grid when out of space (infinite expansion)
+                if (nearGridIdx < 0 && this._dynamicGridExpansion) {
                     expansionAttempts++;
                     var remaining = unplacedIds.length - fp;
                     var oldCount = schoolGridPts.length;
                     schoolGridPts = this._densifyGrid(schoolGridPts, Math.max(remaining, 20), tierSpacing);
+
+                    // Stop if densify made no progress (can't grow further)
+                    if (schoolGridPts.length <= oldCount) {
+                        console.warn('[ClassicLayout] Expansion #' + expansionAttempts +
+                            ' made no progress, stopping (' + remaining + ' nodes unplaced)');
+                        break;
+                    }
+
                     console.log('[ClassicLayout] Dynamic expansion #' + expansionAttempts +
                         ': ' + oldCount + ' -> ' + schoolGridPts.length + ' points (' + remaining + ' nodes remaining)');
 
@@ -830,7 +880,7 @@ var ClassicLayout = {
                     continue;
                 }
 
-                if (nearGridIdx < 0) break; // truly out of space after max expansions
+                if (nearGridIdx < 0) break; // truly out of space (no progress possible)
 
                 occupied[nearGridIdx] = true;
                 placed[fpId] = true;
@@ -925,16 +975,38 @@ var ClassicLayout = {
         var maxNeighbors = 8;
         var adj = {};
 
+        // Spatial hash: O(N) amortized instead of O(N²)
+        var cellSize = maxDist;
+        var cells = {};
+        for (var hi = 0; hi < points.length; hi++) {
+            var hcx = Math.floor(points[hi].x / cellSize);
+            var hcy = Math.floor(points[hi].y / cellSize);
+            var hk = hcx + ',' + hcy;
+            if (!cells[hk]) cells[hk] = [];
+            cells[hk].push(hi);
+        }
+
         for (var i = 0; i < points.length; i++) {
             var pi = points[i];
+            var cx = Math.floor(pi.x / cellSize);
+            var cy = Math.floor(pi.y / cellSize);
             var candidates = [];
-            for (var j = 0; j < points.length; j++) {
-                if (i === j) continue;
-                var dx = points[j].x - pi.x;
-                var dy = points[j].y - pi.y;
-                var d2 = dx * dx + dy * dy;
-                if (d2 <= maxDist2) {
-                    candidates.push({ idx: j, dist: d2 });
+            // Check 3x3 cell neighborhood
+            for (var dcx = -1; dcx <= 1; dcx++) {
+                for (var dcy = -1; dcy <= 1; dcy++) {
+                    var nk = (cx + dcx) + ',' + (cy + dcy);
+                    var cell = cells[nk];
+                    if (!cell) continue;
+                    for (var ci = 0; ci < cell.length; ci++) {
+                        var j = cell[ci];
+                        if (i === j) continue;
+                        var dx = points[j].x - pi.x;
+                        var dy = points[j].y - pi.y;
+                        var d2 = dx * dx + dy * dy;
+                        if (d2 <= maxDist2) {
+                            candidates.push({ idx: j, dist: d2 });
+                        }
+                    }
                 }
             }
             candidates.sort(function (a, b) { return a.dist - b.dist; });
@@ -1235,7 +1307,10 @@ var ClassicLayout = {
     },
 
     _findSpell: function (formId, spells) {
-        if (!spells || !formId) return null;
+        if (!formId) return null;
+        // Use pre-built map for O(1) lookup
+        if (this._spellMap) return this._spellMap[formId] || null;
+        if (!spells) return null;
         for (var i = 0; i < spells.length; i++) {
             if (spells[i].formId === formId) return spells[i];
         }
@@ -1275,16 +1350,37 @@ var ClassicLayout = {
         var maxDist2 = maxDist * maxDist;
 
         // Build pairs sorted by radius (outermost first, most room to add)
+        // Spatial hash for O(N) pair discovery instead of O(N²)
+        var pairCellSize = maxDist;
+        var pairCells = {};
+        for (var phi = 0; phi < pts.length; phi++) {
+            var phcx = Math.floor(pts[phi].x / pairCellSize);
+            var phcy = Math.floor(pts[phi].y / pairCellSize);
+            var phk = phcx + ',' + phcy;
+            if (!pairCells[phk]) pairCells[phk] = [];
+            pairCells[phk].push(phi);
+        }
         var pairs = [];
-        for (var i = 0; i < pts.length && added < needed; i++) {
-            for (var j = i + 1; j < pts.length; j++) {
-                var dx = pts[j].x - pts[i].x;
-                var dy = pts[j].y - pts[i].y;
-                var d2 = dx * dx + dy * dy;
-                if (d2 <= maxDist2 && d2 > 1) {
-                    var avgR = (Math.sqrt(pts[i].x * pts[i].x + pts[i].y * pts[i].y) +
-                                Math.sqrt(pts[j].x * pts[j].x + pts[j].y * pts[j].y)) / 2;
-                    pairs.push({ i: i, j: j, avgR: avgR });
+        for (var i = 0; i < pts.length; i++) {
+            var pcx = Math.floor(pts[i].x / pairCellSize);
+            var pcy = Math.floor(pts[i].y / pairCellSize);
+            for (var pdcx = -1; pdcx <= 1; pdcx++) {
+                for (var pdcy = -1; pdcy <= 1; pdcy++) {
+                    var pnk = (pcx + pdcx) + ',' + (pcy + pdcy);
+                    var pCell = pairCells[pnk];
+                    if (!pCell) continue;
+                    for (var pci = 0; pci < pCell.length; pci++) {
+                        var j = pCell[pci];
+                        if (j <= i) continue; // avoid duplicate pairs
+                        var dx = pts[j].x - pts[i].x;
+                        var dy = pts[j].y - pts[i].y;
+                        var d2 = dx * dx + dy * dy;
+                        if (d2 <= maxDist2 && d2 > 1) {
+                            var avgR = (Math.sqrt(pts[i].x * pts[i].x + pts[i].y * pts[i].y) +
+                                        Math.sqrt(pts[j].x * pts[j].x + pts[j].y * pts[j].y)) / 2;
+                            pairs.push({ i: i, j: j, avgR: avgR });
+                        }
+                    }
                 }
             }
         }
@@ -1301,15 +1397,21 @@ var ClassicLayout = {
             added++;
         }
 
-        if (added < needed) {
-            // Still short: add points extending outward from outermost ring
-            var outerPts = result.slice().sort(function (a, b) {
+        // Multi-round radial extension: keep adding outward tiers until we have enough
+        var extensionRound = 0;
+        var seedStart = 0; // index into result to start scanning for outermost seeds
+        while (added < needed && extensionRound < 50) {
+            extensionRound++;
+            var addedThisRound = 0;
+            // Sort unprocessed points by radius descending (outermost first)
+            var seeds = result.slice(seedStart).sort(function (a, b) {
                 var ra = a.x * a.x + a.y * a.y;
                 var rb = b.x * b.x + b.y * b.y;
                 return rb - ra;
             });
-            for (var oi = 0; oi < outerPts.length && added < needed; oi++) {
-                var op = outerPts[oi];
+            seedStart = result.length; // next round starts from new points
+            for (var oi = 0; oi < seeds.length && added < needed; oi++) {
+                var op = seeds[oi];
                 var oR = Math.sqrt(op.x * op.x + op.y * op.y);
                 if (oR < 1) continue;
                 var nx = op.x * (1 + tierSpacing / oR);
@@ -1319,7 +1421,9 @@ var ClassicLayout = {
                 existingSet[nk] = true;
                 result.push({ x: nx, y: ny, school: school });
                 added++;
+                addedThisRound++;
             }
+            if (addedThisRound === 0) break; // no progress, stop
         }
 
         console.log('[ClassicLayout] Densified grid: ' + pts.length + ' -> ' + result.length +
@@ -1420,7 +1524,8 @@ var ClassicLayout = {
                     score -= Math.abs(rTier - orphanTier) * 5;
 
                     // Penalize parent at higher tier than orphan (wrong direction)
-                    if (rTier > orphanTier) score -= 20;
+                    // Must be strong enough to override theme match (+50)
+                    if (rTier > orphanTier) score -= 200;
 
                     // Load balance: prefer less-loaded nodes
                     score -= rChildCount * 3;

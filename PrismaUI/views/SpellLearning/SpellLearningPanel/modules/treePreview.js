@@ -35,6 +35,12 @@ var TreePreview = {
     _pendingPanX: 0,
     _pendingPanY: 0,
     _panRafPending: false,
+    _mouseDownX: 0,
+    _mouseDownY: 0,
+
+    // Root selection
+    _rootSelectionSchool: null,
+    _rootSelectionSpells: [],
 
     // Render loop
     _needsRender: false,
@@ -122,7 +128,7 @@ var TreePreview = {
 
         return '' +
             '<div class="tree-preview-header">' +
-                '<span class="tree-preview-title">Root Base Preview</span>' +
+                '<span class="tree-preview-title">' + t('preview.title') + '</span>' +
             '</div>' +
             '<div class="tree-preview-tabs" id="treePreviewTabs">' +
                 tabsHTML +
@@ -300,12 +306,19 @@ var TreePreview = {
                 self._isPanning = true;
                 self._panStartX = e.clientX - self.panX;
                 self._panStartY = e.clientY - self.panY;
+                self._mouseDownX = e.clientX;
+                self._mouseDownY = e.clientY;
                 canvas.style.cursor = 'grabbing';
             }
         });
 
         canvas.addEventListener('mousemove', function(e) {
-            if (!self._isPanning) return;
+            if (!self._isPanning) {
+                // Hover cursor: pointer if over a root node, grab otherwise
+                var hit = self._hitTestRootNode(e);
+                canvas.style.cursor = hit ? 'pointer' : 'grab';
+                return;
+            }
 
             self._pendingPanX = e.clientX - self._panStartX;
             self._pendingPanY = e.clientY - self._panStartY;
@@ -321,9 +334,17 @@ var TreePreview = {
             }
         });
 
-        document.addEventListener('mouseup', function() {
+        document.addEventListener('mouseup', function(e) {
             if (self._isPanning) {
                 self._isPanning = false;
+
+                // Click vs pan: if mouse moved < 5px, it's a click
+                var dx = e.clientX - self._mouseDownX;
+                var dy = e.clientY - self._mouseDownY;
+                if (Math.sqrt(dx * dx + dy * dy) < 5) {
+                    self._handleClick(e);
+                }
+
                 if (self.canvas) self.canvas.style.cursor = 'grab';
             }
         });
@@ -439,6 +460,9 @@ var TreePreview = {
             modeModule.render(ctx, w, h, this.schoolData);
         }
 
+        // Overlay: selected root indicators (inside transform context)
+        this._renderSelectedRootOverlays(ctx, w, h, modeModule);
+
         ctx.restore();
 
         // Draw zoom level indicator
@@ -475,6 +499,305 @@ var TreePreview = {
     },
 
     // =========================================================================
+    // ROOT NODE CLICK DETECTION
+    // =========================================================================
+
+    /** Convert screen (CSS) coordinates to world coordinates in the preview canvas. */
+    _screenToWorld: function(clientX, clientY) {
+        if (!this.canvas) return null;
+        var rect = this.canvas.getBoundingClientRect();
+        var cssX = clientX - rect.left;
+        var cssY = clientY - rect.top;
+        var w = this._width || 400;
+        var h = this._height || 400;
+        var modeModule = this.modes[this.activeMode];
+        var fitScale = this._computeFitScale(modeModule, w, h);
+        var totalScale = this.zoom * fitScale;
+        if (totalScale === 0) return null;
+        // Invert the render transform: translate(w/2+panX, h/2+panY) → scale(totalScale) → translate(-w/2, -h/2)
+        var worldX = (cssX - (w / 2 + this.panX)) / totalScale + w / 2;
+        var worldY = (cssY - (h / 2 + this.panY)) / totalScale + h / 2;
+        return { x: worldX, y: worldY };
+    },
+
+    /** Hit-test root nodes. Returns the rootNode object if hit, or null. */
+    _hitTestRootNode: function(e) {
+        var world = this._screenToWorld(e.clientX, e.clientY);
+        if (!world) return null;
+        var modeModule = this.modes[this.activeMode];
+        if (!modeModule || !modeModule._lastRenderData) return null;
+        var rootNodes = modeModule._lastRenderData.rootNodes;
+        if (!rootNodes) return null;
+        var w = this._width || 400;
+        var h = this._height || 400;
+        var hitRadius = 12; // pixels in world space
+        for (var i = 0; i < rootNodes.length; i++) {
+            var n = rootNodes[i];
+            // rootNodes store x,y relative to center (0,0), rendering adds w/2, h/2
+            var nx = n.x + w / 2;
+            var ny = n.y + h / 2;
+            var dx = world.x - nx;
+            var dy = world.y - ny;
+            if (Math.sqrt(dx * dx + dy * dy) <= hitRadius) {
+                return n;
+            }
+        }
+        return null;
+    },
+
+    /** Handle a click (not a pan) on the preview canvas. */
+    _handleClick: function(e) {
+        var hitNode = this._hitTestRootNode(e);
+        if (hitNode && hitNode.school) {
+            this.showRootSelectionModal(hitNode.school);
+        }
+    },
+
+    // =========================================================================
+    // ROOT SELECTION MODAL (reuses #spawn-spell-modal)
+    // =========================================================================
+
+    showRootSelectionModal: function(school) {
+        this._rootSelectionSchool = school;
+
+        var modal = document.getElementById('spawn-spell-modal');
+        if (!modal) {
+            console.warn('[TreePreview] #spawn-spell-modal not found');
+            return;
+        }
+
+        // Update title
+        var title = modal.querySelector('.modal-header h3');
+        if (title) {
+            title.textContent = 'Select Root \u2014 ' + school;
+        }
+
+        // Load primed spells for this school
+        if (typeof getPrimedSpellsForSchool === 'function') {
+            this._rootSelectionSpells = getPrimedSpellsForSchool(school);
+        } else {
+            this._rootSelectionSpells = [];
+        }
+
+        // Show modal
+        modal.classList.remove('hidden');
+
+        // Focus search
+        var searchInput = document.getElementById('spawn-search');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+        }
+
+        // Render initial list
+        this._renderRootSelectionList('');
+
+        // Set up listeners
+        this._setupRootSelectionListeners();
+    },
+
+    hideRootSelectionModal: function() {
+        var modal = document.getElementById('spawn-spell-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+        this._rootSelectionSchool = null;
+
+        // Restore original title
+        var title = modal ? modal.querySelector('.modal-header h3') : null;
+        if (title) {
+            title.textContent = 'Spawn Spell Node';
+        }
+    },
+
+    _renderRootSelectionList: function(searchTerm) {
+        var spellList = document.getElementById('spawn-spell-list');
+        if (!spellList) return;
+
+        var self = this;
+        var school = this._rootSelectionSchool;
+        searchTerm = (searchTerm || '').toLowerCase();
+
+        // Filter by search term
+        var filtered = this._rootSelectionSpells.filter(function(spell) {
+            if (!searchTerm) return true;
+            var nameMatch = (spell.name || '').toLowerCase().indexOf(searchTerm) !== -1;
+            var idMatch = (spell.formId || '').toLowerCase().indexOf(searchTerm) !== -1;
+            var levelMatch = (spell.skillLevel || spell.level || '').toLowerCase().indexOf(searchTerm) !== -1;
+            return nameMatch || idMatch || levelMatch;
+        });
+
+        // Sort alphabetically
+        filtered.sort(function(a, b) {
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        // Limit results
+        filtered = filtered.slice(0, 50);
+
+        // Check current selection
+        var currentRoot = settings.selectedRoots ? settings.selectedRoots[school] : null;
+        var currentFormId = currentRoot ? currentRoot.formId : null;
+
+        if (filtered.length === 0 && !searchTerm) {
+            spellList.innerHTML = '<div class="spawn-no-results">No primed spells for ' + school + '</div>';
+            return;
+        }
+        if (filtered.length === 0) {
+            spellList.innerHTML = '<div class="spawn-no-results">No matching spells</div>';
+            return;
+        }
+
+        spellList.innerHTML = '';
+        filtered.forEach(function(spell) {
+            var isSelected = spell.formId === currentFormId;
+            var item = document.createElement('div');
+            item.className = 'spawn-spell-item' + (isSelected ? ' on-tree' : '');
+            item.dataset.formId = spell.formId;
+
+            var badge = isSelected ? '<span class="spawn-on-tree-badge">CURRENT</span>' : '';
+            item.innerHTML =
+                '<div class="spawn-spell-name">' + (spell.name || spell.formId) + badge + '</div>' +
+                '<div class="spawn-spell-info">' +
+                    '<span>' + (spell.skillLevel || spell.level || '') + '</span>' +
+                    '<span style="opacity:0.5">' + (spell.formId || '') + '</span>' +
+                '</div>';
+
+            item.addEventListener('click', function() {
+                self._selectRoot(spell);
+            });
+
+            spellList.appendChild(item);
+        });
+    },
+
+    _setupRootSelectionListeners: function() {
+        var self = this;
+        var modal = document.getElementById('spawn-spell-modal');
+        if (!modal) return;
+
+        // Clone search input to remove old listeners
+        var searchInput = document.getElementById('spawn-search');
+        if (searchInput) {
+            var newInput = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newInput, searchInput);
+            newInput.addEventListener('input', function() {
+                self._renderRootSelectionList(this.value);
+            });
+        }
+
+        // Close button
+        var closeBtn = document.getElementById('spawn-modal-close');
+        if (closeBtn) {
+            closeBtn.onclick = function() { self.hideRootSelectionModal(); };
+        }
+
+        // Cancel button — repurpose as "Clear Selection" if a root is selected
+        var cancelBtn = document.getElementById('spawn-cancel');
+        if (cancelBtn) {
+            var school = this._rootSelectionSchool;
+            var hasSelection = settings.selectedRoots && settings.selectedRoots[school];
+            if (hasSelection) {
+                cancelBtn.textContent = 'Clear Selection';
+                cancelBtn.onclick = function() {
+                    self._clearRoot(school);
+                };
+            } else {
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.onclick = function() { self.hideRootSelectionModal(); };
+            }
+        }
+
+        // Backdrop click
+        var backdrop = modal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.onclick = function() { self.hideRootSelectionModal(); };
+        }
+    },
+
+    _selectRoot: function(spell) {
+        var school = this._rootSelectionSchool;
+        if (!school) return;
+
+        if (!settings.selectedRoots) {
+            settings.selectedRoots = {};
+        }
+
+        settings.selectedRoots[school] = {
+            formId: spell.formId,
+            name: spell.name || spell.formId,
+            school: school,
+            plugin: spell.plugin || '',
+            localFormId: typeof getLocalFormId === 'function' ? getLocalFormId(spell.formId) : spell.formId
+        };
+
+        console.log('[TreePreview] Selected root for ' + school + ': ' + spell.name + ' (' + spell.formId + ')');
+
+        if (typeof autoSaveSettings === 'function') {
+            autoSaveSettings();
+        }
+
+        this.hideRootSelectionModal();
+        this._markDirty();
+    },
+
+    _clearRoot: function(school) {
+        if (settings.selectedRoots && settings.selectedRoots[school]) {
+            delete settings.selectedRoots[school];
+            console.log('[TreePreview] Cleared root selection for ' + school);
+
+            if (typeof autoSaveSettings === 'function') {
+                autoSaveSettings();
+            }
+        }
+
+        this.hideRootSelectionModal();
+        this._markDirty();
+    },
+
+    // =========================================================================
+    // SELECTED ROOT VISUAL OVERLAYS
+    // =========================================================================
+
+    _renderSelectedRootOverlays: function(ctx, w, h, modeModule) {
+        if (!settings.selectedRoots) return;
+        if (!modeModule || !modeModule._lastRenderData) return;
+        var rootNodes = modeModule._lastRenderData.rootNodes;
+        if (!rootNodes || rootNodes.length === 0) return;
+
+        var nodeSize = modeModule.settings ? (modeModule.settings.nodeSize || 6) : 6;
+
+        for (var i = 0; i < rootNodes.length; i++) {
+            var n = rootNodes[i];
+            var sel = settings.selectedRoots[n.school];
+            if (!sel) continue;
+
+            var nx = n.x + w / 2;
+            var ny = n.y + h / 2;
+
+            // Gold selection ring
+            ctx.beginPath();
+            ctx.arc(nx, ny, nodeSize + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = '#b8a878';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Outer glow
+            ctx.beginPath();
+            ctx.arc(nx, ny, nodeSize + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(184, 168, 120, 0.25)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Spell name label below the node
+            ctx.font = '9px sans-serif';
+            ctx.fillStyle = '#b8a878';
+            ctx.textAlign = 'center';
+            ctx.fillText(sel.name || sel.formId, nx, ny + nodeSize + 18);
+        }
+    },
+
+    // =========================================================================
     // DATA OUTPUT — Universal format for downstream sections
     // =========================================================================
 
@@ -493,6 +816,7 @@ var TreePreview = {
             grid: gridData ? gridData.grid : null,
             gridPoints: gridData ? (gridData.gridPoints || []) : [],
             schoolData: self.schoolData || {},
+            selectedRoots: settings.selectedRoots || {},
             renderGrid: function(ctx, w, h) {
                 modeModule.render(ctx, w, h, self.schoolData);
             }

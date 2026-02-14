@@ -24,6 +24,7 @@
                 <button class="header-btn header-btn-wide" id="returnToTreeBtn" style="display:none;" title="Return to Spell Tree" data-i18n="tabs.return" data-i18n-title="tabs.returnTitle">Return</button>
                 <button class="header-btn header-btn-wide" id="tabSpellScan" data-tab="spellScan" title="Spell Scanner" data-i18n="tabs.scan" data-i18n-title="tabs.scanTitle">Scan</button>
                 <button class="header-btn header-btn-wide" id="tabSettings" data-tab="settings" title="Settings" data-i18n="tabs.settings" data-i18n-title="tabs.settingsTitle">Settings</button>
+                <button class="header-btn header-btn-wide header-btn-warn" id="orphanRepairBtn" style="display:none;" title="Orphan nodes detected">0 orphans</button>
                 <button class="header-btn" id="fullscreenBtn" title="Toggle Fullscreen" data-i18n-title="buttons.toggleFullscreen">[ ]</button>
                 <button class="header-btn" id="closeBtn" title="Close (Esc/Tab)" data-i18n-title="buttons.closeTitle">X</button>
             </div>
@@ -502,13 +503,15 @@
                                     <input type="range" id="popup-globe-particle-radius" min="10" max="150" step="5" value="50">
                                     <span id="popup-globe-particle-radius-val">50</span></div>
                             </div>
-                            <div class="popup-row-3">
+                            <div class="popup-row-4">
                                 <div class="popup-cell"><label data-i18n="settings.render.animate">Animate</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="heart-animation-enabled" checked><span class="toggle-slider"></span></label></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.bgFill">Bg Fill</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-globe-bg-fill" checked><span class="toggle-slider"></span></label></div>
                                 <div class="popup-cell"><label data-i18n="settings.render.trail">Trail</label>
                                     <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-trail" checked><span class="toggle-slider"></span></label></div>
+                                <div class="popup-cell"><label>Core</label>
+                                    <label class="toggle-switch toggle-sm"><input type="checkbox" id="popup-particle-core"><span class="toggle-slider"></span></label></div>
                             </div>
                             <div class="popup-row-2">
                                 <div class="popup-cell"><label data-i18n="settings.render.speed">Speed</label>
@@ -601,6 +604,16 @@
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
+                            </div>
+                            <div class="popup-row-2">
+                                <div class="popup-cell">
+                                    <label>Curved Edges</label>
+                                    <label class="toggle-switch toggle-sm">
+                                        <input type="checkbox" id="edge-style-toggle">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <div class="popup-cell"></div>
                             </div>
 
                             <!-- Nodes -->
@@ -846,8 +859,8 @@
                             <span class="btn-icon">[AI]</span> <span data-i18n="footer.llm">LLM</span>
                         </button>
                         <span class="spell-count">
-                            <span id="total-count">0</span> spells | 
-                            <span id="unlocked-count">0</span> unlocked
+                            <span id="total-count">0</span> <span data-i18n="footer.spellsLabel">spells</span> |
+                            <span id="unlocked-count">0</span> <span data-i18n="footer.unlockedLabel">unlocked</span>
                         </span>
                     </div>
                     <div class="footer-center">
@@ -966,10 +979,10 @@
                                     <span class="setting-label" data-i18n="settings.progression.learningMode">Learning Mode</span>
                                     <span class="setting-desc" data-i18n="settings.progression.learningModeDesc">How many spells learned at once</span>
                                 </div>
-                                <select id="learningModeSelect" class="setting-select">
-                                    <option value="perSchool" data-i18n="settings.progression.learningModePerSchool">One spell per school</option>
-                                    <option value="single" data-i18n="settings.progression.learningModeSingle">One spell at a time</option>
-                                </select>
+                                <div id="learningModeToggle" class="segmented-toggle">
+                                    <div class="seg-btn active" data-value="perSchool">Per School</div>
+                                    <div class="seg-btn" data-value="single">Single</div>
+                                </div>
                             </div>
                             <div class="setting-row">
                                 <div class="setting-info">
@@ -1004,10 +1017,10 @@
                                     <input type="checkbox" id="autoAdvanceLearningToggle" checked>
                                     <span class="toggle-slider"></span>
                                 </label>
-                                <select id="autoAdvanceModeSelect" class="setting-select" style="width:auto; min-width: 130px;">
-                                    <option value="branch">Next in Branch</option>
-                                    <option value="random">Random in School</option>
-                                </select>
+                                <div id="autoAdvanceModeToggle" class="segmented-toggle">
+                                    <div class="seg-btn active" data-value="branch">Branch</div>
+                                    <div class="seg-btn" data-value="random">Random</div>
+                                </div>
                             </div>
                         </div>
 
@@ -1082,7 +1095,7 @@
                         </div>
                         
                         <p class="setting-note" data-i18n="settings.progression.xpCapsExample">Example: With caps at 5%/15%/50%, the final 50% must come from casting the spell itself.</p>
-                        
+
                         <!-- XP Required per Tier -->
                         <div class="settings-subsection">
                             <span class="subsection-title" data-i18n="settings.progression.xpRequiredByTier">XP Required by Spell Tier</span>
@@ -1111,13 +1124,12 @@
                             </div>
                         </div>
                         
-                        <!-- Passive Learning (coming soon - grayed out) -->
-                        <div class="settings-subsection passive-learning-section disabled-feature">
+                        <!-- Passive Learning -->
+                        <div class="settings-subsection passive-learning-section">
                             <span class="subsection-title" data-i18n="settings.progression.passiveLearning">Passive Learning</span>
-                            <span class="coming-soon-badge" data-i18n="settings.progression.comingSoon">Coming Soon</span>
                         </div>
-                        
-                        <div class="passive-learning-controls disabled-feature">
+
+                        <div class="passive-learning-controls">
                             <div class="setting-row-inline">
                                 <div class="setting-info">
                                     <span class="setting-label" data-i18n="settings.progression.enablePassiveLearning">Enable Passive Learning</span>
@@ -1125,50 +1137,64 @@
                                 </div>
                                 <div class="inline-controls">
                                     <label class="toggle-switch">
-                                        <input type="checkbox" id="passiveLearningToggle" disabled>
+                                        <input type="checkbox" id="passiveLearningToggle">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
                             </div>
-                            
+
+                            <div class="setting-row-inline" style="margin-top: 6px;">
+                                <div class="setting-info">
+                                    <span class="setting-label">Applies To</span>
+                                    <span class="setting-desc">Which spells gain passive XP</span>
+                                </div>
+                                <div class="inline-controls">
+                                    <div id="passiveScopeToggle" class="segmented-toggle">
+                                        <div class="seg-btn" data-value="all">All</div>
+                                        <div class="seg-btn" data-value="root">Root</div>
+                                        <div class="seg-btn active" data-value="novice">Novice</div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="setting-row slider-row">
                                 <div class="setting-info">
                                     <span class="setting-label" data-i18n="settings.progression.xpPerGameHour">XP per Game Hour</span>
                                     <span class="setting-desc" data-i18n="settings.progression.xpPerGameHourDesc">Passive XP gained each in-game hour</span>
                                 </div>
                                 <div class="slider-container">
-                                    <input type="range" id="passiveXpPerHourSlider" min="1" max="50" value="5" step="1" class="setting-slider" disabled>
+                                    <input type="range" id="passiveXpPerHourSlider" min="1" max="50" value="5" step="1" class="setting-slider">
                                     <span id="passiveXpPerHourValue" class="slider-value">5</span>
                                 </div>
                             </div>
-                            
+
                             <div class="settings-subsection" style="margin-top: 8px;">
                                 <span class="subsection-title" style="font-size: 0.7em;" data-i18n="settings.progression.maxPassiveXpByTier">Max Passive XP % by Tier</span>
                             </div>
                             <div class="tier-xp-grid passive-tier-grid">
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxNovice" data-i18n="settings.progression.tierNovice">Novice</label>
-                                    <input type="number" id="passiveMaxNovice" class="tier-xp-input" value="100" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxNovice" class="tier-xp-input" value="100" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxApprentice" data-i18n="settings.progression.tierApprentice">Apprentice</label>
-                                    <input type="number" id="passiveMaxApprentice" class="tier-xp-input" value="75" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxApprentice" class="tier-xp-input" value="75" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxAdept" data-i18n="settings.progression.tierAdept">Adept</label>
-                                    <input type="number" id="passiveMaxAdept" class="tier-xp-input" value="50" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxAdept" class="tier-xp-input" value="50" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxExpert" data-i18n="settings.progression.tierExpert">Expert</label>
-                                    <input type="number" id="passiveMaxExpert" class="tier-xp-input" value="25" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxExpert" class="tier-xp-input" value="25" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                                 <div class="tier-xp-item">
                                     <label for="passiveMaxMaster" data-i18n="settings.progression.tierMaster">Master</label>
-                                    <input type="number" id="passiveMaxMaster" class="tier-xp-input" value="5" min="0" max="100" disabled>
+                                    <input type="number" id="passiveMaxMaster" class="tier-xp-input" value="5" min="0" max="100">
                                     <span class="tier-xp-unit">%</span>
                                 </div>
                             </div>
@@ -1310,6 +1336,13 @@
                             <button id="resetPowerStepsBtn" class="btn btn-secondary btn-small">
                                 <span class="btn-icon">[R]</span> <span data-i18n="settings.earlyLearning.resetDefaults">Reset to Defaults</span>
                             </button>
+                        </div>
+
+                        <!-- Modded XP Sources (populated dynamically when external mods register) -->
+                        <div id="moddedXPSourcesSection" class="settings-subsection" style="display:none;">
+                            <span class="subsection-title">Modded XP Sources</span>
+                            <p class="setting-note">External mods that grant XP. Each source has its own multiplier and cap, and is still affected by the Overall XP Multiplier.</p>
+                            <div id="moddedXPSourcesList"></div>
                         </div>
                     </div>
                 </div>
@@ -1566,73 +1599,6 @@
                             </div>
                         </div>
                         
-                        <!-- Post-Generation: Procedural Injection -->
-                        <div class="settings-subsection" style="margin-left: 8px; padding-left: 8px; border-left: 2px solid var(--accent-green); margin-top: 12px;">
-                            <div class="settings-sublabel" style="font-size: 0.75em; color: var(--accent-green); margin-bottom: 8px;">
-                                AFTER GENERATION (Procedural)
-                            </div>
-                            <div class="setting-row">
-                                <div class="setting-info">
-                                    <span class="setting-label" data-i18n="settings.treeGen.proceduralInjection">Procedural Prereq Injection</span>
-                                    <span class="setting-desc" data-i18n="settings.treeGen.proceduralInjectionDesc">Randomly add extra safe prereqs after tree loads</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="proceduralPrereqInjectionToggle">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            
-                            <!-- Procedural Injection Settings (shown when enabled) -->
-                            <div id="proceduralInjectionSettings" class="subsettings-panel" style="display: none; margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.15); border-radius: 4px;">
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.injectionChance">Injection Chance</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.injectionChanceDesc">% chance per eligible node</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="injectionChanceSlider" min="0" max="100" value="50" class="setting-slider">
-                                        <span id="injectionChanceValue">50%</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.maxPrereqs">Max Prerequisites</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.maxPrereqsDesc">Cap total prereqs per spell</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="maxPrereqsSlider" min="2" max="5" value="3" class="setting-slider">
-                                        <span id="maxPrereqsValue">3</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.minTier">Minimum Tier</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.minTierDesc">Only at tier N and above</span>
-                                    </div>
-                                    <div class="setting-control">
-                                        <input type="range" id="minTierSlider" min="1" max="5" value="3" class="setting-slider">
-                                        <span id="minTierValue">3</span>
-                                    </div>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.sameTierPref">Same-Tier Preference</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.sameTierPrefDesc">Prefer adjacent tier prereqs</span>
-                                    </div>
-                                    <label class="toggle-switch">
-                                        <input type="checkbox" id="sameTierPreferenceToggle" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
-                                </div>
-                                <div class="setting-row">
-                                    <div class="setting-info">
-                                        <span class="setting-label" data-i18n="settings.treeGen.rerollInjections">Reroll Injections</span>
-                                        <span class="setting-desc" data-i18n="settings.treeGen.rerollInjectionsDesc">Re-inject with current settings</span>
-                                    </div>
-                                    <button id="rerollInjectionsBtn" class="btn btn-small">[R] Reroll</button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -1666,6 +1632,8 @@
                 <div id="import-error" class="error-box hidden"></div>
             </div>
             <div class="modal-footer">
+                <button id="paste-tree-btn" class="btn btn-sm" style="margin-right:auto;">Paste</button>
+                <button id="import-cancel" class="btn btn-sm">Cancel</button>
                 <button id="import-confirm" class="btn btn-success" data-i18n="modals.importTree.save">Save</button>
             </div>
         </div>
@@ -1687,6 +1655,23 @@
             </div>
             <div class="modal-footer">
                 <button id="spawn-cancel" class="btn btn-secondary" data-i18n="modals.spawnSpell.cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Find Spell Modal (Spell Tree Search) -->
+    <div id="find-spell-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content find-spell-modal">
+            <div class="modal-header">
+                <h3>Find Spell</h3>
+                <span class="find-spell-hint">F</span>
+                <button class="modal-close" id="find-spell-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="find-spell-search" class="spawn-search" placeholder="Search spells on tree..." autofocus>
+                <div id="find-spell-list" class="spawn-spell-list">
+                </div>
             </div>
         </div>
     </div>
@@ -1863,8 +1848,9 @@
     
     <!-- 0. i18n Translation Engine (must load first) -->
     <script src="lang/en.js"></script>
+    <script src="lang/locale.js"></script>
     <script src="modules/i18n.js"></script>
-    <script>initI18n('en');</script>
+    <script>initI18n(window._i18nLocale || 'en');</script>
 
     <!-- 1. Constants and Configuration -->
     <script src="modules/constants.js"></script>
@@ -1930,6 +1916,21 @@
     <script src="modules/tree/treeTrunk.js"></script>
     <script src="modules/tree/treeSettings.js"></script>
     <script src="modules/treeGrowthTree.js"></script>
+    <!-- Graph Growth module -->
+    <script src="modules/graph/graphRenderer.js"></script>
+    <script src="modules/graph/graphLayout.js"></script>
+    <script src="modules/graph/graphSettings.js"></script>
+    <script src="modules/graph/graphMain.js"></script>
+    <!-- Oracle Growth module -->
+    <script src="modules/oracle/oracleRenderer.js"></script>
+    <script src="modules/oracle/oracleLayout.js"></script>
+    <script src="modules/oracle/oracleSettings.js"></script>
+    <script src="modules/oracle/oracleMain.js"></script>
+    <!-- Thematic Growth module -->
+    <script src="modules/thematic/thematicRenderer.js"></script>
+    <script src="modules/thematic/thematicLayout.js"></script>
+    <script src="modules/thematic/thematicSettings.js"></script>
+    <script src="modules/thematic/thematicMain.js"></script>
     <script src="modules/treeGrowth.js"></script>
 
     <!-- 6. Integrations and Callbacks -->

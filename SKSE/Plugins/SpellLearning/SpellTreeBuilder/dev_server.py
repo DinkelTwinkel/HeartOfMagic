@@ -159,12 +159,13 @@ class BuildHandler(http.server.BaseHTTPRequestHandler):
             spells = [s for s in spells if s.get('school') == school_filter]
             print(f"[DevServer] Filtered to {school_filter}: {len(spells)} spells")
 
-        # Count schools
+        # Count schools (only the 5 vanilla magic schools)
+        VALID_SCHOOLS = {'Alteration', 'Conjuration', 'Destruction', 'Illusion', 'Restoration'}
         schools = {}
         for spell in spells:
-            school = spell.get('school', 'Unknown')
-            if not school or school in ('null', 'undefined', 'None', ''):
-                school = 'Hedge Wizard'
+            school = spell.get('school', '')
+            if school not in VALID_SCHOOLS:
+                continue
             schools[school] = schools.get(school, 0) + 1
 
         print(f"[DevServer] Schools: {', '.join(f'{s} ({c})' for s, c in sorted(schools.items()))}")

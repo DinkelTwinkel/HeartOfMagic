@@ -69,6 +69,7 @@ var ClassicRenderer = {
         ctx.save();
         ctx.strokeStyle = edgeColor;
         ctx.lineWidth = 1.5;
+        ctx.beginPath();
 
         for (i = 0; i < nodes.length; i++) {
             node = nodes[i];
@@ -77,11 +78,10 @@ var ClassicRenderer = {
             var parent = lookup[node.parentFormId];
             if (!parent) continue;
 
-            ctx.beginPath();
             ctx.moveTo(cx + parent.x, cy + parent.y);
             ctx.lineTo(cx + node.x, cy + node.y);
-            ctx.stroke();
         }
+        ctx.stroke();
 
         ctx.restore();
     },
@@ -104,52 +104,66 @@ var ClassicRenderer = {
     renderNodes: function (ctx, cx, cy, nodes, schoolColor, opacity, nodeRadius) {
         if (!nodes || nodes.length === 0) return;
 
-        var i, node, px, py, level, mult, size, bright, nodeOp;
-
+        // Group nodes by level for batched rendering
+        var levelGroups = {};
+        var i, node, level;
         for (i = 0; i < nodes.length; i++) {
             node = nodes[i];
-            px = cx + node.x;
-            py = cy + node.y;
-
             level = node.skillLevel || '';
-            mult = this._sizeTable[level];
+            if (!levelGroups[level]) levelGroups[level] = [];
+            levelGroups[level].push(node);
+        }
+
+        var self = this;
+        for (var lvl in levelGroups) {
+            var group = levelGroups[lvl];
+            var mult = self._sizeTable[lvl];
             if (mult === undefined) mult = 1.0;
-            size = nodeRadius * mult;
-
-            // Per-tier brightness: Novice dim → Master bright
-            bright = this._brightnessTable[level];
+            var bright = self._brightnessTable[lvl];
             if (bright === undefined) bright = 0.5;
-            nodeOp = opacity * bright;
+            var nodeOp = opacity * bright;
+            var sz = nodeRadius * mult;
 
-            // --- Glow (outer soft fill) ---
-            ctx.fillStyle = this._hexToRgba(schoolColor, nodeOp * 0.15);
-            this._fillShape(ctx, level, px, py, size + 3);
+            // Glow pass
+            ctx.fillStyle = self._hexToRgba(schoolColor, nodeOp * 0.15);
+            ctx.beginPath();
+            for (i = 0; i < group.length; i++) { self._addShapePath(ctx, lvl, cx + group[i].x, cy + group[i].y, sz + 3); }
+            ctx.fill();
 
-            // --- Body ---
-            ctx.fillStyle = this._hexToRgba(schoolColor, nodeOp);
-            this._fillShape(ctx, level, px, py, size);
+            // Body pass
+            ctx.fillStyle = self._hexToRgba(schoolColor, nodeOp);
+            ctx.beginPath();
+            for (i = 0; i < group.length; i++) { self._addShapePath(ctx, lvl, cx + group[i].x, cy + group[i].y, sz); }
+            ctx.fill();
 
-            // --- Extra visuals per level ---
-            if (level === 'Expert') {
-                // Double border: draw an outer stroke ring before the normal border
-                ctx.strokeStyle = this._hexToRgba(schoolColor, nodeOp * 0.5);
+            // Expert: outer stroke ring
+            if (lvl === 'Expert') {
+                ctx.strokeStyle = self._hexToRgba(schoolColor, nodeOp * 0.5);
                 ctx.lineWidth = 1.0;
-                this._strokeShape(ctx, level, px, py, size + 1.5);
-            }
-
-            if (level === 'Master') {
-                // Glow ring behind the star
                 ctx.beginPath();
-                ctx.arc(px, py, size + 4, 0, Math.PI * 2);
-                ctx.strokeStyle = this._hexToRgba(schoolColor, nodeOp * 0.35);
-                ctx.lineWidth = 1.5;
+                for (i = 0; i < group.length; i++) { self._addShapePath(ctx, lvl, cx + group[i].x, cy + group[i].y, sz + 1.5); }
                 ctx.stroke();
             }
 
-            // --- Border ---
+            // Master: glow ring
+            if (lvl === 'Master') {
+                ctx.strokeStyle = self._hexToRgba(schoolColor, nodeOp * 0.35);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (i = 0; i < group.length; i++) {
+                    var mgx = cx + group[i].x, mgy = cy + group[i].y;
+                    ctx.moveTo(mgx + sz + 4, mgy);
+                    ctx.arc(mgx, mgy, sz + 4, 0, Math.PI * 2);
+                }
+                ctx.stroke();
+            }
+
+            // Border pass
             ctx.strokeStyle = 'rgba(255, 255, 255, ' + (nodeOp * 0.3) + ')';
             ctx.lineWidth = 0.5;
-            this._strokeShape(ctx, level, px, py, size);
+            ctx.beginPath();
+            for (i = 0; i < group.length; i++) { self._addShapePath(ctx, lvl, cx + group[i].x, cy + group[i].y, sz); }
+            ctx.stroke();
         }
     },
 
@@ -177,6 +191,18 @@ var ClassicRenderer = {
     // =========================================================================
     // SHAPE DISPATCHERS (fill / stroke by skill level)
     // =========================================================================
+
+    /** Add shape sub-path without beginPath/fill/stroke (for batching) */
+    _addShapePath: function (ctx, level, x, y, size) {
+        if (level === 'Adept' || level === 'Expert') {
+            this._drawDiamond(ctx, x, y, size);
+        } else if (level === 'Master') {
+            this._drawStar(ctx, x, y, size, size * 0.5, 5);
+        } else {
+            ctx.moveTo(x + size, y);
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+        }
+    },
 
     _fillShape: function (ctx, level, x, y, size) {
         if (level === 'Adept' || level === 'Expert') {

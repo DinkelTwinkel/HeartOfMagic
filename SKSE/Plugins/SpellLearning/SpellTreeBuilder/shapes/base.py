@@ -160,29 +160,37 @@ class ShapeProfile(ABC):
         step = spread / (total_children - 1) if total_children > 1 else 0
         return min_rad + step * child_index
     
-    def score_parent_candidate(self, node: TreeNode, 
+    def score_parent_candidate(self, node: TreeNode,
                                candidate: TreeNode,
                                context: Dict[str, Any]) -> float:
         """
         Score a potential parent (higher = better).
-        
-        Default: Prefer same theme, fewer children, appropriate depth.
+
+        Default: Prefer same theme, fewer children, appropriate depth,
+        and NLP description similarity when available.
         """
         score = 1.0
-        
+
         # Prefer parents with fewer children
         child_penalty = len(candidate.children) * 0.2
         score -= child_penalty
-        
+
         # Prefer same theme
         if node.theme and candidate.theme:
             if node.theme == candidate.theme:
                 score += self.config.theme_coherence
-        
+
         # Prefer appropriate depth
         depth_diff = abs(node.depth - candidate.depth - 1)
         score -= depth_diff * 0.3
-        
+
+        # NLP description similarity bonus (TF-IDF cosine similarity)
+        similarities = context.get('similarities')
+        if similarities:
+            key = f"{node.form_id}:{candidate.form_id}"
+            sim = similarities.get(key, 0.0)
+            score += sim * 0.8  # Up to +0.8 for perfect similarity (scale matches base ~1.0)
+
         return score
     
     def apply_symmetry(self, positions: List[Vector2D],

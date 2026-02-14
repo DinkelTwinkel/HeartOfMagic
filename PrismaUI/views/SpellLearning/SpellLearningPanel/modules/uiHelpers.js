@@ -231,12 +231,16 @@ function blacklistKey(plugin, formId) {
 }
 
 // =============================================================================
-// PRIMED SPELL COUNT (after blacklist/whitelist/tome filters)
+// PRIMED SPELL FILTERING (after blacklist/whitelist/tome filters)
 // =============================================================================
 
-function updatePrimedCount() {
+/**
+ * Get all primed spells (post-blacklist/whitelist/tome filtering).
+ * @returns {Array} Filtered spell objects from state.lastSpellData
+ */
+function getPrimedSpells() {
     var data = state.lastSpellData;
-    if (!data || !data.spells || data.spells.length === 0) return;
+    if (!data || !data.spells || data.spells.length === 0) return [];
 
     // Build blacklist lookup — use stable plugin:localFormId keys, fall back to raw formId
     var blacklistKeys = {};
@@ -244,10 +248,8 @@ function updatePrimedCount() {
     if (settings.spellBlacklist) {
         settings.spellBlacklist.forEach(function(entry) {
             if (entry.plugin && entry.localFormId) {
-                // New format: stable key
                 blacklistKeys[entry.plugin.toLowerCase() + ':' + entry.localFormId] = true;
             } else if (entry.formId) {
-                // Legacy format: raw formId fallback
                 blacklistFormIds[entry.formId] = true;
             }
         });
@@ -270,17 +272,29 @@ function updatePrimedCount() {
     var tomesOn = tomeToggle && tomeToggle.checked;
     var tomedIds = state.tomedSpellIds || null;
 
-    var primed = data.spells.filter(function(spell) {
-        // Exclude blacklisted — check stable key first, then legacy formId
+    return data.spells.filter(function(spell) {
         var stableKey = spell.plugin ? spell.plugin.toLowerCase() + ':' + getLocalFormId(spell.formId) : '';
         if (stableKey && blacklistKeys[stableKey]) return false;
         if (blacklistFormIds[spell.formId]) return false;
-        // Exclude non-whitelisted plugins (case-insensitive)
         if (whitelistActive && spell.plugin && !whitelistPlugins[spell.plugin.toLowerCase()]) return false;
-        // Exclude spells without tomes (when tome filter is on and we have tome data)
         if (tomesOn && tomedIds && !tomedIds[spell.formId]) return false;
         return true;
     });
+}
+
+/**
+ * Get primed spells filtered to a specific school.
+ * @param {string} school - School name (e.g. "Destruction")
+ * @returns {Array} Filtered spell objects for that school
+ */
+function getPrimedSpellsForSchool(school) {
+    return getPrimedSpells().filter(function(s) {
+        return (s.school || 'Unknown') === school;
+    });
+}
+
+function updatePrimedCount() {
+    var primed = getPrimedSpells();
 
     var el = document.getElementById('statPrimedSpells');
     if (el) el.textContent = primed.length;
@@ -465,13 +479,17 @@ window.onPresetsLoaded = function(resultStr) {
             if (typeof updateSettingsPresetsUI === 'function') {
                 updateSettingsPresetsUI();
             }
-            // Auto-apply saved settings preset (or "Default" fallback)
+            // Track active preset name for UI highlighting, but do NOT auto-apply.
+            // config.json is the source of truth — applying a preset here would
+            // overwrite the user's saved settings (discoveryMode, requireSkillLevel, etc.)
             var settingsTarget = (typeof _activeSettingsPreset !== 'undefined') ? _activeSettingsPreset : '';
             var settingsKey = _findPresetKeyCaseInsensitive(settingsPresets, settingsTarget)
                            || _findPresetKeyCaseInsensitive(settingsPresets, 'Default');
-            if (settingsKey && typeof applySettingsPreset === 'function') {
-                console.log('[Presets] Auto-applying settings preset: ' + settingsKey);
-                applySettingsPreset(settingsKey);
+            if (settingsKey) {
+                _activeSettingsPreset = settingsKey;
+                if (typeof updateSettingsPresetsUI === 'function') {
+                    updateSettingsPresetsUI();
+                }
             }
         }
     } catch (e) {

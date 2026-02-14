@@ -70,8 +70,15 @@ private:
     std::filesystem::path m_pythonDir;
 
     // Download URLs
+    // Python 3.12 works on native Windows. On Wine/Proton, numpy/sklearn C extensions
+    // crash during import (segfault in .pyd loading). Python 3.11.x works on Wine.
     static constexpr const char* PYTHON_URL =
         "https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip";
+    static constexpr const char* PYTHON_URL_WINE =
+        "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip";
     static constexpr const char* GET_PIP_URL =
         "https://bootstrap.pypa.io/get-pip.py";
+
+    // Get the correct Python URL for the current platform
+    const char* GetPythonURL() const;
 };

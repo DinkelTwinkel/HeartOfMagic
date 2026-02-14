@@ -119,6 +119,33 @@ def cosine_similarity(vec_a_norm, vec_b_norm):
     return dot / (mag_a * mag_b)
 
 
+def char_ngrams(text, n=3):
+    """Generate character n-grams from text for morphological matching.
+
+    E.g., char_ngrams("Fireball", 3) -> {'fir', 'ire', 'reb', 'eba', 'bal', 'all'}
+    """
+    text = text.lower().strip()
+    if len(text) < n:
+        return set()
+    return {text[i:i+n] for i in range(len(text) - n + 1)}
+
+
+def char_ngram_similarity(name_a, name_b, n=3):
+    """Jaccard similarity of character n-grams between two spell names.
+
+    Catches morphological families that word-level TF-IDF misses:
+      "Firebolt" vs "Fireball" ≈ 0.45 (shared 'fir','ire','reb')
+      "Oakflesh" vs "Stoneflesh" ≈ 0.35 (shared 'les','esh','fle')
+    """
+    grams_a = char_ngrams(name_a, n)
+    grams_b = char_ngrams(name_b, n)
+    if not grams_a or not grams_b:
+        return 0.0
+    intersection = grams_a & grams_b
+    union = grams_a | grams_b
+    return len(intersection) / len(union) if union else 0.0
+
+
 def score_pair(spell_data, candidates, settings, top_n=5):
     """
     Score all candidates against a spell using TF-IDF cosine similarity.

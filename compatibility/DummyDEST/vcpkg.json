@@ -1,0 +1,16 @@
+{
+    "name": "dont-eat-spell-tomes-shim",
+    "version-string": "9.9.9",
+    "dependencies": [
+        "directxmath",
+        "directxtk",
+        "fmt",
+        "nlohmann-json",
+        "rapidcsv",
+        {
+            "name": "spdlog",
+            "features": ["fmt"]
+        },
+        "xbyak"
+    ]
+}
