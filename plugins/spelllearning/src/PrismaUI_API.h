@@ -91,7 +91,7 @@ namespace PRISMA_UI_API {
         virtual bool HasAnyActiveFocus() noexcept = 0;
         
 		// Create view with GPU acceleration option.
-		virtual PrismaView CreateViewAccelerated(const char* htmlPath, OnDomReadyCallback onDomReadyCallback = nullptr) noexcept = 0;
+		// virtual PrismaView CreateViewAccelerated(const char* htmlPath, OnDomReadyCallback onDomReadyCallback = nullptr) noexcept = 0;
     };
 
     typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);

@@ -81,7 +81,8 @@ bool UIManager::Initialize()
     // =========================================================================
     // Create Single Panel View (contains Scanner, Tree Rules, and Spell Tree tabs)
     // =========================================================================
-    m_view = m_prismaUI->CreateViewAccelerated("SpellLearning/SpellLearningPanel/index.html", OnDomReady);
+    //m_view = m_prismaUI->CreateViewAccelerated("SpellLearning/SpellLearningPanel/index.html", OnDomReady);
+    m_view = m_prismaUI->CreateView("SpellLearning/SpellLearningPanel/index.html", OnDomReady);
 
     if (!m_prismaUI->IsValid(m_view)) {
         logger::error("UIManager: Failed to create Panel view");
