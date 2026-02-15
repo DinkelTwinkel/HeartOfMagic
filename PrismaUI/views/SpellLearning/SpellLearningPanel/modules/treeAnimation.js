@@ -64,10 +64,25 @@ var TreeAnimation = {
             return false;
         }
 
-        var captured = this._captureTree();
-        if (!captured) {
-            captured = this._captureClassic();
+        // Try the active mode first, then fall back to others
+        var activeMode = TreeGrowth.activeMode || 'classic';
+        var captured = false;
+        var activeMod = TreeGrowth.modes[activeMode];
+
+        if (activeMod) {
+            // _builtPlacements format (tree mode)
+            if (activeMod._builtPlacements) {
+                captured = this._captureTree(activeMode);
+            }
+            // _layoutData format (classic, graph, oracle, thematic)
+            if (!captured && activeMod._layoutData) {
+                captured = this._captureClassic(activeMode);
+            }
         }
+
+        // Fallback: try tree then classic
+        if (!captured) captured = this._captureTree('tree');
+        if (!captured) captured = this._captureClassic('classic');
 
         if (captured) {
             this._pendingCapture = false;
@@ -79,19 +94,17 @@ var TreeAnimation = {
                 (this._chains ? ', ' + this._chains.length + ' chains' : '') +
                 ' (mode=' + this._mode + ')');
         } else {
-            console.log('[TreeAnimation] capture: no data found in any mode' +
-                ' (tree._builtPlacements=' + !!(TreeGrowth.modes['tree'] && TreeGrowth.modes['tree']._builtPlacements) +
-                ', tree._treeData=' + !!(TreeGrowth.modes['tree'] && TreeGrowth.modes['tree']._treeData) +
-                ', classic._layoutData=' + !!(TreeGrowth.modes['classic'] && TreeGrowth.modes['classic']._layoutData) +
-                ', classic._treeData=' + !!(TreeGrowth.modes['classic'] && TreeGrowth.modes['classic']._treeData) +
-                ', activeMode=' + TreeGrowth.activeMode + ')');
+            console.log('[TreeAnimation] capture: no data found' +
+                ' (activeMode=' + activeMode +
+                ', activeMod has _builtPlacements=' + !!(activeMod && activeMod._builtPlacements) +
+                ', activeMod has _layoutData=' + !!(activeMod && activeMod._layoutData) + ')');
         }
 
         return captured;
     },
 
-    _captureTree: function() {
-        var treeModule = TreeGrowth.modes['tree'];
+    _captureTree: function(modeName) {
+        var treeModule = TreeGrowth.modes[modeName || 'tree'];
         if (!treeModule) return false;
 
         var layout = treeModule._builtPlacements;
@@ -112,12 +125,12 @@ var TreeAnimation = {
         } else {
             this._edges = null;
         }
-        this._mode = 'tree';
+        this._mode = modeName || 'tree';
         return true;
     },
 
-    _captureClassic: function() {
-        var classicModule = TreeGrowth.modes['classic'];
+    _captureClassic: function(modeName) {
+        var classicModule = TreeGrowth.modes[modeName || 'classic'];
         if (!classicModule) return false;
 
         var layoutData = classicModule._layoutData;
@@ -169,7 +182,7 @@ var TreeAnimation = {
 
         this._nodes = allNodes;
         this._edges = allEdges.length > 0 ? allEdges : null;
-        this._mode = 'classic';
+        this._mode = modeName || 'classic';
         return true;
     },
 
@@ -283,8 +296,26 @@ var TreeAnimation = {
         }
         if (!baseData) return;
 
+        // Ensure the active mode's layout first
+        var activeMode = TreeGrowth.activeMode;
+        var activeMod = TreeGrowth.modes[activeMode];
+        if (activeMod && activeMod._treeData) {
+            // _builtPlacements format (tree mode)
+            if (!activeMod._builtPlacements && typeof activeMod._computeBuiltLayout === 'function') {
+                if (typeof activeMod._getOrCompute === 'function') {
+                    activeMod._getOrCompute(baseData, 800, 800);
+                }
+                activeMod._builtPlacements = activeMod._computeBuiltLayout(baseData);
+                if (activeMod._builtPlacements) {
+                    console.log('[TreeAnimation] Forced ' + activeMode + ' builtPlacements: ' +
+                        activeMod._builtPlacements.totalPlaced + ' nodes');
+                }
+            }
+        }
+
+        // Fallback: also ensure tree mode
         var treeModule = TreeGrowth.modes['tree'];
-        if (treeModule && treeModule._treeData && !treeModule._builtPlacements) {
+        if (treeModule && treeModule !== activeMod && treeModule._treeData && !treeModule._builtPlacements) {
             if (typeof treeModule._getOrCompute === 'function') {
                 treeModule._getOrCompute(baseData, 800, 800);
             }
@@ -297,8 +328,9 @@ var TreeAnimation = {
             }
         }
 
+        // Fallback: also ensure classic mode
         var classicModule = TreeGrowth.modes['classic'];
-        if (classicModule && classicModule._treeData &&
+        if (classicModule && classicModule !== activeMod && classicModule._treeData &&
             (!classicModule._layoutData || !classicModule._layoutData.schools)) {
             if (typeof ClassicLayout !== 'undefined' && ClassicLayout.layoutAllSchools) {
                 classicModule._layoutData = ClassicLayout.layoutAllSchools(

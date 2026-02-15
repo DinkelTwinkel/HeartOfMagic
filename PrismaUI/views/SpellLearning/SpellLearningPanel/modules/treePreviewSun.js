@@ -341,7 +341,7 @@ var TreePreviewSun = {
                 // Growth direction: outward (default) or inward (inverted)
                 var dirAngle = s.invertGrowth ? nodeAngle + Math.PI : nodeAngle;
 
-                rootNodes.push({ x: nx - cx, y: ny - cy, school: school, color: color, dir: dirAngle });
+                rootNodes.push({ x: nx - cx, y: ny - cy, school: school, color: color, dir: dirAngle, rootIndex: j });
 
                 // Node glow
                 ctx.beginPath();
