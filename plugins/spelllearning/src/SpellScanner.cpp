@@ -332,6 +332,64 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
         return "Master";
     }
 
+    std::string GetSkillLevelFromPerk(RE::BGSPerk* perk)
+    {
+        if (!perk) return "";
+
+        const char* editorId = perk->GetFormEditorID();
+        if (!editorId || strlen(editorId) == 0) return "";
+
+        std::string id(editorId);
+        std::string lower = id;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+        // Check for tier keywords in perk editor ID
+        // Vanilla pattern: {School}{Tier}{Number} e.g., DestructionMaster100
+        // Check Master first (most important to not misclassify)
+        if (lower.find("master") != std::string::npos) return "Master";
+        if (lower.find("expert") != std::string::npos) return "Expert";
+        if (lower.find("adept") != std::string::npos) return "Adept";
+        if (lower.find("apprentice") != std::string::npos) return "Apprentice";
+        if (lower.find("novice") != std::string::npos) return "Novice";
+
+        // Fallback: check numeric suffix (00, 25, 50, 75, 100)
+        if (id.length() >= 3 && id.substr(id.length() - 3) == "100") return "Master";
+        if (id.length() >= 2) {
+            std::string suffix = id.substr(id.length() - 2);
+            if (suffix == "75") return "Expert";
+            if (suffix == "50") return "Adept";
+            if (suffix == "25") return "Apprentice";
+            if (suffix == "00") return "Novice";
+        }
+
+        return "";  // Unknown perk, caller should fall back to minimumSkill
+    }
+
+    std::string DetermineSpellTier(RE::SpellItem* spell)
+    {
+        if (!spell) return "Novice";
+
+        // First: try the half-cost perk (most reliable for modded spells)
+        // CommonLib calls this castingPerk, but it's the HalfCostPerk field in the SPEL record
+        if (spell->data.castingPerk) {
+            std::string perkTier = GetSkillLevelFromPerk(spell->data.castingPerk);
+            if (!perkTier.empty()) {
+                return perkTier;
+            }
+        }
+
+        // Fallback: use minimumSkill from first effect
+        uint32_t minimumSkill = 0;
+        if (spell->effects.size() > 0) {
+            auto* firstEffect = spell->effects[0];
+            if (firstEffect && firstEffect->baseEffect) {
+                minimumSkill = firstEffect->baseEffect->GetMinimumSkillLevel();
+            }
+        }
+
+        return GetSkillLevelName(minimumSkill);
+    }
+
     std::string GetPluginName(RE::FormID formId)
     {
         auto* dataHandler = RE::TESDataHandler::GetSingleton();
@@ -759,13 +817,11 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             }
 
             RE::ActorValue school = RE::ActorValue::kNone;
-            uint32_t minimumSkill = 0;
 
             if (spell->effects.size() > 0) {
                 auto* firstEffect = spell->effects[0];
                 if (firstEffect && firstEffect->baseEffect) {
                     school = firstEffect->baseEffect->GetMagickSkill();
-                    minimumSkill = firstEffect->baseEffect->GetMinimumSkillLevel();
                 }
             }
 
@@ -774,14 +830,14 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 skippedCount++;
                 continue;
             }
-            
+
             // Filter out spells with no effects or broken effect data
             bool hasValidEffect = false;
             for (auto* effect : spell->effects) {
                 if (effect && effect->baseEffect) {
                     std::string effectName = effect->baseEffect->GetFullName();
                     // Check effect has a real name (not empty or FormID-like)
-                    if (!effectName.empty() && effectName.length() > 2 && 
+                    if (!effectName.empty() && effectName.length() > 2 &&
                         effectName.substr(0, 2) != "0x" && effectName.substr(0, 2) != "0X") {
                         hasValidEffect = true;
                         break;
@@ -800,7 +856,7 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             spellJson["persistentId"] = GetPersistentFormId(formId);  // Load order resilient ID
             spellJson["name"] = SanitizeToUTF8(name);  // Sanitize for valid UTF-8 JSON
             spellJson["school"] = GetSchoolName(school);
-            spellJson["skillLevel"] = GetSkillLevelName(minimumSkill);
+            spellJson["skillLevel"] = DetermineSpellTier(spell);
 
             // Optional fields
             if (fields.editorId && hasEditorId) {
@@ -812,7 +868,11 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 spellJson["magickaCost"] = spell->CalculateMagickaCost(nullptr);
             }
             if (fields.minimumSkill) {
-                spellJson["minimumSkill"] = minimumSkill;
+                uint32_t minSkill = 0;
+                if (spell->effects.size() > 0 && spell->effects[0] && spell->effects[0]->baseEffect) {
+                    minSkill = spell->effects[0]->baseEffect->GetMinimumSkillLevel();
+                }
+                spellJson["minimumSkill"] = minSkill;
             }
             if (fields.castingType) {
                 spellJson["castingType"] = GetCastingTypeName(spell->data.castingType);
@@ -992,13 +1052,11 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
 
             // Get school from first effect
             RE::ActorValue school = RE::ActorValue::kNone;
-            uint32_t minimumSkill = 0;
 
             if (spell->effects.size() > 0) {
                 auto* firstEffect = spell->effects[0];
                 if (firstEffect && firstEffect->baseEffect) {
                     school = firstEffect->baseEffect->GetMagickSkill();
-                    minimumSkill = firstEffect->baseEffect->GetMinimumSkillLevel();
                 }
             }
 
@@ -1013,7 +1071,7 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
             spellJson["persistentId"] = GetPersistentFormId(spellFormId);  // Load order resilient ID
             spellJson["name"] = SanitizeToUTF8(spellName);  // Sanitize for valid UTF-8 JSON
             spellJson["school"] = GetSchoolName(school);
-            spellJson["skillLevel"] = GetSkillLevelName(minimumSkill);
+            spellJson["skillLevel"] = DetermineSpellTier(spell);
 
             // Also include tome info for reference (sanitize - mods like DynDOLOD can have invalid UTF-8 in book names)
             spellJson["tomeFormId"] = std::format("0x{:08X}", book->GetFormID());
@@ -1029,7 +1087,11 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 spellJson["magickaCost"] = spell->CalculateMagickaCost(nullptr);
             }
             if (fields.minimumSkill) {
-                spellJson["minimumSkill"] = minimumSkill;
+                uint32_t minSkill = 0;
+                if (spell->effects.size() > 0 && spell->effects[0] && spell->effects[0]->baseEffect) {
+                    minSkill = spell->effects[0]->baseEffect->GetMinimumSkillLevel();
+                }
+                spellJson["minimumSkill"] = minSkill;
             }
             if (fields.castingType) {
                 spellJson["castingType"] = GetCastingTypeName(spell->data.castingType);
@@ -1177,9 +1239,8 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
         const char* editorId = spell->GetFormEditorID();
         spellInfo["editorId"] = editorId ? editorId : "";
 
-        // Get school and level from first effect
+        // Get school and level
         std::string school = "Unknown";
-        std::string level = "Unknown";
         uint32_t minimumSkill = 0;
 
         if (spell->effects.size() > 0) {
@@ -1188,9 +1249,11 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
                 RE::ActorValue schoolAV = firstEffect->baseEffect->GetMagickSkill();
                 school = GetSchoolName(schoolAV);
                 minimumSkill = firstEffect->baseEffect->GetMinimumSkillLevel();
-                level = GetSkillLevelName(minimumSkill);
             }
         }
+
+        // Use perk-based tier detection (fixes modded master spells with minimumSkill=0)
+        std::string level = DetermineSpellTier(spell);
 
         spellInfo["school"] = school;
         spellInfo["level"] = level;

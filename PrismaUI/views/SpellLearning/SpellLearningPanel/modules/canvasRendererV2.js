@@ -40,7 +40,14 @@ var CanvasRenderer = {
     // Spatial index for hit detection
     _nodeGrid: null,
     _gridCellSize: 50,
-    
+
+    // LOD (Level of Detail) - zoom-based rendering tiers
+    _lodTier: 'full',        // 'full' | 'simple' | 'minimal'
+    _activeDpr: 0,           // Current effective DPR (for tier-transition resize)
+    _nodeBuckets: null,      // { 'school|state': [node, ...] } for batched minimal rendering
+    _cachedDividerGradients: null,  // Cached CanvasGradient objects for school dividers
+    _dividerCacheKey: '',    // String key to detect when divider settings change
+
     // Performance
     _rafId: null,
     _needsRender: true,
@@ -264,7 +271,44 @@ var CanvasRenderer = {
     _getShapePath: function(school) {
         return this._shapePaths[school] || this._shapePaths['default'];
     },
-    
+
+    // =========================================================================
+    // LOD (Level of Detail) SYSTEM
+    // =========================================================================
+
+    /**
+     * Compute LOD tier based on current zoom level.
+     * Returns 'full', 'simple', or 'minimal'.
+     * Forces 'full' when EditMode is active.
+     */
+    _computeLODTier: function() {
+        // EditMode always needs full detail for accurate editing
+        if (typeof EditMode !== 'undefined' && EditMode.isActive) {
+            return 'full';
+        }
+        if (this.zoom >= 0.45) return 'full';
+        if (this.zoom >= 0.25) return 'simple';
+        return 'minimal';
+    },
+
+    /**
+     * Build node buckets grouped by 'school|state' for batched minimal rendering.
+     * Pre-caches school color on each node to avoid per-node lookups.
+     */
+    _buildNodeBuckets: function() {
+        this._nodeBuckets = {};
+        for (var i = 0; i < this.nodes.length; i++) {
+            var node = this.nodes[i];
+            var key = (node.school || 'unknown') + '|' + (node.state || 'locked');
+            if (!this._nodeBuckets[key]) {
+                this._nodeBuckets[key] = [];
+            }
+            this._nodeBuckets[key].push(node);
+            // Pre-cache school color on node
+            node._cachedSchoolColor = node.themeColor || this._getSchoolColor(node.school);
+        }
+    },
+
     // =========================================================================
     // INITIALIZATION
     // =========================================================================
@@ -409,6 +453,7 @@ var CanvasRenderer = {
         this._computeSchoolAngles();
         this._buildDiscoveryVisibility();
         this._buildLearningPaths();
+        this._buildNodeBuckets();
 
         this._needsRender = true;
         this._logNextRender = true;
@@ -943,7 +988,24 @@ var CanvasRenderer = {
         var cx = width / 2;
         var cy = height / 2;
         var dpr = window.devicePixelRatio || 1;
-        
+
+        // Compute LOD tier based on zoom
+        this._lodTier = this._computeLODTier();
+
+        // DPR reduction in MINIMAL tier (halve pixel work on HiDPI)
+        var effectiveDpr = dpr;
+        if (this._lodTier === 'minimal' && dpr > 1) {
+            effectiveDpr = 1;
+        }
+        // Only resize canvas buffer when effective DPR changes (avoids per-frame resize)
+        if (this._activeDpr !== effectiveDpr) {
+            this._activeDpr = effectiveDpr;
+            this.canvas.width = width * effectiveDpr;
+            this.canvas.height = height * effectiveDpr;
+            // CSS size stays the same — browser upscales
+        }
+        dpr = effectiveDpr;
+
         // FULL RESET - prevent ghosting
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1.0;
@@ -1190,56 +1252,75 @@ var CanvasRenderer = {
     renderSchoolDividers: function(ctx) {
         // Check if dividers are enabled
         if (!settings.showSchoolDividers) return;
-        
+
+        // LOD: Skip dividers entirely in MINIMAL tier
+        if (this._lodTier === 'minimal') return;
+
         var schoolNames = Object.keys(this.schools);
         if (schoolNames.length < 2) return;
-        
+
         var length = settings.dividerLength !== undefined ? settings.dividerLength : 800;
         var fade = (settings.dividerFade !== undefined ? settings.dividerFade : 50) / 100;  // Convert to 0-1
         var lineWidth = settings.dividerSpacing !== undefined ? settings.dividerSpacing : 3;
         var colorMode = settings.dividerColorMode || 'school';
         var customColor = settings.dividerCustomColor || '#ffffff';
-        
+        var gd = (state.treeData && state.treeData.globe) || { x: 0, y: 0 };
+
+        // Build cache key from all settings that affect gradients
+        var cacheKey = length + '|' + fade + '|' + lineWidth + '|' + colorMode + '|' + customColor + '|' + gd.x + '|' + gd.y + '|' + schoolNames.length;
+        for (var ci = 0; ci < schoolNames.length; ci++) {
+            var sch = this.schools[schoolNames[ci]];
+            cacheKey += '|' + (sch.startAngle || 0);
+            if (colorMode === 'school') cacheKey += '|' + this._getSchoolColor(schoolNames[ci]);
+        }
+
+        // Rebuild gradient cache if settings changed
+        if (this._dividerCacheKey !== cacheKey || !this._cachedDividerGradients) {
+            this._dividerCacheKey = cacheKey;
+            this._cachedDividerGradients = [];
+            var startAlpha = 0.8;
+            var endAlpha = startAlpha * (1 - fade);
+
+            for (var i = 0; i < schoolNames.length; i++) {
+                var schoolName = schoolNames[i];
+                var school = this.schools[schoolName];
+                var angle = school.startAngle !== undefined ? school.startAngle : (i * (360 / schoolNames.length) - 90);
+                var rad = angle * Math.PI / 180;
+
+                var color;
+                if (colorMode === 'custom') {
+                    color = customColor;
+                } else {
+                    color = this._getSchoolColor(schoolName) || '#ffffff';
+                }
+
+                var endX = gd.x + Math.cos(rad) * length;
+                var endY = gd.y + Math.sin(rad) * length;
+                var gradient = ctx.createLinearGradient(gd.x, gd.y, endX, endY);
+
+                var rgb = this._hexToRgb(color);
+                gradient.addColorStop(0, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + startAlpha + ')');
+                gradient.addColorStop(0.5, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (startAlpha * 0.7 + endAlpha * 0.3) + ')');
+                gradient.addColorStop(1, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + endAlpha + ')');
+
+                this._cachedDividerGradients.push({
+                    gradient: gradient,
+                    startX: gd.x, startY: gd.y,
+                    endX: endX, endY: endY
+                });
+            }
+        }
+
         ctx.lineWidth = lineWidth;
         ctx.lineCap = 'round';
-        
-        // Draw dividers at each school's START angle (derived from actual node data)
-        for (var i = 0; i < schoolNames.length; i++) {
-            var schoolName = schoolNames[i];
-            var school = this.schools[schoolName];
-            var angle = school.startAngle !== undefined ? school.startAngle : (i * (360 / schoolNames.length) - 90);
-            var rad = angle * Math.PI / 180;
-            
-            // Determine color based on mode
-            var color;
-            if (colorMode === 'custom') {
-                color = customColor;
-            } else {
-                // Use school color (the school whose boundary this divider represents)
-                color = this._getSchoolColor(schoolName) || '#ffffff';
-            }
-            
-            // Create gradient for fade effect (globe center to outer edge)
-            var gd = (state.treeData && state.treeData.globe) || { x: 0, y: 0 };
-            var endX = gd.x + Math.cos(rad) * length;
-            var endY = gd.y + Math.sin(rad) * length;
-            var gradient = ctx.createLinearGradient(gd.x, gd.y, endX, endY);
-            
-            // Fade setting: 0% = solid line, 100% = fades to transparent
-            // Higher fade = more transparent at the end
-            var rgb = this._hexToRgb(color);
-            var startAlpha = 0.8;  // Always start fairly visible
-            var endAlpha = startAlpha * (1 - fade);  // At 100% fade, end is transparent
-            
-            gradient.addColorStop(0, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + startAlpha + ')');
-            gradient.addColorStop(0.5, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (startAlpha * 0.7 + endAlpha * 0.3) + ')');
-            gradient.addColorStop(1, 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + endAlpha + ')');
-            
-            ctx.strokeStyle = gradient;
-            
+
+        // Draw using cached gradients
+        for (var i = 0; i < this._cachedDividerGradients.length; i++) {
+            var cached = this._cachedDividerGradients[i];
+            ctx.strokeStyle = cached.gradient;
             ctx.beginPath();
-            ctx.moveTo(gd.x, gd.y);
-            ctx.lineTo(endX, endY);
+            ctx.moveTo(cached.startX, cached.startY);
+            ctx.lineTo(cached.endX, cached.endY);
             ctx.stroke();
         }
     },
@@ -1383,8 +1464,11 @@ var CanvasRenderer = {
         }
 
         // === PASS 1: Dim/normal edges (background) ===
+        // LOD: Skip entirely in MINIMAL (biggest edge savings)
+        if (this._lodTier !== 'minimal') {
         // Check if base connections should be shown (setting)
         var showBaseConnections = settings.showBaseConnections !== false;
+        var lodSimple = this._lodTier === 'simple';
 
         ctx.lineWidth = 1;
         for (var i = 0; i < this.edges.length; i++) {
@@ -1404,6 +1488,9 @@ var CanvasRenderer = {
             if (isOnSelectedPath || isLearningEdge) continue;
 
             var bothUnlocked = fromNode.state === 'unlocked' && toNode.state === 'unlocked';
+
+            // LOD SIMPLE: skip edges where neither node is unlocked
+            if (lodSimple && !bothUnlocked) continue;
 
             // Unlocked connections always show; base connections respect setting
             if (!bothUnlocked && !showBaseConnections) continue;
@@ -1431,12 +1518,14 @@ var CanvasRenderer = {
             this._drawEdgePath(ctx, fromNode.x, fromNode.y, toNode.x, toNode.y, curved);
             ctx.stroke();
         }
+        } // end LOD skip for MINIMAL
 
         // === PASS 2: Selected path edges (WHITE, middle layer) ===
+        // LOD: Skip in MINIMAL tier
         // Only draw if selection path highlighting is enabled
         var showSelectionPath = settings.showSelectionPath !== false;
 
-        if (hasSelectedPath && showSelectionPath) {
+        if (this._lodTier !== 'minimal' && hasSelectedPath && showSelectionPath) {
             for (var i = 0; i < this.edges.length; i++) {
                 var edge = this.edges[i];
                 var nodes = shouldDrawEdge(edge);
@@ -1493,7 +1582,8 @@ var CanvasRenderer = {
         }
 
         // === PASS 4: Chain edges for hardPrereqs on selected node ===
-        if (this.selectedNode && this.selectedNode.hardPrereqs && this.selectedNode.hardPrereqs.length > 0) {
+        // LOD: Skip in MINIMAL and SIMPLE tiers (chains are expensive + low visibility)
+        if (this._lodTier === 'full' && this.selectedNode && this.selectedNode.hardPrereqs && this.selectedNode.hardPrereqs.length > 0) {
             var selNode = this.selectedNode;
 
             for (var li = 0; li < selNode.hardPrereqs.length; li++) {
@@ -1576,20 +1666,171 @@ var CanvasRenderer = {
         ctx.globalAlpha = 1.0;
     },
     
-    renderNodes: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
+    /**
+     * Minimal node rendering - batched fillRect dots grouped by school+state.
+     * ~15 style changes + N fillRect calls instead of 8-18 canvas API calls per node.
+     */
+    renderNodesMinimal: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
+        if (!this._nodeBuckets) return;
+
+        var isEditActive = typeof EditMode !== 'undefined' && EditMode.isActive;
+        var hasDiscovery = this._discoveryVisibleIds && !isEditActive;
+        var schoolVis = settings.schoolVisibility;
+
+        var bucketKeys = Object.keys(this._nodeBuckets);
+        for (var b = 0; b < bucketKeys.length; b++) {
+            var key = bucketKeys[b];
+            var parts = key.split('|');
+            var bucketSchool = parts[0];
+            var bucketState = parts[1];
+            var bucket = this._nodeBuckets[key];
+            if (bucket.length === 0) continue;
+
+            // Skip hidden schools
+            if (schoolVis && schoolVis[bucketSchool] === false) continue;
+
+            // Determine dot size and alpha by state
+            var dotSize, alpha;
+            if (bucketState === 'unlocked') {
+                dotSize = 4; alpha = 1.0;
+            } else if (bucketState === 'available' || bucketState === 'learning') {
+                dotSize = 3; alpha = 0.8;
+            } else {
+                dotSize = 2; alpha = 0.4;
+            }
+
+            // Set style once per bucket
+            var color = bucket[0]._cachedSchoolColor || this._getSchoolColor(bucketSchool);
+            ctx.fillStyle = color;
+            ctx.globalAlpha = alpha;
+
+            var halfDot = dotSize / 2;
+
+            for (var i = 0; i < bucket.length; i++) {
+                var node = bucket[i];
+
+                // Viewport culling
+                if (node.x < viewLeft || node.x > viewRight || node.y < viewTop || node.y > viewBottom) continue;
+
+                // Discovery visibility
+                if (hasDiscovery) {
+                    if (!this._discoveryVisibleIds.has(node.id) && !this._discoveryVisibleIds.has(node.formId)) continue;
+                }
+
+                ctx.fillRect(node.x - halfDot, node.y - halfDot, dotSize, dotSize);
+            }
+        }
+
+        // Render selected/hovered node as larger highlighted dot on top
+        var highlight = this.selectedNode || this.hoveredNode;
+        if (highlight) {
+            var hColor = highlight._cachedSchoolColor || this._getSchoolColor(highlight.school);
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 1.0;
+            ctx.fillRect(highlight.x - 5, highlight.y - 5, 10, 10);
+            ctx.fillStyle = hColor;
+            ctx.fillRect(highlight.x - 3, highlight.y - 3, 6, 6);
+        }
+
+        ctx.globalAlpha = 1.0;
+    },
+
+    /**
+     * Simple node rendering - shapes without rotation, lock overlays, or inner accents.
+     * Still uses Path2D + save/translate/scale/fill/stroke/restore but skips atan2/rotate.
+     */
+    renderNodesSimple: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
+        var isEditActive = typeof EditMode !== 'undefined' && EditMode.isActive;
+        var hasDiscovery = this._discoveryVisibleIds && !isEditActive;
+        var learningPathColor = this._learningPathColor || '#00ffff';
+
         for (var i = 0; i < this.nodes.length; i++) {
             var node = this.nodes[i];
-            
+
+            // Viewport culling
+            if (node.x < viewLeft || node.x > viewRight || node.y < viewTop || node.y > viewBottom) continue;
+
+            // Skip hidden schools
+            if (settings.schoolVisibility && settings.schoolVisibility[node.school] === false) continue;
+
+            // Discovery mode visibility
+            if (hasDiscovery) {
+                if (!this._discoveryVisibleIds.has(node.id) && !this._discoveryVisibleIds.has(node.formId)) continue;
+                if (node.state === 'locked') {
+                    // Simplified mystery node - just a dim dot
+                    var dimColor = node._cachedSchoolColor || this._getSchoolColor(node.school);
+                    ctx.globalAlpha = 0.3;
+                    ctx.fillStyle = dimColor;
+                    ctx.fillRect(node.x - 3, node.y - 3, 6, 6);
+                    continue;
+                }
+            }
+
+            var schoolColor = node._cachedSchoolColor || this._getSchoolColor(node.school);
+            var isSelected = this.selectedNode && this.selectedNode.id === node.id;
+            var isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
+            var path = this._getShapePath(node.school);
+            var isLearning = node.state === 'learning';
+
+            var size, fillColor, strokeColor, strokeWidth, alpha;
+
+            if (node.state === 'unlocked') {
+                size = 12; fillColor = schoolColor; strokeColor = schoolColor;
+                strokeWidth = 1.5; alpha = 1.0;
+            } else if (isLearning) {
+                size = 12; fillColor = learningPathColor; strokeColor = learningPathColor;
+                strokeWidth = 1.5; alpha = 1.0;
+            } else if (node.state === 'available') {
+                size = 9; fillColor = '#1a1a2e'; strokeColor = schoolColor;
+                strokeWidth = 1; alpha = 0.8;
+            } else {
+                size = 7; fillColor = '#1a1a2e'; strokeColor = schoolColor;
+                strokeWidth = 1; alpha = 0.4;
+            }
+
+            if (isSelected || isHovered) {
+                size += 1.5; strokeColor = '#fff'; strokeWidth = 1.5; alpha = 1.0;
+            }
+
+            ctx.save();
+            ctx.translate(node.x, node.y);
+            // NO rotation — skip atan2 + rotate (main LOD saving)
+            ctx.scale(size, size);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = fillColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = strokeWidth / size;
+            ctx.fill(path);
+            ctx.stroke(path);
+            ctx.restore();
+        }
+        ctx.globalAlpha = 1.0;
+    },
+
+    renderNodes: function(ctx, viewLeft, viewRight, viewTop, viewBottom) {
+        // LOD dispatch
+        if (this._lodTier === 'minimal') {
+            this.renderNodesMinimal(ctx, viewLeft, viewRight, viewTop, viewBottom);
+            return;
+        }
+        if (this._lodTier === 'simple') {
+            this.renderNodesSimple(ctx, viewLeft, viewRight, viewTop, viewBottom);
+            return;
+        }
+
+        for (var i = 0; i < this.nodes.length; i++) {
+            var node = this.nodes[i];
+
             // Viewport culling
             if (node.x < viewLeft || node.x > viewRight || node.y < viewTop || node.y > viewBottom) {
                 continue;
             }
-            
+
             // Skip hidden schools
             if (settings.schoolVisibility && settings.schoolVisibility[node.school] === false) {
                 continue;
             }
-            
+
             // Discovery mode visibility (disabled in edit mode - show everything)
             if (this._discoveryVisibleIds && !(typeof EditMode !== 'undefined' && EditMode.isActive)) {
                 if (!this._discoveryVisibleIds.has(node.id) && !this._discoveryVisibleIds.has(node.formId)) {
@@ -1602,7 +1843,7 @@ var CanvasRenderer = {
                     continue;
                 }
             }
-            
+
             this.renderNode(ctx, node);
         }
     },
@@ -1942,18 +2183,27 @@ var CanvasRenderer = {
             return;
         }
         
-        // Use learning path color (cyan)
         var color = this._learningPathColor || '#00ffff';
-        
-        // Use learning path color (cyan)
-        var color = this._learningPathColor || '#00ffff';
-        
+
+        // Pre-compute segment lengths for animation (avoids sqrt per frame)
+        var segmentLengths = [];
+        var totalLength = 0;
+        for (var si = 1; si < path.length; si++) {
+            var sdx = path[si].x - path[si-1].x;
+            var sdy = path[si].y - path[si-1].y;
+            var slen = Math.sqrt(sdx * sdx + sdy * sdy);
+            segmentLengths.push(slen);
+            totalLength += slen;
+        }
+
         this._learningPath = {
             nodeId: nodeId,
             path: path,
             progress: 0,
             startTime: performance.now(),
-            color: color
+            color: color,
+            segmentLengths: segmentLengths,
+            totalLength: totalLength
         };
 
         // Store which nodes are in THIS specific animating path
@@ -1988,18 +2238,11 @@ var CanvasRenderer = {
         
         var path = lp.path;
         if (path.length < 2) return;
-        
-        // Calculate total path length
-        var totalLength = 0;
-        var segmentLengths = [];
-        for (var i = 1; i < path.length; i++) {
-            var dx = path[i].x - path[i-1].x;
-            var dy = path[i].y - path[i-1].y;
-            var len = Math.sqrt(dx * dx + dy * dy);
-            segmentLengths.push(len);
-            totalLength += len;
-        }
-        
+
+        // Use pre-computed segment lengths (cached in triggerLearningAnimation)
+        var segmentLengths = lp.segmentLengths;
+        var totalLength = lp.totalLength;
+
         // How far along the path we are
         var targetLength = totalLength * easedProgress;
         
@@ -2383,9 +2626,13 @@ var CanvasRenderer = {
         this._nodeByFormId = new Map();
         this._nodeGrid = {};
         this._discoveryVisibleIds = null;
+        this._nodeBuckets = null;
+        this._cachedDividerGradients = null;
+        this._dividerCacheKey = '';
+        this._activeDpr = 0;
         this.selectedNode = null;
         this.hoveredNode = null;
-        
+
         if (this.ctx && this.canvas) {
             this.ctx.setTransform(1, 0, 0, 1, 0, 0);
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -2401,6 +2648,7 @@ var CanvasRenderer = {
         // Rebuild discovery visibility if in discovery mode
         this._buildDiscoveryVisibility();
         this._buildLearningPaths();
+        this._buildNodeBuckets();
         this._needsRender = true;
     },
     
@@ -2540,29 +2788,41 @@ var CanvasRenderer = {
             var gd = (state.treeData && state.treeData.globe) || { x: 0, y: 0 };
             var rootNode = self._nodeMap.get(pathNodeIds[0]);
             if (rootNode) {
+                var sdx = rootNode.x - gd.x, sdy = rootNode.y - gd.y;
                 segments.push({
                     from: { x: gd.x, y: gd.y },
-                    to: { x: rootNode.x, y: rootNode.y }
+                    to: { x: rootNode.x, y: rootNode.y },
+                    length: Math.sqrt(sdx * sdx + sdy * sdy)
                 });
             }
-            
+
             // Subsequent segments: node to node
             for (var i = 0; i < pathNodeIds.length - 1; i++) {
                 var fromNode = self._nodeMap.get(pathNodeIds[i]);
                 var toNode = self._nodeMap.get(pathNodeIds[i + 1]);
                 if (fromNode && toNode) {
+                    var sdx2 = toNode.x - fromNode.x, sdy2 = toNode.y - fromNode.y;
                     segments.push({
                         from: { x: fromNode.x, y: fromNode.y },
-                        to: { x: toNode.x, y: toNode.y }
+                        to: { x: toNode.x, y: toNode.y },
+                        length: Math.sqrt(sdx2 * sdx2 + sdy2 * sdy2)
                     });
                 }
             }
-            
+
             if (segments.length > 0) {
+                // Pre-compute segmentLengths array and totalLength for pulse animation
+                var segLengths = [];
+                var totalLen = 0;
+                for (var si = 0; si < segments.length; si++) {
+                    segLengths.push(segments[si].length);
+                    totalLen += segments[si].length;
+                }
                 self._learningPathSegments.push({
                     learningNodeId: learningId,
                     segments: segments,
-                    totalLength: self._calculatePathLength(segments)
+                    segmentLengths: segLengths,
+                    totalLength: totalLen
                 });
             }
         });
@@ -2640,8 +2900,8 @@ var CanvasRenderer = {
             
             if (!pathData) continue;
             
-            // Find position along path
-            var pos = this._getPositionAlongPath(pathData.segments, pulse.progress);
+            // Find position along path (use cached segment lengths)
+            var pos = this._getPositionAlongPath(pathData.segments, pulse.progress, pathData.segmentLengths, pathData.totalLength);
             if (!pos) continue;
             
             // Draw glowing pulse
@@ -2669,30 +2929,36 @@ var CanvasRenderer = {
     /**
      * Get x,y position along a path given progress (0-1)
      */
-    _getPositionAlongPath: function(segments, progress) {
+    _getPositionAlongPath: function(segments, progress, cachedSegLengths, cachedTotalLength) {
         if (!segments || segments.length === 0) return null;
-        
-        // Calculate total length
-        var totalLength = 0;
-        var segmentLengths = [];
-        for (var i = 0; i < segments.length; i++) {
-            var seg = segments[i];
-            var dx = seg.to.x - seg.from.x;
-            var dy = seg.to.y - seg.from.y;
-            var len = Math.sqrt(dx * dx + dy * dy);
-            segmentLengths.push(len);
-            totalLength += len;
+
+        // Use pre-cached lengths if available, else compute
+        var totalLength, segmentLengths;
+        if (cachedSegLengths && cachedTotalLength > 0) {
+            segmentLengths = cachedSegLengths;
+            totalLength = cachedTotalLength;
+        } else {
+            totalLength = 0;
+            segmentLengths = [];
+            for (var i = 0; i < segments.length; i++) {
+                var seg = segments[i];
+                var len = seg.length !== undefined ? seg.length : Math.sqrt(
+                    (seg.to.x - seg.from.x) * (seg.to.x - seg.from.x) +
+                    (seg.to.y - seg.from.y) * (seg.to.y - seg.from.y)
+                );
+                segmentLengths.push(len);
+                totalLength += len;
+            }
         }
-        
+
         // Find position
         var targetDist = progress * totalLength;
         var distSoFar = 0;
-        
+
         for (var i = 0; i < segments.length; i++) {
             var segLen = segmentLengths[i];
-            
+
             if (distSoFar + segLen >= targetDist) {
-                // Position is in this segment
                 var segProgress = (targetDist - distSoFar) / segLen;
                 var seg = segments[i];
                 return {
@@ -2700,10 +2966,10 @@ var CanvasRenderer = {
                     y: seg.from.y + (seg.to.y - seg.from.y) * segProgress
                 };
             }
-            
+
             distSoFar += segLen;
         }
-        
+
         // Return end position
         var lastSeg = segments[segments.length - 1];
         return { x: lastSeg.to.x, y: lastSeg.to.y };

@@ -406,7 +406,7 @@ var TreePreviewFlat = {
                     dirAngle = s.invertGrowth ? Math.PI : 0; // right / left
                 }
 
-                rootNodes.push({ x: nx - cx, y: ny - cy, school: school, color: color, dir: dirAngle });
+                rootNodes.push({ x: nx - cx, y: ny - cy, school: school, color: color, dir: dirAngle, rootIndex: j });
 
                 // Node glow
                 ctx.beginPath();

@@ -1813,8 +1813,14 @@
     -->
     
     <!-- 0. i18n Translation Engine (must load first) -->
-    <script src="lang/en.js"></script>
     <script src="lang/locale.js"></script>
+    <script src="lang/en.js"></script>
+    <script>
+    // Load locale-specific preload if non-English (overwrites en.js preload)
+    // Uses document.write for synchronous loading - required by Ultralight/USVFS
+    var _loc = window._i18nLocale || 'en';
+    if (_loc !== 'en') document.write('<script src="lang/' + _loc + '.js"><\/script>');
+    </script>
     <script src="modules/i18n.js"></script>
     <script>initI18n(window._i18nLocale || 'en');</script>
 

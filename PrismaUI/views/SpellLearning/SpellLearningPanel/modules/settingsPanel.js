@@ -1320,6 +1320,9 @@ function saveUnifiedConfig() {
         spellBlacklist: settings.spellBlacklist || [],
         pluginWhitelist: settings.pluginWhitelist || [],
 
+        // User-selected root spells per school
+        selectedRoots: settings.selectedRoots || {},
+
         // Dynamic tree building settings
         treeGeneration: settings.treeGeneration,
 

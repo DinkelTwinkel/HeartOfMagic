@@ -40,6 +40,7 @@ var TreePreview = {
 
     // Root selection
     _rootSelectionSchool: null,
+    _rootSelectionIndex: 0,
     _rootSelectionSpells: [],
 
     // Render loop
@@ -520,6 +521,11 @@ var TreePreview = {
         return { x: worldX, y: worldY };
     },
 
+    /** Build the selectedRoots key for a root node: "School:index" */
+    _rootKey: function(school, rootIndex) {
+        return school + ':' + (rootIndex || 0);
+    },
+
     /** Hit-test root nodes. Returns the rootNode object if hit, or null. */
     _hitTestRootNode: function(e) {
         var world = this._screenToWorld(e.clientX, e.clientY);
@@ -549,7 +555,7 @@ var TreePreview = {
     _handleClick: function(e) {
         var hitNode = this._hitTestRootNode(e);
         if (hitNode && hitNode.school) {
-            this.showRootSelectionModal(hitNode.school);
+            this.showRootSelectionModal(hitNode.school, hitNode.rootIndex || 0);
         }
     },
 
@@ -557,8 +563,9 @@ var TreePreview = {
     // ROOT SELECTION MODAL (reuses #spawn-spell-modal)
     // =========================================================================
 
-    showRootSelectionModal: function(school) {
+    showRootSelectionModal: function(school, rootIndex) {
         this._rootSelectionSchool = school;
+        this._rootSelectionIndex = rootIndex || 0;
 
         var modal = document.getElementById('spawn-spell-modal');
         if (!modal) {
@@ -569,7 +576,11 @@ var TreePreview = {
         // Update title
         var title = modal.querySelector('.modal-header h3');
         if (title) {
-            title.textContent = 'Select Root \u2014 ' + school;
+            var label = 'Select Root \u2014 ' + school;
+            if (this._rootSelectionIndex > 0) {
+                label += ' #' + (this._rootSelectionIndex + 1);
+            }
+            title.textContent = label;
         }
 
         // Load primed spells for this school
@@ -602,6 +613,7 @@ var TreePreview = {
             modal.classList.add('hidden');
         }
         this._rootSelectionSchool = null;
+        this._rootSelectionIndex = 0;
 
         // Restore original title
         var title = modal ? modal.querySelector('.modal-header h3') : null;
@@ -635,8 +647,9 @@ var TreePreview = {
         // Limit results
         filtered = filtered.slice(0, 50);
 
-        // Check current selection
-        var currentRoot = settings.selectedRoots ? settings.selectedRoots[school] : null;
+        // Check current selection (indexed by school:rootIndex)
+        var rootKey = this._rootKey(school, this._rootSelectionIndex);
+        var currentRoot = settings.selectedRoots ? settings.selectedRoots[rootKey] : null;
         var currentFormId = currentRoot ? currentRoot.formId : null;
 
         if (filtered.length === 0 && !searchTerm) {
@@ -695,12 +708,12 @@ var TreePreview = {
         // Cancel button — repurpose as "Clear Selection" if a root is selected
         var cancelBtn = document.getElementById('spawn-cancel');
         if (cancelBtn) {
-            var school = this._rootSelectionSchool;
-            var hasSelection = settings.selectedRoots && settings.selectedRoots[school];
+            var rootKey = this._rootKey(this._rootSelectionSchool, this._rootSelectionIndex);
+            var hasSelection = settings.selectedRoots && settings.selectedRoots[rootKey];
             if (hasSelection) {
                 cancelBtn.textContent = 'Clear Selection';
                 cancelBtn.onclick = function() {
-                    self._clearRoot(school);
+                    self._clearRoot(rootKey);
                 };
             } else {
                 cancelBtn.textContent = 'Cancel';
@@ -723,15 +736,17 @@ var TreePreview = {
             settings.selectedRoots = {};
         }
 
-        settings.selectedRoots[school] = {
+        var rootKey = this._rootKey(school, this._rootSelectionIndex);
+        settings.selectedRoots[rootKey] = {
             formId: spell.formId,
             name: spell.name || spell.formId,
             school: school,
+            rootIndex: this._rootSelectionIndex,
             plugin: spell.plugin || '',
             localFormId: typeof getLocalFormId === 'function' ? getLocalFormId(spell.formId) : spell.formId
         };
 
-        console.log('[TreePreview] Selected root for ' + school + ': ' + spell.name + ' (' + spell.formId + ')');
+        console.log('[TreePreview] Selected root for ' + rootKey + ': ' + spell.name + ' (' + spell.formId + ')');
 
         if (typeof autoSaveSettings === 'function') {
             autoSaveSettings();
@@ -741,10 +756,10 @@ var TreePreview = {
         this._markDirty();
     },
 
-    _clearRoot: function(school) {
-        if (settings.selectedRoots && settings.selectedRoots[school]) {
-            delete settings.selectedRoots[school];
-            console.log('[TreePreview] Cleared root selection for ' + school);
+    _clearRoot: function(rootKey) {
+        if (settings.selectedRoots && settings.selectedRoots[rootKey]) {
+            delete settings.selectedRoots[rootKey];
+            console.log('[TreePreview] Cleared root selection for ' + rootKey);
 
             if (typeof autoSaveSettings === 'function') {
                 autoSaveSettings();
@@ -769,7 +784,8 @@ var TreePreview = {
 
         for (var i = 0; i < rootNodes.length; i++) {
             var n = rootNodes[i];
-            var sel = settings.selectedRoots[n.school];
+            var rootKey = this._rootKey(n.school, n.rootIndex);
+            var sel = settings.selectedRoots[rootKey];
             if (!sel) continue;
 
             var nx = n.x + w / 2;
@@ -800,6 +816,39 @@ var TreePreview = {
     // =========================================================================
     // DATA OUTPUT — Universal format for downstream sections
     // =========================================================================
+
+    /**
+     * Convert indexed selectedRoots ("School:0", "School:1") to per-school
+     * format for the C++ builder. Returns { school: { formId, ... } } using
+     * the first root (index 0) as primary, plus a "all_roots" array per school.
+     */
+    _flattenSelectedRoots: function() {
+        var roots = settings.selectedRoots || {};
+        var result = {};
+        var allRoots = {};
+        var keys = Object.keys(roots);
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            var entry = roots[key];
+            var school = entry.school || key.split(':')[0];
+            if (!allRoots[school]) allRoots[school] = [];
+            allRoots[school].push(entry);
+            // Use the lowest-indexed root as the primary for the builder
+            var idx = entry.rootIndex || 0;
+            if (!result[school] || idx < (result[school]._idx || 0)) {
+                result[school] = entry;
+                result[school]._idx = idx;
+            }
+        }
+        // Clean up temp _idx and attach all_roots
+        var schools = Object.keys(result);
+        for (var j = 0; j < schools.length; j++) {
+            delete result[schools[j]]._idx;
+        }
+        // Attach full list as separate key for future multi-root support
+        result._allRoots = allRoots;
+        return result;
+    },
 
     getOutput: function() {
         var modeModule = this.modes[this.activeMode];

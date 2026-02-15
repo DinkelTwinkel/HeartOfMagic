@@ -84,5 +84,7 @@ namespace SpellScanner
     std::string GetCastingTypeName(RE::MagicSystem::CastingType type);
     std::string GetDeliveryName(RE::MagicSystem::Delivery delivery);
     std::string GetSkillLevelName(uint32_t minimumSkill);
+    std::string GetSkillLevelFromPerk(RE::BGSPerk* perk);
+    std::string DetermineSpellTier(RE::SpellItem* spell);
     std::string GetPluginName(RE::FormID formId);
 }

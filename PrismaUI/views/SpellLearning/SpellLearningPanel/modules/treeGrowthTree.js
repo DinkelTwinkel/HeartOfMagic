@@ -142,7 +142,7 @@ var TreeGrowthTree = {
             top_themes_per_school: 8,
             convergence_chance: 0.3,
             prefer_vanilla_roots: true,
-            selected_roots: settings.selectedRoots || {}
+            selected_roots: TreePreview._flattenSelectedRoots()
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({

@@ -2,6 +2,7 @@
 #include "UIManager.h"
 #include "SpellEffectivenessHook.h"
 #include "SpellTomeHook.h"
+#include "SpellScanner.h"
 #include "SKSE/SKSE.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -910,28 +911,15 @@ float ProgressionManager::GetRequiredXP(RE::FormID formId) const
     if (it != m_spellProgress.end() && it->second.requiredXP > 0) {
         return it->second.requiredXP;
     }
-    
+
     // If no progress data, try to determine from spell tier
     auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formId);
     if (spell) {
-        // Get spell's minimum skill level from its effects to determine tier
-        int skillLevel = 0;
-        for (std::uint32_t i = 0; i < spell->effects.size(); ++i) {
-            auto* effect = spell->effects[i];
-            if (effect && effect->baseEffect) {
-                int effectLevel = static_cast<int>(effect->baseEffect->data.minimumSkill);
-                skillLevel = (std::max)(skillLevel, effectLevel);
-            }
-        }
-        
-        // Map skill level to tier
-        if (skillLevel <= 25) return m_xpSettings.xpNovice;
-        if (skillLevel <= 50) return m_xpSettings.xpApprentice;
-        if (skillLevel <= 75) return m_xpSettings.xpAdept;
-        if (skillLevel <= 100) return m_xpSettings.xpExpert;
-        return m_xpSettings.xpMaster;
+        // Use perk-based tier detection (fixes modded master spells with minimumSkill=0)
+        std::string tier = SpellScanner::DetermineSpellTier(spell);
+        return GetXPForTier(tier);
     }
-    
+
     return m_xpSettings.xpNovice;  // Default to novice
 }
 

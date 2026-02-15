@@ -360,7 +360,7 @@ var TreeGrowthClassic = {
             prefer_vanilla_roots: true,
             tier_zones: self.settings.tierZones,
             grid_hint: gridHint,
-            selected_roots: settings.selectedRoots || {}
+            selected_roots: typeof TreePreview !== 'undefined' ? TreePreview._flattenSelectedRoots() : {}
         };
 
         window.callCpp('ProceduralPythonGenerate', JSON.stringify({
