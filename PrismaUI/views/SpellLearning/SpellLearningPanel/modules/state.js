@@ -387,10 +387,6 @@ var state = {
         failedSchools: [],
         needsAttentionSchools: []  // Schools that had unreachable nodes after auto-fix
     },
-    // Python addon status (for Complex Build)
-    pythonAddonInstalled: false,  // Set by C++ on panel open
-    pythonScriptFound: false,     // build_tree.py exists
-    pythonSetupInProgress: false, // Auto-setup running
     // Progression tracking
     learningTargets: {},  // school -> formId
     spellProgress: {},    // formId -> {xp, required, unlocked, ready}

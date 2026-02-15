@@ -131,9 +131,6 @@
                                 <button id="easyReplayBtn" class="btn easy-action-btn" style="display:none;" data-i18n-html="buttons.replay">
                                     <span class="btn-icon">[R]</span> Replay
                                 </button>
-                                <button id="easySetupPythonBtn" class="btn easy-action-btn" style="display:none;" data-i18n="buttons.setupPython">
-                                    Setup Python
-                                </button>
                                 <span class="easy-status-wrap" data-i18n-html="easyMode.statusWrap">Status: <span id="easyStatus">Waiting for scan...</span></span>
                             </div>
                         </div>
@@ -411,9 +408,6 @@
                         </button>
                         <button id="tgClearBtn" class="btn btn-danger" disabled data-i18n-html="buttons.clearTree">
                             <span class="btn-icon">[X]</span> Clear Tree
-                        </button>
-                        <button id="tgSetupPythonBtn" class="btn" style="display:none;" data-i18n="buttons.setupPython">
-                            Setup Python
                         </button>
                         <span style="margin-left:8px; font-size:11px;" data-i18n-html="scanner.complexStatusWrap">Status: <span id="tgStatus" style="color:rgba(184,168,120,0.5);">Waiting for scan...</span></span>
                     </div>
@@ -1777,11 +1771,6 @@
             </div>
             <div class="modal-body">
                 <div class="build-stages" id="build-stages">
-                    <div class="build-stage" data-stage="python" id="build-stage-python">
-                        <span class="build-stage-icon" id="build-stage-python-icon">&#9711;</span>
-                        <span class="build-stage-label" data-i18n="modals.buildProgress.stagePython">Starting Python Server</span>
-                        <span class="build-stage-detail" id="build-stage-python-detail"></span>
-                    </div>
                     <div class="build-stage" data-stage="tree" id="build-stage-tree">
                         <span class="build-stage-icon" id="build-stage-tree-icon">&#9711;</span>
                         <span class="build-stage-label" data-i18n="modals.buildProgress.stageTree">Analyzing &amp; Building Spell Tree</span>
@@ -1805,29 +1794,6 @@
             </div>
             <div class="modal-footer">
                 <button id="build-progress-done-btn" class="btn btn-primary hidden" onclick="BuildProgress.close()" data-i18n="modals.buildProgress.done">Done</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Python Setup Modal -->
-    <div id="python-setup-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content python-setup-modal">
-            <div class="modal-header">
-                <h3 data-i18n="modals.pythonSetup.title">Setting Up Python</h3>
-            </div>
-            <div class="modal-body">
-                <div class="setup-stage-label" id="setup-stage-label" data-i18n="modals.pythonSetup.preparing">Preparing...</div>
-                <div class="setup-progress-bar">
-                    <div class="setup-progress-fill" id="setup-progress-fill"></div>
-                </div>
-                <div class="setup-detail" id="setup-detail"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="setup-cancel-btn" class="btn btn-secondary" onclick="cancelPythonSetup()" data-i18n="modals.pythonSetup.cancel">Cancel</button>
-                <button id="setup-done-btn" class="btn btn-primary hidden" onclick="onSetupDone()" data-i18n="modals.pythonSetup.done">Done</button>
-                <button id="setup-retry-btn" class="btn btn-primary hidden" onclick="startPythonSetup()" data-i18n="modals.pythonSetup.retry">Retry</button>
-                <button id="setup-manual-btn" class="btn btn-secondary hidden" onclick="showManualPythonInstructions()" data-i18n="modals.pythonSetup.manualSetup">Manual Setup</button>
             </div>
         </div>
     </div>
@@ -1936,7 +1902,6 @@
     <!-- 6. Integrations and Callbacks -->
     <script src="modules/cppCallbacks.js"></script>
     <script src="modules/buildProgress.js"></script>
-    <script src="modules/pythonSetup.js"></script>
     <script src="modules/llmIntegration.js"></script>
     <script src="modules/proceduralTreeBuilder.js"></script>
     

@@ -76,55 +76,19 @@ function syncDuplicateState(sourceNode) {
 // =============================================================================
 
 /**
- * Called by C++ when panel opens to report Python addon status
- * Controls whether Complex Build button is available
+ * Called by C++ when panel opens to report builder availability.
+ * Native C++ builder is always available — enables Build button.
  */
 window.onPythonAddonStatus = function(statusStr) {
-    // Parse JSON status from C++ (new format: {installed, hasScript, hasPython, pythonSource})
-    var status;
-    try {
-        status = JSON.parse(statusStr);
-    } catch (e) {
-        // Legacy fallback: simple "true"/"false" string
-        status = { installed: (statusStr === 'true'), hasScript: true, hasPython: (statusStr === 'true') };
-    }
-
-    var installed = status.installed;
-    var hasScript = status.hasScript;
-    var hasPython = status.hasPython;
-
-    state.pythonAddonInstalled = installed;
-    state.pythonScriptFound = hasScript;
-    console.log('[SpellLearning] Python addon status:', JSON.stringify(status));
-
-    // Update shared growth mode buttons + status (handles tgBuildBtn, tgSetupPythonBtn, tgStatus)
+    // Native C++ builder — always ready
+    console.log('[SpellLearning] Builder status: native C++');
     if (typeof TreeGrowth !== 'undefined') {
-        TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
-    }
-};
-
-/**
- * Called by C++ before SendCommand to signal whether PythonBridge is already running.
- * If ready, skip the "Starting Python Server" build progress stage.
- */
-window.onPythonBridgeStatus = function(str) {
-    try {
-        var data = typeof str === 'string' ? JSON.parse(str) : str;
-        if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
-            if (data.ready) {
-                // Python already running — skip past python stage
-                if (BuildProgress.getCurrentStage() === 'python') {
-                    BuildProgress.setStage('tree');
-                }
-            }
-        }
-    } catch (e) {
-        console.warn('[PythonBridgeStatus] Parse error:', e);
+        TreeGrowth.updateBuilderReady();
     }
 };
 
 window.updateSpellData = function(jsonStr) {
-    console.log('[SpellLearning] Received spell data, length:', jsonStr.length);
+    console.log('[SpellLearning] Received spell data, length:' + jsonStr.length);
 
     // Check if this is a tome-only scan response (used for filtering, not main data)
     try {
@@ -148,7 +112,9 @@ window.updateSpellData = function(jsonStr) {
             }
             return;
         }
-    } catch (e) { /* continue to normal processing */ }
+    } catch (e) {
+        console.error('[SpellLearning] Failed to parse JSON for tome scan check:', e);
+        /* continue to normal processing */ }
 
     var scanSuccess = false;
     try {

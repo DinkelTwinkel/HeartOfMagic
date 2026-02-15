@@ -217,7 +217,7 @@ var TreeGrowthMyMode = {
         // ...your settings
     },
 
-    // Built tree data (from Python backend)
+    // Built tree data (from C++ native builder)
     _treeData: null,
 ```
 
@@ -294,7 +294,7 @@ These are called by the shared Build / Apply / Clear buttons in the UI.
 
 #### `buildTree()`
 
-Trigger tree construction. Typically sends spell data to the Python backend via `window.callCpp()`, receives the tree structure, and stores it for layout + rendering.
+Trigger tree construction. Sends spell data to the C++ native builder via `window.callCpp()`, receives the tree structure, and stores it for layout + rendering.
 
 ```javascript
     buildTree: function() {
@@ -307,8 +307,9 @@ Trigger tree construction. Typically sends spell data to the Python backend via 
             // ...your config
         };
 
-        // Call Python backend
+        // Call C++ native builder
         window.callCpp('RunProceduralPython', JSON.stringify({
+            command: 'build_tree_mymode',
             spells: spellData.spells,
             config: config
         }));
@@ -317,7 +318,7 @@ Trigger tree construction. Typically sends spell data to the Python backend via 
 
 #### `loadTreeData(data)`
 
-Called when the Python backend returns tree data. Store it, run layout, update preview.
+Called when the C++ builder returns tree data. Store it, run layout, update preview.
 
 ```javascript
     loadTreeData: function(data) {
@@ -454,132 +455,40 @@ if (typeof TreePreviewSun !== 'undefined') {
 - [ ] Script tag added to `index.html` before the orchestrator
 - [ ] Orchestrator EOF section has a check for your global
 
-## Python Builder Contract
+## C++ Builder Contract
 
-Growth modules can bundle a Python tree builder in a `python/` subfolder. `server.py` auto-discovers these dirs at startup and adds them to `sys.path`.
+Tree building is handled natively by `TreeBuilder.cpp` in the SKSE plugin. All 5 builder modes run as C++ code — no external processes or IPC required.
 
-### File Layout
+### Adding a New Builder Mode
 
-```
-modules/mymode/
-├── mymodeMain.js
-├── mymodeSettings.js
-└── python/
-    └── mymode_build_tree.py    ← Python builder for this mode
+1. **Add builder function** in `TreeBuilder.cpp`:
+```cpp
+BuildResult BuildMyMode(const std::vector<json>& spells, const BuildConfig& config);
 ```
 
-### Builder Interface
-
-Each builder must export a function matching this signature:
-
-```python
-def mymode_build_tree_from_data(spells: list, config: dict) -> dict:
-    """Build spell trees for MyMode.
-
-    Args:
-        spells: List of spell dicts with formId, name, school, skillLevel, etc.
-        config: Configuration dict from JS (mode-specific settings).
-
-    Returns:
-        dict: Tree data in standard format:
-            {
-                'version': '1.0',
-                'schools': {
-                    'SchoolName': {
-                        'root': 'formId',
-                        'nodes': [{ formId, name, children, prerequisites, tier, ... }],
-                        'layoutStyle': 'my_style'
-                    }
-                },
-                'seed': 12345,
-                'validation': { 'all_valid': True, ... }
-            }
-    """
+2. **Register command** in `TreeBuilder::Build()`:
+```cpp
+if (command == "build_tree_mymode") {
+    return BuildMyMode(spells, config);
+}
 ```
 
-Output JSON must match the standard tree format so JS layout, apply, and PRM systems work unchanged.
-
-### Shared Modules
-
-Builders reuse shared modules from `SpellTreeBuilder/` (already on `sys.path`):
-
-| Module | Import | Purpose |
-|--------|--------|---------|
-| `core.node` | `from core.node import TreeNode, link_nodes` | Node data model |
-| `theme_discovery` | `from theme_discovery import discover_themes_per_school` | NLP theme extraction |
-| `validator` | `from validator import validate_tree, fix_unreachable_nodes` | Tree validation |
-| `config` | `from config import TreeBuilderConfig` | Config parsing |
-
-### Command Routing
-
-1. JS sends `command: 'build_tree_mymode'` in the `ProceduralPythonGenerate` request
-2. `UIManager.cpp` reads the `command` field and passes it to PythonBridge
-3. `server.py` routes the command to the correct builder function
-
-To add a new command, update `server.py`:
-
-```python
-# Import
-from mymode_build_tree import mymode_build_tree_from_data
-
-# In command routing:
-elif command == "build_tree_mymode":
-    result = mymode_build_tree_from_data(spells, config)
-    send_response(request_id, True, result)
-```
-
-### Error Handling
-
-Use `_handleBuildFailure()` in `proceduralTreeBuilder.js` for shared error + retry UI:
-
+3. **JS sends command** from growth module:
 ```javascript
-_handleBuildFailure(
-    error,                    // Error string
-    '_myModeBuildPending',    // State key for retry routing
-    MyModeSettings,           // Settings module (has .setStatusText)
-    { command: 'build_tree_mymode', config: retryConfig },
-    'myModeBuildBtn',         // Button ID to re-enable
-    '[MyMode]'                // Log prefix
-);
+window.callCpp('RunProceduralPython', JSON.stringify({
+    command: 'build_tree_mymode',
+    spells: spellData.spells,
+    config: config
+}));
 ```
 
-### Existing Builders
+### Builder Function Signature
 
-| Builder | Command | Algorithm |
-|---------|---------|-----------|
-| `classic_build_tree.py` | `build_tree_classic` | Tier-first: depth = tier index. NLP within-tier parent selection. No sklearn. |
-| `tree_build_tree.py` | `build_tree` | NLP thematic: TF-IDF similarity drives parent→child links. Requires sklearn. |
-
-## File Reference
-
-| File | Role |
-|------|------|
-| `modules/treePreview.js` | Root base orchestrator |
-| `modules/treePreviewSun.js` | SUN root module (radial wheel) |
-| `modules/treePreviewFlat.js` | FLAT root module (linear) |
-| `modules/treePreviewUtils.js` | Shared UI helpers (drag inputs) |
-| `modules/treeGrowth.js` | Tree growth orchestrator |
-| `modules/classic/classicMain.js` | CLASSIC growth module |
-| `modules/classic/python/classic_build_tree.py` | CLASSIC Python builder (tier-first) |
-| `modules/treeGrowthTree.js` | TREE growth module |
-| `modules/tree/python/tree_build_tree.py` | TREE Python builder (NLP) |
-| `modules/proceduralTreeBuilder.js` | Shared callback routing + error handler |
-| `modules/sunGrid*.js` | SUN grid sub-modules |
-
-## Python Builder Contract
-
-Each growth module can bundle a Python tree builder in a `python/` subfolder.
-Server.py auto-discovers `modules/*/python/` directories and adds them to sys.path.
-
-### Function Signature
-
-```python
-def {mode}_build_tree_from_data(spells: list, config: dict) -> dict:
+```cpp
+BuildResult BuildMyMode(const std::vector<json>& spells, const BuildConfig& config)
 ```
 
-### Input: `spells`
-
-List of spell dicts, each with:
+**Input: `spells`** — array of spell JSON objects:
 ```json
 {
   "formId": "0x00012FCD",
@@ -592,14 +501,22 @@ List of spell dicts, each with:
 }
 ```
 
-### Input: `config`
+**Input: `config`** — `BuildConfig` struct parsed from JS JSON:
+- `maxChildrenPerNode` (int): Soft cap on children per node (default 3)
+- `topThemesPerSchool` (int): Max themes to discover (default 8)
+- `preferVanillaRoots` (bool): Prefer low-load-order spells as roots
+- `seed` (int): Random seed for reproducibility (0 = time-based)
+- `selectedRoots` (map): Per-school root overrides
 
-Dict with builder options. Common fields:
-- `max_children_per_node` (int): Soft cap on children per node (default 3)
-- `top_themes_per_school` (int): Max themes to discover (default 8)
-- `prefer_vanilla_roots` (bool): Prefer low-load-order spells as roots
-- `seed` (int|null): Random seed for reproducibility
-- `grid_hint` (dict|null): Grid metadata from JS layout (mode, schoolCount, etc.)
+**Output: `BuildResult`:**
+```cpp
+struct BuildResult {
+    json treeData;       // Full tree JSON (see output schema below)
+    bool success;
+    std::string error;
+    float elapsedMs;
+};
+```
 
 ### Output Schema
 
@@ -635,54 +552,79 @@ Dict with builder options. Common fields:
 }
 ```
 
-### Command Registration
+### Shared NLP Functions (TreeNLP)
 
-Builders self-register with server.py on import:
+Builders use shared NLP infrastructure from `TreeNLP.h`:
 
-```python
-# At module scope, after function definition:
-try:
-    from server import register_command
-    register_command('build_tree_mymode', mymode_build_tree_from_data)
-except ImportError:
-    pass  # Running standalone
+| Function | Purpose |
+|----------|---------|
+| `TreeNLP::Tokenize()` | Text tokenization |
+| `TreeNLP::BuildSpellText()` | Extract weighted text from spell JSON |
+| `TreeNLP::ComputeTfIdf()` | TF-IDF vectorization with L2 norms |
+| `TreeNLP::CosineSimilarity()` | Cosine similarity between sparse vectors |
+| `TreeNLP::CharNgramSimilarity()` | Character n-gram Jaccard similarity |
+| `TreeNLP::FuzzyRatio()` / `FuzzyPartialRatio()` / `FuzzyTokenSetRatio()` | Fuzzy string matching |
+| `TreeNLP::CalculateThemeScore()` | Multi-strategy theme scoring (0-100) |
+
+### Shared Tree Functions (TreeBuilder)
+
+| Function | Purpose |
+|----------|---------|
+| `TreeBuilder::DiscoverThemesPerSchool()` | TF-IDF keyword extraction per school |
+| `TreeBuilder::MergeWithHints()` | Merge discovered themes with vanilla hints |
+| `TreeBuilder::GroupSpellsBestFit()` | Assign spells to best-matching theme |
+| `TreeBuilder::ComputeSimilarityMatrix()` | Pairwise spell similarity |
+| `TreeBuilder::LinkNodes()` / `UnlinkNodes()` | Parent-child linking |
+| `TreeBuilder::ValidateSchoolTree()` | Reachability + cycle detection |
+| `TreeBuilder::FixUnreachableNodes()` | Multi-pass orphan repair |
+
+### Error Handling
+
+Use `_handleBuildFailure()` in `proceduralTreeBuilder.js` for shared error + retry UI:
+
+```javascript
+_handleBuildFailure(
+    error,                    // Error string
+    '_myModeBuildPending',    // State key for retry routing
+    MyModeSettings,           // Settings module (has .setStatusText)
+    { command: 'build_tree_mymode', config: retryConfig },
+    'myModeBuildBtn',         // Button ID to re-enable
+    '[MyMode]'                // Log prefix
+);
 ```
 
-Server.py routes commands via the registry. Built-in commands (ping, shutdown, prm_score) are handled directly.
+### Existing Builders
 
-### Shared Modules
+| Builder | Command | Algorithm |
+|---------|---------|-----------|
+| Classic | `build_tree_classic` | Tier-first: depth = tier index. NLP within-tier parent selection. |
+| Tree | `build_tree` | NLP thematic: TF-IDF similarity drives parent→child links. Round-robin theme interleaving. |
+| Graph | `build_tree_graph` | Edmonds' minimum spanning arborescence (directed MST). |
+| Thematic | `build_tree_thematic` | 3D similarity BFS with per-theme branch construction. |
+| Oracle | `build_tree_oracle` | LLM-guided semantic chain grouping (fallback: cluster lanes). |
 
-Builders import shared infrastructure from `SpellTreeBuilder/`:
-- `core.node` — TreeNode, link_nodes
-- `theme_discovery` — discover_themes_per_school, extract_spell_text, merge_with_hints
-- `prereq_master_scorer` — tokenize, build_text, compute_tfidf, cosine_similarity, char_ngram_similarity
-- `spell_grouper` — get_spell_primary_theme, calculate_theme_score
-- `config` — TreeBuilderConfig, merge_configs
-- `validator` — validate_tree, fix_unreachable_nodes
+## File Reference
+
+| File | Role |
+|------|------|
+| `modules/treePreview.js` | Root base orchestrator |
+| `modules/treePreviewSun.js` | SUN root module (radial wheel) |
+| `modules/treePreviewFlat.js` | FLAT root module (linear) |
+| `modules/treePreviewUtils.js` | Shared UI helpers (drag inputs) |
+| `modules/treeGrowth.js` | Tree growth orchestrator |
+| `modules/classic/classicMain.js` | CLASSIC growth module |
+| `modules/treeGrowthTree.js` | TREE growth module |
+| `modules/proceduralTreeBuilder.js` | Shared callback routing + error handler |
+| `modules/sunGrid*.js` | SUN grid sub-modules |
 
 ## Config Conventions
 
-### Deep Merge
-
-`merge_configs(base, override)` recursively merges nested dicts. Partial overrides
-preserve sibling keys from defaults:
-
-```python
-from config import merge_configs
-merged = merge_configs(
-    {'scoring': {'theme': True, 'nlp': True, 'tier': True}},
-    {'scoring': {'nlp': False}}
-)
-# Result: {'scoring': {'theme': True, 'nlp': False, 'tier': True}}
-```
-
 ### Range Validation
 
-`TreeBuilderConfig.from_dict()` clamps values to safe ranges:
+`BuildConfig::FromJson()` clamps values to safe ranges:
 - density: 0.0–1.0
-- max_children_per_node: 1–8
-- convergence_chance: 0.0–1.0
-- similarity_threshold: 0.0–1.0
+- maxChildrenPerNode: 1–8
+- convergenceChance: 0.0–1.0
 
 Invalid values are silently clamped, not rejected.
 
@@ -706,19 +648,21 @@ Optional config field that lets users override automatic root selection per scho
 - Stored in `settings.selectedRoots` (persistent, auto-saved)
 - Set via TreePreview root node click → spawn-style spell search modal
 - Filtered to primed spells (post-blacklist/whitelist/tome) for the selected school
-- Passed in config dict to Python: `config.selected_roots = settings.selectedRoots || {}`
+- Passed in config dict to C++: `config.selected_roots = settings.selectedRoots || {}`
 
-### Python Side
+### C++ Side
 
-Builders check `selected_roots` before their normal root selection logic:
+Builders check `selectedRoots` in `BuildConfig` before their normal root selection logic:
 
-```python
-selected_roots = config.get('selected_roots', {})
-if school in selected_roots:
-    override_id = selected_roots[school].get('formId', '')
-    if override_id in spell_pool:
-        return override_id  # Use user selection
-    # else: fall through to auto-pick
+```cpp
+auto it = config.selectedRoots.find(school);
+if (it != config.selectedRoots.end()) {
+    auto& overrideId = it->second;
+    if (spellPool.contains(overrideId)) {
+        return overrideId;  // Use user selection
+    }
+    // else: fall through to auto-pick
+}
 ```
 
 **Behavior:**
@@ -728,9 +672,10 @@ if school in selected_roots:
 
 ### Integrated Modules
 
-| Module | Function | Status |
-|--------|----------|--------|
-| Classic (`classic_build_tree.py`) | `_pick_root()` | Integrated |
-| Tree (`tree_builder.py`) | `_select_root()` | Integrated |
-| Graph (`graph_build_tree.py`) | — | Future (optional) |
-| Oracle (`oracle_build_tree.py`) | — | Future (optional) |
+| Builder | Function | Status |
+|---------|----------|--------|
+| Classic (`BuildClassic`) | Root selection | Integrated |
+| Tree (`BuildTree`) | Root selection | Integrated |
+| Graph (`BuildGraph`) | Root selection | Integrated |
+| Thematic (`BuildThematic`) | Root selection | Integrated |
+| Oracle (`BuildOracle`) | Root selection | Integrated |

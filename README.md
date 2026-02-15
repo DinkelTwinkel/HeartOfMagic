@@ -10,16 +10,17 @@ No manual configuration required. Compatible with every spell mod.
 
 The system analyzes spell names, effects, keywords, and descriptions to build prerequisite trees that make sense. Fire spells branch from fire. Healing chains lead to greater restoration. No hardcoded spell lists - it discovers what elements exist in your load order and builds around them.
 
-**Two build paths, both fully automatic:**
+**Five native C++ builder modes, all fully automatic:**
 
-| | Python Builder (Recommended) | JavaScript Builder |
-|---|---|---|
-| **Quality** | High - multi-stage NLP pipeline | Good - lighter analysis |
-| **Theme Discovery** | TF-IDF analysis of names, effects, descriptions | TF-IDF with basic grouping |
-| **Spell Grouping** | Fuzzy string matching (partial ratio, token set, substring) | Keyword-based matching |
-| **Edge Scoring** | Multi-factor: element isolation, tier ordering, theme coherence, effect matching | Basic tier + theme scoring |
-| **Validation** | Full path simulation with auto-fix (up to 20 passes) | Basic validation |
-| **Dependencies** | Python 3.9+ (auto-installer included in UI) | None |
+| Mode | Description |
+|---|---|
+| **Classic** | Tier-first builder. Novice at roots, Master at edges. NLP similarity guides parent selection. |
+| **Tree** | NLP-driven. TF-IDF similarity drives parent-child links with round-robin theme interleaving. |
+| **Graph** | Edmonds' minimum arborescence for optimal prerequisite chains. |
+| **Thematic** | Groups spells by discovered themes (TF-IDF + fuzzy matching), builds within-theme chains. |
+| **Oracle** | LLM-assisted builder (OpenRouter API) with native C++ fallback. |
+
+No external dependencies. All NLP (TF-IDF, cosine similarity, fuzzy matching) runs natively in C++.
 
 ### Two Growth Modes
 
@@ -88,7 +89,7 @@ Control exactly which mods contribute spells. Uses stable `plugin:formId` keys t
 - **[PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/)** - UI framework (must load before Heart of Magic)
 
 ### Optional
-- **Python 3.9+** - For the detailed tree builder (auto-installer included in mod UI)
+- **Python 3.9+** - Only if using the LLM/Oracle builder mode with OpenRouter API
 
 ## Installation
 
@@ -108,12 +109,9 @@ Data/
 │       ├── SpellLearning.dll
 │       └── SpellLearning/
 │           ├── config.json
-│           ├── presets/
-│           │   ├── settings/     (DEFAULT.json, Easy.json, Hard.json)
-│           │   └── scanner/      (DEFAULT.json)
-│           └── SpellTreeBuilder/
-│               ├── build_tree.py
-│               └── prereq_master_scorer.py
+│           └── presets/
+│               ├── settings/     (DEFAULT.json, Easy.json, Hard.json)
+│               └── scanner/      (DEFAULT.json)
 ├── SEQ/
 │   └── SpellLearning.seq
 └── PrismaUI/
@@ -129,11 +127,10 @@ Data/
 3. You'll land on the **Easy Mode** scanner page
 4. Click **Scan** to detect all spells in your load order
 5. Choose a preset (or use defaults) and click **Build Tree**
-6. For the detailed builder: click the Python setup button if prompted - it auto-installs
-7. Switch to the **Spell Tree** tab to see your generated tree
-8. In gameplay: find spell tomes for root spells to begin learning. Cast prerequisite spells to earn XP toward new ones
+6. Switch to the **Spell Tree** tab to see your generated tree
+7. In gameplay: find spell tomes for root spells to begin learning. Cast prerequisite spells to earn XP toward new ones
 
-> Depending on load order size, the Python builder can take up to 2 minutes. The JavaScript build is near-instant.
+> The native C++ builders run near-instantly, even with 1500+ spells.
 
 ## Settings & Customization
 
@@ -145,33 +142,23 @@ Data/
 
 ## Troubleshooting
 
-### Python Issues
-
-The mod includes a built-in Python installer accessible from the UI. If you prefer manual setup:
-
-1. Install Python 3.9+ from [python.org](https://www.python.org/downloads/) - **check "Add Python to PATH"**
-2. Navigate to `Data\SKSE\Plugins\SpellLearning\SpellTreeBuilder\`
-3. Run: `python -m pip install -r requirements.txt`
-
-See [docs/PYTHON_TROUBLESHOOTING.md](docs/PYTHON_TROUBLESHOOTING.md) for detailed troubleshooting.
-
 ### Common Issues
 
 | Problem | Fix |
 |---------|-----|
 | UI not opening | Ensure PrismaUI is installed and loading. Check SKSE logs. |
 | DLL not loading | Verify `SpellLearning.dll` exists in `SKSE/Plugins/`. Check SKSE logs for errors. |
-| Tree not generating | Make sure you scanned spells first. Try the JS builder if Python fails. |
+| Tree not generating | Make sure you scanned spells first. Check SKSE logs for errors. |
 | Quest not starting on existing save | Console: `stopquest SpellLearning` then `startquest SpellLearning` |
 | Spells not appearing | Some NPC-only or duplicate spells are filtered. Check plugin whitelist/blacklist. |
 
 ## Documentation
 
-- [CREATING_MODULES.md](docs/CREATING_MODULES.md) - How to create modules for Heart of Magic
+- [MODULE_CONTRACTS.md](docs/MODULE_CONTRACTS.md) - How to create modules for Heart of Magic
 - [TRANSLATING.md](docs/TRANSLATING.md) - Translation guide
 - [PRESETS.md](docs/PRESETS.md) - Preset system documentation
-- [PYTHON_TROUBLESHOOTING.md](docs/PYTHON_TROUBLESHOOTING.md) - Python setup help
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Technical architecture overview
+- [PLAN-PUBLIC-MODDER-API.md](docs/PLAN-PUBLIC-MODDER-API.md) - Public modder API reference
 
 ## Technical Details
 
@@ -184,19 +171,52 @@ See [docs/PYTHON_TROUBLESHOOTING.md](docs/PYTHON_TROUBLESHOOTING.md) for detaile
 ## Building from Source
 
 ### Requirements
-- Visual Studio 2022
+- Visual Studio 2022 (or 2026)
 - CMake 3.21+
 - [vcpkg](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` environment variable set
-- [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR)
+
+CommonLibSSE-NG is included as a git submodule - no separate installation needed.
 
 ### Build
+
 ```powershell
-cd plugin
-cmake --preset vs2022-windows
-cmake --build build --config Release
+# Using the build script (recommended)
+.\BuildRelease.ps1               # Default: Release-2022 preset
+.\BuildRelease.ps1 -fresh        # Clean reconfigure + build
+.\BuildRelease.ps1 -preset Release-2026  # VS 2026
+
+# Or manually with CMake
+cmake --preset Release-2022
+cmake --build --preset Release-2022
 ```
 
-The output DLL will be in `plugin/build/Release/`.
+This builds all three targets from a single super-build:
+- `SpellLearning.dll` - Main plugin
+- `DontEatSpellTomes.dll` - DEST compatibility shim
+- `SL_BookXP.dll` - BookXP addon
+
+Output is in `build/`.
+
+### Project Structure
+
+```
+HeartOfMagic/
+├── CMakeLists.txt              # Top-level super-build
+├── CMakePresets.json            # Shared build presets
+├── vcpkg.json                  # Shared dependencies
+├── BuildRelease.ps1             # Build script
+├── plugins/
+│   ├── cmake/                  # Shared CMake modules
+│   │   ├── CompilerFlags.cmake   # MSVC optimization flags
+│   │   └── commonlibsse.cmake    # CommonLibSSE-NG setup
+│   ├── external/
+│   │   └── commonlibsse-ng/    # Git submodule (built once)
+│   ├── spelllearning/          # Main SpellLearning plugin
+│   ├── compatibility/
+│   │   └── DummyDEST/          # DEST compatibility shim
+│   └── addons/
+│       └── BookXP/             # BookXP addon plugin
+```
 
 ## Credits
 

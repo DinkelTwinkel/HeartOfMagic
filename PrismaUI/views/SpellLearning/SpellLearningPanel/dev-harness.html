@@ -400,9 +400,6 @@
                             <button id="tgClearBtn" class="btn btn-danger" disabled>
                                 <span class="btn-icon">[X]</span> Clear Tree
                             </button>
-                            <button id="tgSetupPythonBtn" class="btn" style="display:none;">
-                                Setup Python
-                            </button>
                             <span style="margin-left:8px; font-size:11px;">Status: <span id="tgStatus" style="color:rgba(184,168,120,0.5);">Waiting for scan...</span></span>
                         </div>
                     </div>
@@ -835,24 +832,6 @@
         </div>
     </div>
 
-    <div id="python-setup-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content python-setup-modal">
-            <div class="modal-header"><h3>Setting Up Python</h3></div>
-            <div class="modal-body">
-                <div class="setup-stage-label" id="setup-stage-label">Preparing...</div>
-                <div class="setup-progress-bar"><div class="setup-progress-fill" id="setup-progress-fill"></div></div>
-                <div class="setup-detail" id="setup-detail"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="setup-cancel-btn" class="btn btn-secondary">Cancel</button>
-                <button id="setup-done-btn" class="btn btn-primary hidden">Done</button>
-                <button id="setup-retry-btn" class="btn btn-primary hidden">Retry</button>
-                <button id="setup-manual-btn" class="btn btn-secondary hidden">Manual Setup</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Tooltip -->
     <div id="tooltip" class="tooltip hidden">
         <div class="tooltip-name"></div>
@@ -914,7 +893,6 @@
     <script src="modules/treeGrowthTree.js"></script>
     <script src="modules/treeGrowth.js"></script>
     <script src="modules/cppCallbacks.js"></script>
-    <script src="modules/pythonSetup.js"></script>
     <script src="modules/llmIntegration.js"></script>
     <script src="modules/proceduralTreeBuilder.js"></script>
     <script src="modules/layoutGenerator.js"></script>

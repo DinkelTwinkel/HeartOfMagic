@@ -22,7 +22,7 @@ var TreeGrowth = {
     _visible: false,
 
     // Shared button state
-    _pythonInstalled: false,
+    _builderReady: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -497,8 +497,7 @@ var TreeGrowth = {
             var mod = self.modes[self.activeMode];
             if (mod && mod.clearTree) mod.clearTree();
         });
-        // Note: tgSetupPythonBtn is bound eagerly at script load time (below)
-        // because it may be shown before TreeGrowth.init() runs.
+        // (Native C++ builder — no setup button needed)
     },
 
     // =========================================================================
@@ -569,10 +568,6 @@ var TreeGrowth = {
             }
             var replayBtn = document.getElementById('easyReplayBtn');
             if (replayBtn) replayBtn.style.display = 'none';
-
-            if (this._pythonInstalled) {
-                this.setStatusText(t('treeGrowth.pythonReady'), '#22c55e');
-            }
         }
     },
 
@@ -586,30 +581,17 @@ var TreeGrowth = {
     updateBuildButton: function() {
         var buildBtn = document.getElementById('tgBuildBtn');
         if (!buildBtn) return;
-
-        if (this._pythonInstalled && this._hasSpells && !this._treeBuilt) {
+        if (this._hasSpells && !this._treeBuilt) {
             buildBtn.disabled = false;
         } else {
             buildBtn.disabled = true;
         }
     },
 
-    updatePythonStatus: function(installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-
-        var setupBtn = document.getElementById('tgSetupPythonBtn');
-
-        if (installed) {
-            this.setStatusText(t('treeGrowth.pythonReady'), '#22c55e');
-            if (setupBtn) setupBtn.style.display = 'none';
-        } else if (hasScript && !hasPython) {
-            this.setStatusText(t('treeGrowth.pythonNotInstalled'), '#f59e0b');
-            if (setupBtn) setupBtn.style.display = '';
-        } else if (!hasScript) {
-            this.setStatusText(t('treeGrowth.builderNotFound'), '#ef4444');
-            if (setupBtn) setupBtn.style.display = 'none';
-        }
-
+    /** Called by onPythonAddonStatus — native C++ builder is always ready. */
+    updateBuilderReady: function() {
+        this._builderReady = true;
+        this.setStatusText(t('treeGrowth.builderReady') || 'Builder ready', '#22c55e');
         this.updateBuildButton();
     },
 
@@ -639,18 +621,3 @@ if (typeof TreeGrowthOracle !== 'undefined') {
 if (typeof TreeGrowthThematic !== 'undefined') {
     TreeGrowth.registerMode('thematic', TreeGrowthThematic);
 }
-
-// Eagerly bind Setup Python button — it lives in static HTML and may be shown
-// by onPythonAddonStatus before TreeGrowth.init() runs (which requires a scan).
-(function() {
-    var setupBtn = document.getElementById('tgSetupPythonBtn');
-    if (setupBtn) {
-        setupBtn.addEventListener('click', function() {
-            if (typeof window.startPythonSetup === 'function') {
-                window.startPythonSetup();
-            } else {
-                window.callCpp('SetupPython', '');
-            }
-        });
-    }
-})();

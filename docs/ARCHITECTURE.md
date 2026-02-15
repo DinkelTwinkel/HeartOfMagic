@@ -2,7 +2,7 @@
 
 **Purpose:** Concise reference for LLMs to understand system structure and implementation status.
 
-**Version:** 2.0 (Updated February 9, 2026 - PythonBridge persistent subprocess, async Python calls, TF-IDF caching)
+**Version:** 3.0 (Updated February 14, 2026 - Native C++ tree builders, Python eliminated)
 
 ---
 
@@ -10,7 +10,7 @@
 
 **What It Does:**
 - Scans all spells from loaded plugins
-- Generates AI-driven spell learning tree with prerequisites (OpenRouter LLM or Python builder)
+- Generates spell learning trees with prerequisites using native C++ NLP builders (TF-IDF, fuzzy matching)
 - Tracks XP-based progression (casting prerequisites, tome study, spell tome hook)
 - Displays interactive tree UI (PrismaUI) with configurable hotkey (default F8)
 - Progressive revelation system (names/effects/descriptions unlock with XP)
@@ -23,13 +23,13 @@
 - **Per-School Shapes:** Each magic school gets a distinct visual shape (explosion, tree, mountain, portals, organic)
 - **LLM Keyword Classification:** Batched LLM classification of spells with weak/missing keywords (optional)
 - **Plugin Whitelist:** Per-plugin opt-in/out filtering for spell tree generation
-- **BUILD TREE (Complex):** Python NLP (fuzzy + LLM config) → JS SettingsAwareTreeBuilder; requires embedded Python
-- **BUILD TREE (Simple):** Pure JS procedural builder (no Python); keyword themes, tier-based links
+- **BUILD TREE (Complex):** Native C++ NLP builders (5 modes: Classic, Tree, Graph, Thematic, Oracle) → JS SettingsAwareTreeBuilder
+- **BUILD TREE (Simple):** Pure JS procedural builder; keyword themes, tier-based links
 - **Visual-First / Edit Mode:** Manual drag-drop and in-tree editing (add/remove nodes, links)
 
 **Core Flow:**
 ```
-Scan Spells → Generate Tree (LLM/Python) → Validate FormIDs → Display Tree → Track XP → Grant Early (nerfed) → Reveal Details → Master Spells
+Scan Spells → Generate Tree (C++ NLP builders) → Validate FormIDs → Display Tree → Track XP → Grant Early (nerfed) → Reveal Details → Master Spells
 ```
 
 ---
@@ -313,75 +313,107 @@ the mod - always available. SpellTomeHook handles the core tome interception in 
 - `SendPrompt(systemPrompt, userPrompt)` - Blocking call
 - `GetConfig()` / `SaveConfig()` - Persistence
 
-### 8. **PythonInstaller** (`plugin/src/PythonInstaller.cpp/h`)
+### 8. **TreeNLP** (`plugin/src/TreeNLP.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
-- Download and install embedded Python 3.12.8 for Complex Build mode
-- Background thread worker with progress reporting
-- WinHTTP for file downloads, PowerShell for ZIP extraction
-- Enables site-packages, installs pip and requirements
-- Progress reporting to UI via PrismaUI InteropCall
-
-**Stages:** Python download → ZIP extract → pip setup → package install → config
+- Core NLP algorithms for spell tree generation and PRM scoring
+- TF-IDF vectorization with smoothed IDF and pre-computed L2 norms
+- Cosine similarity between sparse TF-IDF vectors
+- Character n-gram Jaccard similarity (morphological family detection)
+- Fuzzy string matching (Levenshtein distance, partial ratio, token set ratio)
+- Theme scoring for spell-to-theme assignment
+- PRM candidate scoring with proximity blending
 
 **Key Functions:**
-- `StartInstall(prismaUI, view)` - Start background installation
-- `Cancel()` - Abort installation
-- `IsInstalling()` - Status check
+- `Tokenize(text)` - Lowercase, strip non-alphanumeric, filter short words
+- `BuildSpellText(spell)` / `BuildThemeText(spell)` - Extract weighted text from spell JSON
+- `ComputeTfIdf(documents)` - TF-IDF vectorization with L2 norms
+- `CosineSimilarity(a, b)` - Dot product of sparse vectors
+- `CharNgramSimilarity(a, b)` - 3-char sliding window Jaccard
+- `LevenshteinDistance(a, b)` / `FuzzyRatio()` / `FuzzyPartialRatio()` / `FuzzyTokenSetRatio()` - Fuzzy matching
+- `CalculateThemeScore(spell, theme)` - Multi-strategy theme scoring (0-100)
+- `ScorePRMCandidates(spell, candidates, settings)` - PRM lock candidate scoring
+- `ProcessPRMRequest(request)` - Full PRM scoring request handler
 
-### 9. **PythonBridge** (`plugin/src/PythonBridge.cpp/h`)
+**Data Types:**
+```cpp
+struct SparseVector {
+    std::unordered_map<std::string, float> weights;
+    float norm = 0.0f;
+};
+```
+
+### 9. **TreeBuilder** (`plugin/src/TreeBuilder.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
-- Manage a persistent Python subprocess via Win32 `CreateProcess` + anonymous pipes
-- Eliminate ~1.5s Python startup overhead on every call after the first
-- Non-blocking async command execution (UI stays responsive during Python work)
-- JSON-line stdin/stdout protocol for C++ ↔ Python IPC
-- Auto-restart on crash (up to 3 times per session)
-- MO2/USVFS path resolution for all manager layouts (Standard, Nolvus, Wabbajack)
+- Spell tree construction engine with 5 builder modes
+- Theme discovery via TF-IDF keyword extraction
+- Spell grouping by best-matching theme (fuzzy scoring)
+- Tree validation (reachability simulation, cycle detection)
+- Unreachable node repair (multi-pass)
+- Pre-computed pairwise similarity matrices
+
+**Builder Modes:**
+| Mode | Function | Algorithm |
+|------|----------|-----------|
+| Classic | `BuildClassic()` | Tier-first: depth = tier index. NLP within-tier parent selection. |
+| Tree | `BuildTree()` | NLP thematic: TF-IDF similarity, round-robin theme interleaving, convergence gates. |
+| Graph | `BuildGraph()` | Edmonds' minimum spanning arborescence (directed MST). |
+| Thematic | `BuildThematic()` | 3D similarity BFS with per-theme branch construction. |
+| Oracle | `BuildOracle()` | LLM-guided semantic chain grouping (fallback: cluster lanes). |
+
+**High-Level API:**
+```cpp
+// Called from UIManager::OnProceduralPythonGenerate
+BuildResult Build(command, spells, configJson);
+// Commands: "build_tree_classic", "build_tree", "build_tree_graph",
+//           "build_tree_thematic", "build_tree_oracle"
+```
 
 **Architecture:**
 ```
-C++ (UIManager)                    PythonBridge                     Python (server.py)
-    │                                   │                                │
-    ├─SendCommand("build_tree",...)────►│                                │
-    │                                   ├─EnsureProcess()               │
-    │                                   │  └─SpawnProcess() [first use] │
-    │                                   │     ├─CreateProcess(pipes)────►│ (imports sklearn etc)
-    │                                   │     └─Wait for __ready__◄─────┤ {"id":"__ready__"}
-    │                                   │                                │
-    │                                   ├─WriteFile(stdin pipe)─────────►│ {"id":"req_1",...}
-    │                                   │                                ├─process command
-    │                                   │  ReaderThread◄────────────────┤ {"id":"req_1",...}
-    │                                   │  └─Match id → callback         │
-    │◄─callback(success, result)────────┤  └─SKSE TaskInterface          │
+C++ (UIManager)                    TreeBuilder
+    │                                   │
+    ├─OnProceduralPythonGenerate()─────►│
+    │  (SKSE TaskInterface async)       │
+    │                                   ├─Build(command, spells, config)
+    │                                   │  ├─DiscoverThemesPerSchool()
+    │                                   │  ├─GroupSpellsBestFit()
+    │                                   │  ├─ComputeSimilarityMatrix()
+    │                                   │  ├─Per-school tree construction
+    │                                   │  ├─ValidateSchoolTree()
+    │                                   │  └─FixUnreachableNodes()
+    │                                   │
+    │◄─callback(BuildResult)────────────┤
+    │  → InteropCall("onProceduralPythonComplete")
 ```
 
-**Protocol (JSON-line over stdin/stdout):**
+**Key Data Types:**
+```cpp
+struct TreeNode {
+    std::string formId, name, tier, school, theme, section;
+    std::vector<std::string> children, prerequisites;
+    int depth = 0;
+    bool isRoot = false;
+};
+
+struct BuildConfig {
+    int seed, maxChildrenPerNode, topThemesPerSchool;
+    float density, symmetry, chaos, convergenceChance;
+    bool autoFixUnreachable, preferVanillaRoots;
+    std::unordered_map<std::string, std::string> selectedRoots;
+    std::optional<LLMApiConfig> llmApi;  // Oracle mode
+};
+
+struct BuildResult {
+    json treeData;       // Full tree JSON
+    bool success;
+    std::string error;
+    float elapsedMs;
+};
 ```
-C++ → Python:  {"id":"req_1","command":"build_tree","data":{...}}\n
-Python → C++:  {"id":"req_1","success":true,"result":{...}}\n
-Ready signal:  {"id":"__ready__","success":true,"result":{"pid":1234}}\n
-```
-
-**Commands:** `build_tree`, `build_tree_classic`, `prm_score`, `ping`, `shutdown`
-
-**Key Functions:**
-- `SendCommand(command, payload, callback)` — Async, callback fires on SKSE main thread
-- `EnsureProcess()` — Lazy-spawns Python on first use, waits for ready signal (15s timeout)
-- `SpawnProcess()` — `CreateProcess` with `STARTF_USESTDHANDLES`, custom env block (PYTHONHOME)
-- `ReaderThread()` — Background thread parsing JSON responses, matching to pending requests
-- `ResolvePythonPaths()` — Searches overwrite, mods, Data, CWD for python.exe + server.py
-- `ResolvePhysicalPath()` — Win32 `GetFinalPathNameByHandleW` to resolve USVFS virtual paths
-- `FixEmbeddedPythonPthFile()` — Rewrites `._pth` relative paths as absolute (USVFS fix)
-- `Shutdown()` — Sends shutdown command, waits 3s, then `TerminateProcess`. Called on DLL unload.
-
-**Path Search Order:**
-1. MO2 overwrite folders (Standard, Nolvus `MODS/overwrite`, `mods/overwrite`)
-2. MO2 mods folders (all subdirectories containing SpellTreeBuilder)
-3. Real Data folder (Vortex / manual install)
-4. CWD-relative (some setups run from Data/)
 
 ### 10. **PapyrusAPI** (`plugin/src/PapyrusAPI.cpp/h`)
 **Status:** ✅ Implemented
@@ -515,8 +547,8 @@ amount → × source multiplier (0-200%) → × global multiplier
 | `edgeScoring.js` | Unified edge scoring (element, tier, keyword); used by SettingsAwareBuilder |
 | `shapeProfiles.js` | 12 shape profiles + masks (organic, explosion, tree, mountain, portals, spiky, radial, cloud, cascade, swords, grid, linear); per-school defaults |
 | `layoutEngine.js` | BFS growth layout, density stretch, shape mask conformity passes |
-| `settingsAwareTreeBuilder.js` | **Complex Build:** settings-driven tree (element isolation, convergence); consumes Python fuzzy data |
-| `proceduralTreeBuilder.js` | **Simple Build:** `buildProceduralTrees()` (JS only). Also orchestrates **Complex:** `startVisualFirstGenerate()` → Python → `doVisualFirstGenerate()` → `buildAllTreesSettingsAware()`. Plugin whitelist filtering |
+| `settingsAwareTreeBuilder.js` | **Complex Build:** settings-driven tree (element isolation, convergence); consumes C++ builder fuzzy data |
+| `proceduralTreeBuilder.js` | **Simple Build:** `buildProceduralTrees()` (JS only). Also orchestrates **Complex:** `startVisualFirstGenerate()` → C++ → `doVisualFirstGenerate()` → `buildAllTreesSettingsAware()`. Plugin whitelist filtering |
 | `visualFirstBuilder.js` | Visual-first layout + spell assignment; calls SettingsAwareBuilder when available |
 | `layoutGenerator.js` | Node position (angles, radii) |
 | `growthBehaviors.js` | Branching energy, themed groups |
@@ -537,7 +569,6 @@ amount → × source multiplier (0-200%) → × global multiplier
 | `llmTreeFeatures.js` | LLM preprocessing: auto-config, keyword expansion, **keyword classification**; batched per-school classification |
 | `llmApiSettings.js` | LLM API configuration (model, endpoint, API key) |
 | `buttonHandlers.js` | Button click routing and UI state management |
-| `pythonSetup.js` | Python installation UI |
 | **Utilities & effects** | |
 | `spellCache.js` | Spell data caching |
 | `colorUtils.js` | Color manipulation utilities |
@@ -553,7 +584,7 @@ amount → × source multiplier (0-200%) → × global multiplier
 | `unificationTest.js` | Module unification tests |
 | `main.js` | Entry point, initialization |
 
-**Module load order:** See `index.html`. Order is: constants/state/config → edgeScoring/shapeProfiles/layoutEngine → spellCache/colorUtils/uiHelpers → growthDSL/treeParser → wheel/starfield/globe/canvas/editMode → colorPicker/settingsPanel/treeViewerUI/… → cppCallbacks/pythonSetup/llmIntegration/proceduralTreeBuilder → layoutGenerator/growthBehaviors/visualFirstBuilder/llmTreeFeatures/settingsAwareTreeBuilder → generationModeUI → script.js → autoTest/unificationTest → main.js.
+**Module load order:** See `index.html`. Order is: constants/state/config → edgeScoring/shapeProfiles/layoutEngine → spellCache/colorUtils/uiHelpers → growthDSL/treeParser → wheel/starfield/globe/canvas/editMode → colorPicker/settingsPanel/treeViewerUI/… → cppCallbacks/llmIntegration/proceduralTreeBuilder → layoutGenerator/growthBehaviors/visualFirstBuilder/llmTreeFeatures/settingsAwareTreeBuilder → generationModeUI → script.js → autoTest/unificationTest → main.js.
 
 **Tabs:**
 1. **Spell Scan** - Scan spells, LLM API settings, output field toggles, Growth Style Generator
@@ -593,145 +624,73 @@ amount → × source multiplier (0-200%) → × global multiplier
 
 ---
 
-## Python Tree Builder System
+## Native C++ Tree Builder System
 
-**Purpose:** Modular Python tree generation with per-growth-mode builders. Each growth module bundles its own Python builder alongside its JS files. Shared modules (NLP, validation, node model) live in `SpellTreeBuilder/`. Runs as a persistent subprocess managed by PythonBridge (C++), communicating via stdin/stdout JSON-line protocol.
+**Purpose:** Native C++ tree generation with 5 builder modes. All algorithms run directly in the SKSE plugin via `TreeBuilder.cpp/h` and `TreeNLP.cpp/h`. No external subprocess, no IPC, no Python dependency.
 
-### Architecture: Modular Builders
+### Architecture
 
 ```
-PrismaUI/views/SpellLearning/SpellLearningPanel/
-├── modules/
-│   ├── classic/python/
-│   │   └── classic_build_tree.py      ← Classic Growth: tier-first builder
-│   └── tree/python/
-│       └── tree_build_tree.py         ← Tree Growth: NLP-based builder
-
-SKSE/Plugins/SpellLearning/SpellTreeBuilder/
-├── server.py              ← Orchestrator: routes commands to module builders
-├── build_tree.py          ← Fallback copy of NLP builder (backward compat)
-├── tree_builder.py        ← Shared: core tree construction engine
-├── theme_discovery.py     ← Shared: NLP theme extraction
-├── core/node.py           ← Shared: TreeNode data model
-├── config.py              ← Shared: config parsing
-└── validator.py           ← Shared: tree validation
+UIManager.cpp
+  └─ OnProceduralPythonGenerate()
+       └─ SKSE TaskInterface (async)
+            └─ TreeBuilder::Build(command, spells, config)
+                 ├─ TreeNLP (TF-IDF, cosine sim, fuzzy matching)
+                 ├─ Theme discovery + spell grouping
+                 ├─ Per-school tree construction
+                 └─ Validation + repair
+                      └─ BuildResult → callback → InteropCall("onProceduralPythonComplete")
 ```
 
-**Command routing:**
+### Builder Modes
+
+| Mode | Command | Algorithm |
+|------|---------|-----------|
+| Classic | `build_tree_classic` | Tier-first: depth = tier index. NLP within-tier parent selection. |
+| Tree | `build_tree` | NLP thematic: TF-IDF similarity drives parent→child links. Round-robin theme interleaving. |
+| Graph | `build_tree_graph` | Edmonds' minimum spanning arborescence (directed MST). |
+| Thematic | `build_tree_thematic` | 3D similarity BFS with per-theme branch construction. |
+| Oracle | `build_tree_oracle` | LLM-guided semantic chain grouping (fallback: cluster lanes). |
+
+### Core Algorithms (TreeNLP)
+
+| Algorithm | C++ Function | Description |
+|-----------|-------------|-------------|
+| Tokenization | `Tokenize()` | Lowercase, strip punctuation, filter words ≤ 2 chars |
+| TF-IDF vectorization | `ComputeTfIdf()` | Sparse dict vectors, smoothed IDF, L2 norms |
+| Cosine similarity | `CosineSimilarity()` | Dot product of sparse vectors / pre-computed norms |
+| Char n-gram similarity | `CharNgramSimilarity()` | 3-char sliding window Jaccard (e.g. "Firebolt"/"Fireball" ≈ 0.45) |
+| Levenshtein distance | `LevenshteinDistance()` | Single-row DP edit distance |
+| Fuzzy matching | `FuzzyRatio()`, `FuzzyPartialRatio()`, `FuzzyTokenSetRatio()` | Replaces Python `thefuzz` library |
+| Theme scoring | `CalculateThemeScore()` | Multi-strategy fuzzy scoring (0-100) |
+| PRM scoring | `ScorePRMCandidates()`, `ProcessPRMRequest()` | TF-IDF + proximity blending for lock candidates |
+
+### Theme Discovery
+
+TF-IDF keyword extraction per school from spell text (names, descriptions, effects, keywords):
 ```
-Classic JS → callCpp('ProceduralPythonGenerate', {command:'build_tree_classic',...})
-               └→ server.py → classic_build_tree_from_data()  [classic/python/]
-
-Tree JS    → callCpp('ProceduralPythonGenerate', {command:'build_tree',...})
-               └→ server.py → build_tree_from_data()          [tree/python/]
+For each word across all spells in school:
+    TF = term_count / total_tokens
+    DF = documents_containing_word
+    IDF = log((total_docs + 1) / (DF + 1)) + 1
+    score = TF × IDF
+Sort descending → take top N → merge with vanilla hints
 ```
 
-UIManager.cpp reads the `command` field from the JS request and passes it to PythonBridge (no longer hardcoded).
-
-### Server Architecture
-
-`server.py` is the persistent entry point spawned by PythonBridge. It:
-1. Adds PrismaUI module python dirs (`classic/python`, `tree/python`) to `sys.path`
-2. Pre-imports all heavy modules once at startup (sklearn, numpy, both builders, etc.)
-3. Sends `__ready__` signal to C++ via stdout
-4. Reads JSON-line commands from stdin, routes to appropriate handler
-5. Returns JSON-line responses via stdout. Debug/logging goes to `server.log` (never stdout).
-
-### Classic Growth Builder (`classic_build_tree.py`)
-
-Tier-first tree builder where `node.depth` strictly follows spell difficulty tier:
-- Novice (depth 0) → Apprentice (depth 1) → Adept (depth 2) → Expert (depth 3) → Master (depth 4)
-- Parents must be from a lower tier (hard constraint)
-- NLP word-overlap similarity guides within-tier parent selection (fire Apprentice → fire Novice)
-- Does NOT require sklearn — uses simple Jaccard word overlap
-- Reuses shared modules: `core.node.TreeNode`, `theme_discovery`, `validator`
-
-### Tree Growth Builder (`tree_build_tree.py`)
-
-NLP-based builder (moved from `build_tree.py`) using TF-IDF theme discovery, fuzzy matching, optional LLM auto-configuration. Tree structure driven by thematic similarity, not tier ordering.
-
-### Core Modules
-
-| Module | Purpose |
-|--------|---------|
-| `server.py` | Persistent stdin/stdout REPL. Routes `build_tree`, `build_tree_classic`, `prm_score`, `ping`, `shutdown`. Adds module python dirs to sys.path |
-| `build_tree.py` | Fallback NLP builder (backward compat). Primary copy now in `modules/tree/python/tree_build_tree.py` |
-| `classic/python/classic_build_tree.py` | Tier-first builder for Classic Growth. `classic_build_tree_from_data()` |
-| `tree/python/tree_build_tree.py` | NLP builder for Tree Growth. `build_tree_from_data()` + CLI wrapper |
-| `tree_builder.py` | `SpellTreeBuilder` class. Per-school tree construction, theme assignment, node linking. Defines `SCHOOL_DEFAULT_SHAPES` |
-| `spell_grouper.py` | `group_spells_best_fit()` — Groups spells into themes using fuzzy score. Honors `llm_keyword` for reclassification |
-| `theme_discovery.py` | TF-IDF theme discovery per school. Extracts keyword themes from spell names/descriptions/effects |
-| `config.py` | `TreeBuilderConfig` dataclass. All settings including `llm_auto_configure`, `llm_group_naming`, `llm_keyword_classification` |
-| `llm_client.py` | OpenRouter LLM client. `call_json()` for structured responses, configurable model/endpoint/temperature |
-| `keyword_classifier.py` | **LLM keyword classification.** Batched (100/school) classification of spells with weak/missing keywords. Assigns `llm_keyword`, `llm_keyword_parent`, `llm_keyword_confidence` |
-| `validator.py` | Tree validation (reachability checks) |
-
-### Shape Algorithms (`shapes/`)
-
-8 Python shape algorithms that determine tree structure (node linking patterns):
-
-| Shape | Description |
-|-------|-------------|
-| `shape_organic.py` | Natural flowing growth |
-| `shape_radial.py` | Fan-like radial spread |
-| `shape_grid.py` | Grid-based layout |
-| `shape_linear.py` | Linear beam progression |
-| `shape_cascade.py` | Cascading waterfall tiers |
-| `shape_mountain.py` | Wide base tapering to peak |
-| `shape_spiky.py` | Angular crystal spikes |
-| `shape_cloud.py` | Clustered cloud groups |
-
-**Note:** JS-side `shapeProfiles.js` has 12 visual shapes (adds `tree`, `explosion`, `portals`, `swords`). Python shapes affect tree *structure*, JS shapes affect *visual layout*.
+Vanilla hints: Destruction → fire/frost/shock, Restoration → heal/cure/restore, etc.
 
 ### Per-School Default Shapes
 
-```python
-SCHOOL_DEFAULT_SHAPES = {
-    'Destruction': 'explosion',   # Dense core bursting outward
-    'Restoration': 'tree',        # Trunk with branches and canopy
-    'Alteration': 'mountain',     # Wide base tapering to peak
-    'Conjuration': 'portals',     # Organic fill with doorway arch
-    'Illusion': 'organic',        # Natural flowing spread
-}
+```cpp
+// Applied when LLM auto-config is disabled (default)
+Destruction → explosion   // Dense core bursting outward
+Restoration → tree        // Trunk with branches and canopy
+Alteration  → mountain    // Wide base tapering to peak
+Conjuration → portals     // Organic fill with doorway arch
+Illusion    → organic     // Natural flowing spread
 ```
 
-Applied when LLM auto-config is disabled (default). Defined in both `tree_builder.py` and `shapeProfiles.js`.
-
-### Growth Behaviors (`growth/`)
-
-| Module | Purpose |
-|--------|---------|
-| `auto_configure.py` | LLM-driven shape/growth auto-configuration |
-| `branching_energy.py` | Branch energy distribution |
-| `themed_groups.py` | Theme-aware grouping |
-
-### Core Utilities (`core/`)
-
-| Module | Purpose |
-|--------|---------|
-| `node.py` | `TreeNode` data class |
-| `registry.py` | Shape/growth registry |
-| `math_utils.py` | Math utilities |
-| `spacing.py` | Spacing calculations |
-
-### LLM Keyword Classification Pipeline
-
-When enabled (`llm_keyword_classification.enabled = true`):
-
-```
-Scan spells → Theme discovery (TF-IDF) → Identify weak spells (fuzzy score < 30)
-  → Batch 100 per school → LLM classifies → Merge results (llm_keyword, llm_keyword_parent)
-  → tree_builder checks llm_keyword BEFORE fuzzy matching → spell_grouper reclassifies from _unassigned
-```
-
-Config:
-```python
-llm_keyword_classification: {
-    "enabled": False,      # Off by default
-    "batch_size": 100,     # Spells per LLM call
-    "min_confidence": 40,  # Minimum confidence to accept
-}
-```
+Defined in both `TreeBuilder.cpp` and JS `shapeProfiles.js`.
 
 ---
 
@@ -749,16 +708,16 @@ User clicks "Scan" → SpellScanner::ScanAllSpells()
 
 **BUILD TREE (Complex)** — `visualFirstBtn` → `startVisualFirstGenerate()`:
 1. `startVisualFirstPythonConfig()`: build config (fuzzy + optional LLM), call C++ `ProceduralPythonGenerate`.
-2. C++ sends `build_tree` command to PythonBridge (persistent subprocess via stdin/stdout pipes). First call lazy-spawns `server.py`, subsequent calls reuse the running process (no ~1.5s startup).
-3. `server.py` calls `build_tree_from_data(spells, config)` → returns tree data + school configs + fuzzy data.
-4. PythonBridge reader thread matches response, fires callback on SKSE main thread → `onProceduralPythonComplete`.
+2. C++ runs `TreeBuilder::Build(command, spells, config)` on SKSE TaskInterface thread. Executes native NLP algorithms (TF-IDF, fuzzy matching, tree construction).
+3. `TreeBuilder` returns `BuildResult` with full tree JSON.
+4. Callback fires on SKSE main thread → `onProceduralPythonComplete`.
 5. `doVisualFirstGenerate(schoolConfigs, fuzzyData)` → **`buildAllTreesSettingsAware()`** → LayoutEngine → TreeParser → render.
 
 **BUILD TREE (Simple)** — `proceduralBtn` (click bound in script.js) → `onProceduralClick()` → `startProceduralGenerate()`:
 1. **`buildProceduralTrees(state.lastSpellData.spells)`** (proceduralTreeBuilder.js): JS-only; keyword theme discovery, tier-based links, convergence, orphans. No Python.
 2. Output → TreeParser → render.
 
-**Developer-only:** AUTO COMPLEX (`proceduralPlusBtn`) = Python full tree build (TF-IDF, shapes). AUTO AI (`fullAutoBtn`) = LLM generates full tree (see Tree Validation System below for reachability/retry).
+**Developer-only:** AUTO COMPLEX (`proceduralPlusBtn`) = C++ full tree build (TF-IDF, shapes). AUTO AI (`fullAutoBtn`) = LLM generates full tree (see Tree Validation System below for reachability/retry).
 
 ### Tree Validation System
 
@@ -938,24 +897,52 @@ All settings stored in single config file, managed through UI:
 
 ```
 HeartOfMagic/
-├── plugin/src/
-│   ├── Main.cpp                     ✅ Entry point, event registration, serialization
-│   ├── PCH.h                        ✅ Precompiled header
-│   ├── PrismaUI_API.h               ✅ PrismaUI modder interface
-│   ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
-│   ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
-│   ├── UICallbacks.h                ✅ UI callback declarations (categorized)
-│   ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
-│   ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling
-│   ├── SpellEffectivenessHook.cpp/h ✅ Runtime magnitude scaling, shared_mutex
-│   ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
-│   ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
-│   ├── PythonInstaller.cpp/h        ✅ Embedded Python auto-installer
-│   ├── PythonBridge.cpp/h           ✅ Persistent Python subprocess (stdin/stdout pipes)
-│   ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
-│   ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
-│   ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
-│   └── XPSource.h                   ✅ XP source interface
+├── CMakeLists.txt                 # Top-level super-build (shared config)
+├── CMakePresets.json              # Build presets (VS2022, VS2026)
+├── vcpkg.json                     # Shared vcpkg dependencies
+├── BuildRelease.ps1               # Build script
+├── plugins/
+│   ├── cmake/
+│   │   ├── CompilerFlags.cmake    # MSVC optimization flags (/GL, /LTCG, /AVX, etc.)
+│   │   ├── commonlibsse.cmake     # CommonLibSSE-NG configuration
+│   │   ├── Papyrus.cmake          # Papyrus script compilation
+│   │   └── Spriggit.cmake         # Spriggit ESP serialization
+│   ├── external/
+│   │   └── commonlibsse-ng/       # Git submodule (built once, shared by all targets)
+│   ├── spelllearning/             # Main SpellLearning plugin
+│   │   ├── CMakeLists.txt
+│   │   ├── include/PCH.h          ✅ Precompiled header
+│   │   └── src/
+│   │       ├── Main.cpp                     ✅ Entry point, event registration, serialization
+│   │       ├── PrismaUI_API.h               ✅ PrismaUI modder interface
+│   │       ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
+│   │       ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
+│   │       ├── UICallbacks.h                ✅ UI callback declarations (categorized)
+│   │       ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
+│   │       ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling
+│   │       ├── SpellEffectivenessHook.cpp/h ✅ Runtime magnitude scaling, shared_mutex
+│   │       ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
+│   │       ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
+│   │       ├── TreeNLP.cpp/h               ✅ Core NLP: TF-IDF, cosine sim, fuzzy matching, PRM scoring
+│   │       ├── TreeBuilder.cpp/h           ✅ Tree construction engine (5 builder modes)
+│   │       ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
+│   │       ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
+│   │       ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
+│   │       ├── SpellLearningAPI.h           ✅ Public C++ API header
+│   │       └── XPSource.h                   ✅ XP source interface
+│   ├── compatibility/
+│   │   └── DummyDEST/             # DEST compatibility shim
+│   │       ├── CMakeLists.txt
+│   │       └── src/
+│   │           ├── PCH.h          ✅ Precompiled header
+│   │           └── Main.cpp       ✅ Inert DontEatSpellTomes.dll replacement
+│   └── addons/
+│       └── BookXP/                # BookXP addon plugin
+│           ├── CMakeLists.txt
+│           └── src/
+│               ├── PCH.h              ✅ Precompiled header
+│               ├── Main.cpp           ✅ BookMenu watcher + API integration
+│               └── SpellLearningAPI.h ✅ Public API header (copy)
 ├── Scripts/Source/
 │   ├── SpellLearning_QuestScript.psc  ✅ Quest initialization
 │   ├── SpellLearning_Bridge.psc       ⚠️ Legacy SkyrimNet bridge (unused)
@@ -972,35 +959,19 @@ HeartOfMagic/
 │       ├── script.js                ✅ Main app logic
 │       ├── themes/                  ✅ Theme definitions (default, skyrim)
 │       └── modules/                 ✅ 39 JavaScript modules
-│           ├── classic/python/      ✅ Classic Growth Python builder
-│           │   └── classic_build_tree.py
-│           └── tree/python/         ✅ Tree Growth Python builder
-│               └── tree_build_tree.py
 ├── SKSE/Plugins/SpellLearning/
-│   ├── custom_prompts/              ✅ LLM prompt templates
-│   └── SpellTreeBuilder/            ✅ Python tree generation tools
-│       ├── server.py                ✅ Persistent REPL (stdin/stdout, spawned by PythonBridge)
-│       ├── build_tree.py            ✅ build_tree_from_data() + CLI wrapper
-│       ├── prereq_master_scorer.py  ✅ TF-IDF NLP scoring (pre-computed norms)
-│       ├── tree_builder.py          ✅ SpellTreeBuilder class, SCHOOL_DEFAULT_SHAPES
-│       ├── spell_grouper.py         ✅ Theme-based spell grouping
-│       ├── theme_discovery.py       ✅ TF-IDF theme extraction
-│       ├── keyword_classifier.py    ✅ LLM keyword classification (batched)
-│       ├── llm_client.py            ✅ OpenRouter LLM client
-│       ├── config.py                ✅ TreeBuilderConfig dataclass
-│       ├── validator.py             ✅ Tree validation
-│       ├── shapes/                  ✅ 8 tree shape algorithms
-│       ├── growth/                  ✅ Growth behaviors (auto_configure, branching, themed)
-│       └── core/                    ✅ Core utilities (node, registry, math, spacing)
+│   └── custom_prompts/              ✅ LLM prompt templates
 └── docs/
     ├── ARCHITECTURE.md              ✅ This file
-    ├── OVERVIEW.md                  ✅ High-level feature overview
-    ├── DESIGN.md                    ✅ Design patterns
-    ├── PROGRESSION_DESIGN.md        ✅ XP system design
-    ├── QUICK_REFERENCE.md           ✅ Quick developer reference
-    ├── TECHNICAL_RESEARCH.md        ✅ Technical deep-dives
-    ├── COMMON-ERRORS.md             ✅ Troubleshooting guide
-    └── LLM_PROMPT_TEMPLATE.md       ✅ LLM prompt design
+    ├── DESIGN.md                    ✅ Design patterns and UI documentation
+    ├── MODULE_CONTRACTS.md          ✅ Module creation contracts
+    ├── TREE_BUILDING_SYSTEM.md      ✅ Tree building algorithms
+    ├── DEST-IMPROVEMENTS.md         ✅ DEST comparison
+    ├── PRESETS.md                    ✅ Preset system documentation
+    ├── TRANSLATING.md               ✅ Translation guide
+    ├── PLAN-PUBLIC-MODDER-API.md    ✅ Public modder API spec
+    └── research/
+        └── TREE_GENERATION_RESEARCH.md ✅ NLP/ML research
 ```
 
 ---
@@ -1018,11 +989,7 @@ MO2/mods/HeartOfMagic_RELEASE/
 │               ├── styles.css
 │               ├── styles-skyrim.css
 │               ├── themes/
-│               └── modules/            # 39 JavaScript modules
-│                   ├── classic/python/ # Classic Growth tier-first builder
-│                   │   └── classic_build_tree.py
-│                   └── tree/python/    # Tree Growth NLP builder
-│                       └── tree_build_tree.py
+│               └── modules/            # JavaScript modules
 ├── Scripts/
 │   ├── *.pex                           # Compiled Papyrus
 │   └── Source/
@@ -1031,14 +998,7 @@ MO2/mods/HeartOfMagic_RELEASE/
 │   └── Plugins/
 │       ├── SpellLearning.dll
 │       └── SpellLearning/
-│           ├── custom_prompts/
-│           └── SpellTreeBuilder/       # Python tree builder
-│               ├── server.py          # Persistent REPL (PythonBridge)
-│               ├── build_tree.py      # Core builder + CLI
-│               ├── prereq_master_scorer.py
-│               ├── shapes/
-│               ├── growth/
-│               └── core/
+│           └── custom_prompts/
 └── (ESP if applicable)
 ```
 
@@ -1073,9 +1033,8 @@ MO2/mods/HeartOfMagic_RELEASE/
 - Spell Tome Hook (intercepts tomes, grants XP, keeps book)
 - Visual-First Builder (drag-drop tree creation)
 - Edit Mode (add/remove nodes, modify links)
-- Complex Build (Python-based tree generation)
-- PythonBridge persistent subprocess (eliminates per-call startup, async, auto-restart)
-- Embedded Python auto-installer
+- Complex Build (native C++ tree generation — 5 builder modes)
+- Native NLP engine (TF-IDF, cosine similarity, fuzzy matching)
 - FormID persistence (survives load order changes)
 - Performance optimizations (shared_mutex, cached player pointer)
 - Notification throttling (configurable interval)
@@ -1088,6 +1047,16 @@ MO2/mods/HeartOfMagic_RELEASE/
 - LLM keyword classification (batched per-school, optional)
 - Plugin whitelist/blacklist filtering
 - 12 visual shape profiles (organic, explosion, tree, mountain, portals, spiky, radial, cloud, cascade, swords, grid, linear)
+
+### ✅ Recently Completed (Feb 14, 2026)
+
+#### Native C++ Tree Builders (Python Eliminated)
+- **`TreeNLP.cpp/h`** — Core NLP engine: TF-IDF vectorization, cosine similarity, char n-gram similarity, Levenshtein distance, fuzzy matching (ratio, partial ratio, token set ratio), theme scoring, PRM candidate scoring
+- **`TreeBuilder.cpp/h`** — Tree construction engine with 5 builder modes (Classic, Tree, Graph, Thematic, Oracle), theme discovery, spell grouping, tree validation, unreachable node repair
+- **Python completely eliminated** — No PythonBridge, no PythonInstaller, no embedded Python, no server.py, no subprocess IPC
+- **All builder modes native** — TF-IDF, fuzzy matching, Edmonds' arborescence, LLM integration all in C++
+- **PRM scoring native** — `TreeNLP::ProcessPRMRequest()` replaces Python prereq_master_scorer.py
+- **Wine/Proton compatibility** — No subprocess = no pipe/TCP IPC issues on Linux
 
 ### ✅ Recently Completed (Feb 11, 2026)
 
@@ -1124,45 +1093,25 @@ MO2/mods/HeartOfMagic_RELEASE/
 - Viewport culling for large trees
 - Level-of-detail rendering
 
-### ✅ Recently Completed (Feb 9, 2026)
+### ✅ Previously Completed (Feb 9, 2026)
 
-#### Modular Python Tree Builders
-- **Per-mode Python builders** — Each growth module bundles its own Python tree builder in a `python/` subfolder
-- **`classic_build_tree.py`** — Tier-first builder for Classic Growth. Novice=depth 0, Master=depth 4. NLP similarity guides within-tier parent selection. No sklearn dependency.
-- **`tree_build_tree.py`** — NLP-based builder for Tree Growth (moved from `build_tree.py`). Unchanged behavior.
-- **`server.py` updated** — Adds module python dirs to `sys.path`, routes `build_tree_classic` command to classic builder
-- **`UIManager.cpp` updated** — Reads `command` field from JS request (no longer hardcoded `"build_tree"`)
+#### Modular Tree Builders (now native C++)
+- **Classic builder** — Tier-first builder. Novice=depth 0, Master=depth 4. NLP similarity guides within-tier parent selection.
+- **Tree builder** — NLP-based builder. TF-IDF similarity drives parent→child links. Round-robin theme interleaving.
 - **Shared error handler** — `_handleBuildFailure()` in `proceduralTreeBuilder.js` replaces duplicate error handlers for Classic/Tree modes
 - **Classic `buildTree()` sends** `command: 'build_tree_classic'` + `tier_zones` config
 - **Tree `buildTree()` sends** `command: 'build_tree'` explicitly
 - **Fixes Classic tier zone controls** — Tier zone sliders now work because tree structure matches tier ordering (Novice near roots, Master at edges)
 
-#### PythonBridge Persistent Subprocess
-- **`PythonBridge.cpp/h`** — Singleton managing persistent Python process via Win32 `CreateProcess` + anonymous pipes
-- **`server.py`** — stdin/stdout JSON-line REPL. Pre-imports sklearn/numpy once. Routes `build_tree`, `prm_score`, `ping`, `shutdown`
-- **`build_tree_from_data()`** — Extracted core tree-building function from `_main_impl()`, reusable by server and CLI
-- **UIManager.cpp refactored** — Removed ~470 lines of duplicated subprocess/path code, replaced with ~75 lines using `PythonBridge::SendCommand()`
-- **Async, non-blocking** — `SendCommand` returns immediately, callback fires on SKSE main thread via `TaskInterface`
-- **Auto-restart** — Up to 3 restarts if Python crashes mid-session
-- **No temp files** — All IPC via stdin/stdout pipes (eliminates the `procedural_stderr` file lock bug)
-- **TF-IDF optimization** — Pre-computed vector norms in `prereq_master_scorer.py`, iterate smaller vector first in cosine similarity
-- **Path resolution consolidated** — `ResolvePhysicalPath()`, `GetMO2ModsFolders()`, `GetMO2OverwriteFolders()`, `FixEmbeddedPythonPthFile()` moved from UIManager.cpp static functions to PythonBridge class methods
-
 ### ✅ Previously Completed (Feb 7, 2026)
 
 #### Per-School Default Shapes
-- **`SCHOOL_DEFAULT_SHAPES`** in both Python (`tree_builder.py`) and JS (`shapeProfiles.js`)
+- **`SCHOOL_DEFAULT_SHAPES`** in both C++ (`TreeBuilder.cpp`) and JS (`shapeProfiles.js`)
 - Destruction=explosion, Restoration=tree, Alteration=mountain, Conjuration=portals, Illusion=organic
 - Applied automatically when LLM auto-config is disabled
-- Bug fix: `build_tree.py` fallback now uses per-school shapes instead of global `'organic'`
 
 #### LLM Keyword Classification
-- **`keyword_classifier.py`** — New Python module for batched LLM classification
-- Classifies spells with weak/missing keywords (fuzzy score < 30)
-- Batched 100 spells per LLM call, per school
-- Results: `llm_keyword`, `llm_keyword_parent`, `llm_keyword_confidence` fields on spell dicts
-- `tree_builder.py` checks `llm_keyword` before fuzzy matching
-- `spell_grouper.py` reclassifies from `_unassigned` using LLM keywords
+- **LLM Keyword Classification** — Optional batched LLM classification for spells with weak/missing keywords
 - JS UI: toggle in LLM Features, `[K] Classify Keywords` button on Spell Scan tab
 - Default off — TF-IDF + fuzzy matching runs unchanged when disabled
 
@@ -1294,6 +1243,6 @@ MO2/mods/HeartOfMagic_RELEASE/
 - **PrismaUI path critical** - CreateView path must exactly match deployment path
 - **Panel auto-refresh** - GetPlayerKnownSpells called when panel opens (catches external spell learning)
 - **LLM naming** - All AI integration uses "LLM" (not "SkyrimNet") in code and UI
-- **Per-school shapes** - Each school has a distinct visual shape; defined in `SCHOOL_DEFAULT_SHAPES` (Python + JS)
+- **Per-school shapes** - Each school has a distinct visual shape; defined in `SCHOOL_DEFAULT_SHAPES` (C++ + JS)
 - **Plugin whitelist** - Users can filter which plugins contribute spells to tree generation
 - **LLM keyword classification** - Optional batched classification for spells with weak keywords; off by default

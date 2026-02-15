@@ -1,7 +1,0 @@
-=== SpellTreeBuilder Log - 2026-02-06T20:59:12.751863 ===
-
-[2026-02-06T20:59:12.751863] Script started
-[2026-02-06T20:59:12.751863] Python: 3.12.8 (tags/v3.12.8:2dc476b, Dec  3 2024, 19:30:04) [MSC v.1942 64 bit (AMD64)]
-[2026-02-06T20:59:12.752863] Working dir: D:\MODDING\Mod Development Zone 2\MO2\Stock Game
-[2026-02-06T20:59:12.752863] Script path: D:\MODDING\Mod Development Zone 2\projects\HeartOfMagic\SKSE\Plugins\SpellLearning\SpellTreeBuilder\build_tree.py
-[2026-02-06T20:59:12.752863] Args: ['D:/MODDING/Mod Development Zone 2/projects/HeartOfMagic/SKSE/Plugins/SpellLearning/SpellTreeBuilder/build_tree.py', '--help']

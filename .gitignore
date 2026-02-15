@@ -1,4 +1,5 @@
 # Build outputs
+build/
 plugin/build/
 plugin/build2/
 compatibility/*/build/
@@ -49,3 +50,8 @@ SKSE/Plugins/SpellLearning/SpellTreeBuilder/python/
 # Build artifacts
 plugin/build/
 *.pex
+Build_Config_Local.ps1
+/Heart of Magic - Test
+nul
+spell_scan_output.json
+/Heart of Magic - Test - Unofficial

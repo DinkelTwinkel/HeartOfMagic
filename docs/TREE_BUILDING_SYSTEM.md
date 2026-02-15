@@ -1,12 +1,12 @@
 # Tree Building System — Architecture & Algorithms
 
-**Purpose:** In-depth reference for how spell trees are built, sorted, matched, and laid out across all layers of the system: Python builders, C++ bridge, JS layout engines, root preview modules, and PreReqMaster NLP scoring.
+**Purpose:** In-depth reference for how spell trees are built, sorted, matched, and laid out across all layers of the system: C++ native builders (TreeBuilder/TreeNLP), JS layout engines, root preview modules, and PreReqMaster NLP scoring.
 
 ---
 
 ## System Overview
 
-The tree building pipeline has five layers, each with a distinct responsibility:
+The tree building pipeline has four layers, each with a distinct responsibility:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -19,25 +19,27 @@ The tree building pipeline has five layers, each with a distinct responsibility:
 │  └─────────────┘    └──────┬───────┘    └──────────┬──────────────┘    │
 │                             │ buildTree()            │ applyLocks()     │
 ├─────────────────────────────┼────────────────────────┼──────────────────┤
-│  C++ BRIDGE (UIManager + PythonBridge)               │                  │
+│  C++ NATIVE BUILDERS (TreeBuilder + TreeNLP)         │                  │
 │  ┌──────────────────────────┴────────────────────────┘                  │
-│  │ OnProceduralPythonGenerate() → PythonBridge::SendCommand()          │
-│  │ Reads "command" field → routes to correct Python builder            │
-│  │ Async callback → onProceduralPythonComplete() back to JS            │
-│  └──────────────────────────┬──────────────────────────────────────────┤
-│  PYTHON (Persistent Server)  │                                          │
-│  ┌───────────────────────────┴─────────────────────────────────┐       │
-│  │ server.py (stdin/stdout JSON-line REPL)                     │       │
-│  │   ├─ "build_tree"         → tree_build_tree.py   (NLP)     │       │
-│  │   ├─ "build_tree_classic" → classic_build_tree.py (Tier)   │       │
-│  │   └─ "prm_score"          → prereq_master_scorer.py        │       │
-│  │                                                              │       │
-│  │ Shared: theme_discovery.py, core/node.py, validator.py      │       │
-│  └──────────────────────────────────────────────────────────────┘       │
+│  │ OnProceduralPythonGenerate() → TreeBuilder::Build()                 │
+│  │ Reads "command" field → routes to correct builder mode              │
+│  │ Async via SKSE TaskInterface → onProceduralPythonComplete() to JS   │
+│  │                                                                      │
+│  │ Builder Modes:                                                       │
+│  │   ├─ "build_tree_classic"  → BuildClassic()  (Tier-first)           │
+│  │   ├─ "build_tree"          → BuildTree()     (NLP thematic)         │
+│  │   ├─ "build_tree_graph"    → BuildGraph()    (Edmonds' MSA)         │
+│  │   ├─ "build_tree_thematic" → BuildThematic() (3D similarity BFS)   │
+│  │   └─ "build_tree_oracle"   → BuildOracle()   (LLM-guided chains)   │
+│  │                                                                      │
+│  │ NLP Engine (TreeNLP):                                                │
+│  │   TF-IDF, cosine similarity, char n-grams, Levenshtein,            │
+│  │   fuzzy matching, theme scoring, PRM scoring                        │
+│  └──────────────────────────────────────────────────────────────────────┘
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Data flows one direction:** Python builds the tree structure (nodes + parent/child links) → C++ bridges the result → JS positions nodes on a visual grid and renders them.
+**Data flows one direction:** C++ builds the tree structure (nodes + parent/child links) → JS positions nodes on a visual grid and renders them.
 
 ---
 
@@ -90,20 +92,20 @@ Linear layout. Schools arranged along a horizontal or vertical line with growth 
 
 ---
 
-## Layer 2: Python Tree Builders
+## Layer 2: C++ Native Tree Builders
 
-Python builds the **tree structure** — which spell is parent/child of which. Two builders exist, one per growth mode.
+C++ builds the **tree structure** — which spell is parent/child of which. Five builder modes exist in `TreeBuilder.cpp`.
 
-### Classic Builder (`classic_build_tree.py`)
+### Classic Builder (`TreeBuilder::BuildClassic`)
 
 **Purpose:** Tier-first ordering. Novice spells are always ancestors of higher-tier spells.
 
 **Core constraint:** `node.depth = tier_index` — Novice=0, Apprentice=1, Adept=2, Expert=3, Master=4.
 
-**Algorithm — `classic_build_tree_from_data(spells, config)`:**
+**Algorithm:**
 
 1. **Group spells by school** — unknown schools → "Hedge Wizard"
-2. **Discover themes** via `discover_themes_per_school()` (TF-IDF with fallback)
+2. **Discover themes** via `DiscoverThemesPerSchool()` (TF-IDF)
 3. **Build NLP data** — extract text per spell for similarity scoring
 4. **Per-school tree building:**
    - Group spells by tier (unknown → Novice)
@@ -112,7 +114,7 @@ Python builds the **tree structure** — which spell is parent/child of which. T
    - **Tier-by-tier connection:** For each tier in order (Novice→Master):
      - Shuffle spells for variety
      - For each spell, find best parent from lower tiers
-     - Link via `link_nodes()`, then override `depth = tier_index`
+     - Link via `LinkNodes()`, then override `depth = tier_index`
      - Track available parents (those with remaining capacity)
    - Force-connect orphans to least-loaded connected node
 5. **Validate & auto-fix** unreachable nodes
@@ -130,21 +132,21 @@ Python builds the **tree structure** — which spell is parent/child of which. T
 
 **Text Similarity (Jaccard):**
 ```
-words_a = set(text_a.split())
-words_b = set(text_b.split())
+words_a = tokenize(text_a)  // lowercase, strip punctuation, filter short words
+words_b = tokenize(text_b)
 similarity = |words_a ∩ words_b| / |words_a ∪ words_b|
 ```
 
-No sklearn required — uses simple word overlap.
+Uses `TreeNLP::Tokenize()` — no external libraries required.
 
-### Tree Builder (`tree_build_tree.py` + `tree_builder.py`)
+### Tree Builder (`TreeBuilder::BuildTree`)
 
 **Purpose:** NLP-driven thematic trees. Parent/child links based on spell content similarity. Tree structure emerges from themes, not tier ordering.
 
-**Algorithm — `build_tree_from_data(spells, config)`:**
+**Algorithm:**
 
 1. **Group spells by school**
-2. **Discover themes** via TF-IDF (sklearn when available, word-frequency fallback)
+2. **Discover themes** via TF-IDF keyword extraction (`DiscoverThemesPerSchool()`)
 3. **Merge hints** — vanilla Skyrim element names (fire, frost, shock, heal, etc.)
 4. **Per-school configuration** — apply shape/density/convergence per school (from LLM or defaults):
    ```
@@ -152,10 +154,10 @@ No sklearn required — uses simple word overlap.
    Conjuration → portals, Illusion → organic
    ```
 5. **Compute similarity matrix** — pairwise TF-IDF cosine similarity between all spells in school
-6. **Per-school tree building (`_build_school_tree`):**
-   - Create TreeNodes, assign themes (LLM keyword → fuzzy match → fallback)
+6. **Per-school tree building:**
+   - Create TreeNodes, assign themes (fuzzy match → fallback)
    - Select root (prefer vanilla roots like Flames, Healing, etc.)
-   - **Group spells by theme** via `group_spells_best_fit()`
+   - **Group spells by theme** via `GroupSpellsBestFit()`
    - **Round-robin connection:** Cycle through themes, placing one spell per theme per round. This ensures each theme gets fair access to shallow parent positions:
      ```
      Round 1: fire[0] → frost[0] → shock[0] → heal[0]
@@ -166,6 +168,41 @@ No sklearn required — uses simple word overlap.
    - **Convergence insertion** for high-tier spells (Expert/Master get extra prerequisites)
    - Connect orphans, enforce high-tier convergence, validate reachability
    - Assign sections (root/trunk/branch) based on percentile depth
+
+### Graph Builder (`TreeBuilder::BuildGraph`)
+
+**Purpose:** Directed minimum spanning tree using Edmonds' algorithm. Creates arborescences from NLP similarity weights.
+
+**Algorithm:**
+1. Build complete weighted digraph from pairwise TF-IDF cosine similarity
+2. Apply tier ordering bias (lower→higher tier edges preferred)
+3. Run Edmonds' minimum spanning arborescence from root
+4. Validate reachability, fix orphans
+
+### Thematic Builder (`TreeBuilder::BuildThematic`)
+
+**Purpose:** 3D similarity BFS. Builds per-theme branches using multi-dimensional similarity scoring.
+
+**Algorithm:**
+1. Discover themes, group spells by best-fit theme
+2. Per theme: BFS expansion from theme seed spell
+3. Similarity scoring: weighted combination of TF-IDF text sim, name n-gram sim, and effect similarity
+4. Cross-theme convergence at higher tiers
+
+### Oracle Builder (`TreeBuilder::BuildOracle`)
+
+**Purpose:** LLM-guided semantic chain grouping. Uses OpenRouter API to create thematic spell chains.
+
+**Algorithm (with LLM):**
+1. Batch spells per school (configurable batch size)
+2. Send to LLM with prompt requesting thematic chain assignments
+3. Parse LLM response into chain groups
+4. Build tree from chains with inter-chain links
+
+**Fallback (no LLM / LLM failure):**
+1. Use NLP-based cluster-lane approach
+2. K-means style clustering on TF-IDF vectors
+3. Per-cluster linear chain with cross-cluster links
 
 **Parent Selection Scoring (`_score_parent`):**
 
@@ -191,24 +228,16 @@ No sklearn required — uses simple word overlap.
 - If nodes remain unreachable after 20 repair passes, logs warning
 - Repair strategies: remove blocking prereqs → find new parent → spread across available
 
-### TF-IDF Theme Discovery (`theme_discovery.py`)
+### TF-IDF Theme Discovery (`TreeBuilder::DiscoverThemesPerSchool`)
 
-**Shared by both builders.** Discovers keyword themes per school from spell text.
+**Shared by all builders.** Discovers keyword themes per school from spell text using `TreeNLP::ComputeTfIdf()`.
 
-**With sklearn:**
+**Algorithm:**
 ```
-TfidfVectorizer(stop_words=STOP_WORDS, max_features=50, ngram_range=(1,2))
-→ fit_transform(all_spell_texts_in_school)
-→ sum TF-IDF scores per term across documents
-→ sort descending → take top N
-```
-
-**Fallback (no sklearn):**
-```
-For each word in each spell:
-    TF = word_count_in_corpus
+For each word across all spells in school:
+    TF = term_count / total_tokens
     DF = documents_containing_word
-    IDF = log((total_docs + 1) / (DF + 1))
+    IDF = log((total_docs + 1) / (DF + 1)) + 1   (smoothed)
     score = TF × IDF
 Sort descending → take top N
 ```
@@ -224,72 +253,63 @@ Conjuration: summon, conjure, bound, portal, familiar
 Illusion:    invisibility, charm, fury, calm, fear
 ```
 
-### TreeNode Data Model (`core/node.py`)
+### TreeNode Data Model (`TreeBuilder::TreeNode`)
 
-```python
-TreeNode:
-    form_id: str           # "0x00012FCD"
-    name: str              # "Flames"
-    tier: str              # "Novice"
-    school: str            # "Destruction"
-    theme: str|None        # "fire"
-    children: List[str]    # formIds of direct children
-    prerequisites: List[str]  # formIds of prerequisite nodes
-    depth: int             # distance from root (0 = root)
-    section: str|None      # "root" / "trunk" / "branch"
-    is_root: bool
+```cpp
+struct TreeNode {
+    std::string formId;          // "0x00012FCD"
+    std::string name;            // "Flames"
+    std::string tier;            // "Novice"
+    std::string school;          // "Destruction"
+    std::string theme;           // "fire" (may be empty)
+    std::string section;         // "root" / "trunk" / "branch" (may be empty)
+
+    std::vector<std::string> children;       // formIds of child nodes
+    std::vector<std::string> prerequisites;  // formIds of prerequisite nodes
+    int depth = 0;                           // distance from root (0 = root)
+    bool isRoot = false;
+};
 ```
 
-**`link_nodes(parent, child)`:**
-- Adds child.form_id to parent.children
-- Adds parent.form_id to child.prerequisites
+**`LinkNodes(parent, child)`:**
+- Adds child.formId to parent.children
+- Adds parent.formId to child.prerequisites
 - Sets child.depth = parent.depth + 1
 
 **Note:** Classic builder overrides depth after linking to enforce `depth = tier_index`.
 
 ---
 
-## Layer 3: C++ Bridge
+## Layer 3: C++ ↔ JS Integration
 
-### Command Flow (`UIManager.cpp` → `PythonBridge`)
+### Command Flow (`UIManager.cpp` → `TreeBuilder`)
 
 ```cpp
 OnProceduralPythonGenerate(argument):
     1. Parse JSON from JS
     2. Read "command" field (default: "build_tree")
-    3. Build payload {spells, config, fallback?}
-    4. Signal JS whether Python is already running
-    5. PythonBridge::SendCommand(command, payload, callback)
-       → Async: callback fires on SKSE main thread when Python responds
-    6. Callback packages {success, treeData, elapsed}
+    3. Extract spells array and config
+    4. Run TreeBuilder::Build(command, spells, config) on SKSE TaskInterface
+       → Async: callback fires on SKSE main thread when build completes
+    5. Callback packages {success, treeData, elapsed}
        → InteropCall("onProceduralPythonComplete", response)
 ```
 
-### Python Server (`server.py`)
-
-Persistent subprocess. Heavy imports (sklearn, numpy) happen once at startup. Communicates via stdin/stdout JSON lines.
-
-**Startup:**
-1. Add `classic/python` and `tree/python` module dirs to `sys.path`
-2. Import both builders (with fallback chain for tree builder)
-3. Import PRM scorer
-4. Pre-import sklearn
-5. Send `__ready__` signal
-
-**Command routing:**
-| Command | Handler | Builder |
-|---------|---------|---------|
-| `build_tree` | `build_tree_from_data()` | Tree Growth (NLP) |
-| `build_tree_classic` | `classic_build_tree_from_data()` | Classic Growth (tier-first) |
-| `prm_score` | `prm_process()` | PreReqMaster NLP |
-| `ping` | inline | Health check |
-| `shutdown` | inline | Graceful exit |
+**Commands:**
+| Command | Builder | Mode |
+|---------|---------|------|
+| `build_tree` | `BuildTree()` | NLP thematic |
+| `build_tree_classic` | `BuildClassic()` | Tier-first |
+| `build_tree_graph` | `BuildGraph()` | Edmonds' MSA |
+| `build_tree_thematic` | `BuildThematic()` | 3D similarity BFS |
+| `build_tree_oracle` | `BuildOracle()` | LLM-guided chains |
+| `prm_score` | `TreeNLP::ProcessPRMRequest()` | PRM scoring |
 
 ---
 
 ## Layer 4: JS Growth Layout Modules
 
-Growth modules take the tree structure from Python and **position nodes on the grid** from the root preview module.
+Growth modules take the tree structure from C++ and **position nodes on the grid** from the root preview module.
 
 ### Classic Growth Layout (`classicLayout.js`)
 
@@ -359,10 +379,10 @@ else:
 | Mode | Behavior |
 |------|----------|
 | `simple` | No theme awareness. Pure direction + density scoring. |
-| `layered` | Uses `node.theme` from Python for sector-based bias. Theme match bonus in slot scoring. |
+| `layered` | Uses `node.theme` from C++ builder for sector-based bias. Theme match bonus in slot scoring. |
 | `smart` | Runs `ClassicThemeEngine.discoverAndAssign()` (JS-side keyword analysis) before layout. More refined theme grouping. |
 
-These modes control **visual clustering** (spatial grouping of similar spells), not tree structure. The Python builder determines parent/child links; the layout engine determines where each node sits on screen.
+These modes control **visual clustering** (spatial grouping of similar spells), not tree structure. The C++ builder determines parent/child links; the layout engine determines where each node sits on screen.
 
 ### Tree Growth Layout (`treeGrowthTree.js`)
 
@@ -376,7 +396,7 @@ pctRoot: 20%       — inner root zone
 trunkThickness: 70px
 ```
 
-**Section assignment** (done in Python): Nodes sorted by depth, then allocated by percentile:
+**Section assignment** (done in C++): Nodes sorted by depth, then allocated by percentile:
 - First 20% of nodes → `root` section
 - Next 50% → `trunk` section
 - Remaining 30% → `branch` section
@@ -387,7 +407,7 @@ trunkThickness: 70px
 
 ---
 
-## Layer 5: PreReqMaster (PRM)
+## Layer 4: PreReqMaster (PRM)
 
 PRM adds **extra prerequisite locks** to the built tree using NLP scoring. It runs after tree building and before final rendering.
 
@@ -398,10 +418,10 @@ Makes the spell tree more interesting by requiring players to master thematicall
 ### Pipeline
 
 ```
-Tree built (Python) → TreeGrowth.setTreeBuilt(true)
+Tree built (C++) → TreeGrowth.setTreeBuilt(true)
   → PreReqMaster.autoApplyLocks() triggered
     → buildLockRequest()       (eligibility filtering)
-    → Send to Python or JS     (NLP scoring)
+    → Send to C++ or JS       (NLP scoring)
     → applyLocksWithScorer()   (weighted random + cycle detection)
     → Render lock edges
 ```
@@ -443,7 +463,7 @@ Pool capped at 50 candidates per spell (performance).
 
 ### Phase 2: NLP Scoring
 
-**Sent to Python (`prereq_master_scorer.py`) or JS fallback.**
+**Sent to C++ (`TreeNLP::ProcessPRMRequest()`) or JS fallback.**
 
 **Algorithm (identical in both):**
 
@@ -503,7 +523,7 @@ Pool capped at 50 candidates per spell (performance).
 ### Fallback Strategy
 
 ```
-Try Python NLP (via PythonBridge "prm_score" command)
+Try C++ NLP (via "prm_score" command → TreeNLP::ProcessPRMRequest())
   → Success: use top candidates
   → Failure: fall back to JS TF-IDF scorer (synchronous, identical algorithm)
 ```
@@ -512,7 +532,7 @@ Try Python NLP (via PythonBridge "prm_score" command)
 
 ## Shared Output Format
 
-Both Python builders output the same JSON schema so all downstream JS systems (layout, apply, PRM) work identically:
+All C++ builders output the same JSON schema so all downstream JS systems (layout, apply, PRM) work identically:
 
 ```json
 {
@@ -566,9 +586,9 @@ Both Python builders output the same JSON schema so all downstream JS systems (l
      config: { tier_zones: {Novice: {min:0, max:40}, ...}, ... }
    }
 
-3. UIManager.cpp reads command="build_tree_classic", sends to PythonBridge
+3. UIManager.cpp reads command="build_tree_classic", runs TreeBuilder::BuildClassic()
 
-4. server.py routes to classic_build_tree_from_data():
+4. BuildClassic():
    - Groups 228 spells into 5 schools
    - Discovers themes: Destruction → [fire, frost, shock, ...]
    - Per school:
@@ -580,7 +600,7 @@ Both Python builders output the same JSON schema so all downstream JS systems (l
      - Expert under Adept (depth 3), Master under Expert (depth 4)
    - Validates: all 47 Destruction nodes reachable ✓
 
-5. Result returns through C++ callback to JS
+5. Result returns through SKSE TaskInterface callback to JS
 
 6. proceduralTreeBuilder.js routes to TreeGrowthClassic.loadTreeData()
 
@@ -592,7 +612,7 @@ Both Python builders output the same JSON schema so all downstream JS systems (l
      Wave 1: Fire Novice spells in inner 40% ring
      Wave 2: Apprentice spells in 10-55% ring
      ...
-   - Tier zones NOW work because Python put Novice at depth 0
+   - Tier zones NOW work because C++ put Novice at depth 0
    - Theme sectors cluster fire spells in one angular region
 
 8. PRM runs (if enabled):
@@ -610,10 +630,10 @@ Both Python builders output the same JSON schema so all downstream JS systems (l
 
 | Decision | Rationale |
 |----------|-----------|
-| Separate Python builders per growth mode | Classic needs tier-first ordering; Tree needs NLP thematic ordering. Shared builder couldn't satisfy both. |
-| Python bundled in module folders | Follows modularity contract — each growth module owns its full stack (JS + Python). |
-| `server.py` as persistent subprocess | Avoids 1.5s Python startup per build. sklearn/numpy loaded once. |
-| Tier zones in JS layout, not Python | Layout is visual concern. Python builds structure; JS decides spatial placement. |
+| Separate C++ builder modes | Classic needs tier-first ordering; Tree needs NLP thematic ordering; Graph uses directed MST. Different algorithms for different goals. |
+| Native C++ NLP engine | Eliminates Python subprocess, pip dependencies, Wine/Proton IPC issues. All algorithms are deterministic math that runs faster in C++. |
+| All builders in single TreeBuilder.cpp | Shared NLP engine (TreeNLP), shared theme discovery, shared validation. No duplication. |
+| Tier zones in JS layout, not C++ | Layout is visual concern. C++ builds structure; JS decides spatial placement. |
 | Three spell matching modes | Users want control over visual clustering without rebuilding the tree. |
 | PRM as post-processing | Locks are additive — they don't change the tree structure, only add prerequisite gates. |
 | Weighted random for PRM | Always picking #1 NLP match would feel mechanical. Top-5 selection adds variety. |

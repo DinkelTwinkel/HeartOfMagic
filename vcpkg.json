@@ -1,0 +1,22 @@
+{
+  "name": "heart-of-magic",
+  "version-string": "2.3.0",
+  "dependencies": [
+    "fmt",
+    "spdlog",
+    "nlohmann-json",
+    "rapidcsv",
+    "xbyak",
+    "directxmath",
+    "directxtk",
+    "rapidfuzz-cpp",
+    {
+      "name": "highway",
+      "features": ["contrib"]
+    },
+    {
+      "name": "curl",
+      "features": ["ssl", "websockets", "brotli", "openssl"]
+    }
+  ]
+}

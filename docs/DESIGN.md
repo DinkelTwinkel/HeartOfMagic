@@ -103,7 +103,6 @@ Simplified one-click workflow.
 │  [Build Tree]       │                        │
 │  [Apply Tree]       │                        │
 │  [Clear Tree]       │                        │
-│  [Setup Python]     │                        │
 │                     │                        │
 │  Status: ...        │                        │
 └─────────────────────┴────────────────────────┘
@@ -131,7 +130,7 @@ Full control over tree generation.
 │  │  (scrollable)      │  Canvas         │    │
 │  └────────────────────┴─────────────────┘    │
 │                                              │
-│  [Build Tree] [Apply Tree] [Clear] [Python]  │
+│  [Build Tree] [Apply Tree] [Clear]           │
 └──────────────────────────────────────────────┘
 ```
 
@@ -208,7 +207,6 @@ All mod configuration. Split-row layout for space efficiency.
 | Modal | Trigger | Module |
 |-------|---------|--------|
 | Build Progress | Build Tree button | `buildProgress.js` |
-| Python Setup | Setup Python button | `pythonSetup.js` |
 | Preset Name | Save Preset button | `uiHelpers.js` |
 | Blacklist | Blacklist button | `buttonHandlers.js` |
 | Whitelist | Whitelist button | `buttonHandlers.js` |
@@ -236,7 +234,7 @@ Shows staged progress during tree building:
 └─────────────────────────────────────┘
 ```
 
-Stages: Tree (Python/JS build) → Prereqs (PRM if enabled) → Finalize
+Stages: Tree (C++ NLP build) → Prereqs (PRM if enabled) → Finalize
 
 ---
 
@@ -260,7 +258,7 @@ Scan complete
   → Select preset chip (DEFAULT/Easy/Hard)
   → Click "Build Tree"
   → Build Progress modal opens
-  → Stage 1: Python builds tree (TF-IDF themes → layout → edges)
+  → Stage 1: C++ builds tree (TF-IDF themes → layout → edges)
   → Stage 2: PRM scores locks (if enabled)
   → Stage 3: Finalize
   → Modal completes → tree visible in preview
@@ -327,7 +325,7 @@ Tree applied
 ### Tree Building
 | Module | Purpose |
 |--------|---------|
-| `proceduralTreeBuilder.js` | JS/Python procedural tree builder |
+| `proceduralTreeBuilder.js` | JS/C++ procedural tree builder |
 | `visualFirstBuilder.js` | Visual-first builder (layout → assign → edges) |
 | `settingsAwareTreeBuilder.js` | Settings-aware wrapper |
 | `layoutGenerator.js` | Grid/shape layout generation |
@@ -374,7 +372,6 @@ Tree applied
 | `buildProgress.js` | Build progress modal |
 | `progressionUI.js` | Progression UI (learning targets, XP) |
 | `prereqMaster.js` | Pre Req Master system |
-| `pythonSetup.js` | Python installation wizard |
 | `editMode.js` | Tree edit mode |
 | `colorPicker.js` | Color picker component |
 
@@ -414,7 +411,7 @@ Tree applied
 
 ## C++ ↔ JS Communication
 
-### JS → C++ (35 listeners via `callCpp`)
+### JS → C++ (33 listeners via `callCpp`)
 
 **Scanning:** `ScanSpells`, `SaveOutput`, `SaveOutputBySchool`
 **Tree:** `LoadSpellTree`, `SaveSpellTree`, `GetSpellInfo`, `GetSpellInfoBatch`
@@ -422,7 +419,7 @@ Tree applied
 **Config:** `LoadUnifiedConfig`, `SaveUnifiedConfig`, `SetHotkey`, `SetPauseGameOnFocus`
 **Presets:** `SavePreset`, `DeletePreset`, `LoadPresets`
 **LLM:** `CheckLLM`, `LLMGenerate`, `PollLLMResponse`, `LoadLLMConfig`, `SaveLLMConfig`
-**Python:** `ProceduralPythonGenerate`, `PreReqMasterScore`, `SetupPython`, `CancelPythonSetup`
+**Tree Building:** `ProceduralPythonGenerate`, `PreReqMasterScore`
 **Clipboard:** `CopyToClipboard`, `GetClipboard`
 **Other:** `HidePanel`, `LogMessage`, `LoadPrompt`, `SavePrompt`
 
@@ -433,7 +430,7 @@ Tree applied
 **State:** `updateSpellState`, `onResetTreeStates`, `onSaveGameLoaded`
 **Progress:** `onProgressUpdate`, `onSpellReady`, `onSpellUnlocked`, `onProgressData`
 **Config:** `onUnifiedConfigLoaded`, `onPresetsLoaded`
-**Python:** `onProceduralPythonComplete`, `onPreReqMasterComplete`, `onPythonAddonStatus`, `onPythonSetupProgress`, `onPythonSetupComplete`
+**Tree Building:** `onProceduralPythonComplete`, `onPreReqMasterComplete`, `onPythonAddonStatus`
 **LLM:** `onLLMStatus`, `onLLMQueued`, `onLLMPollResult`, `onLLMConfigLoaded`
 
 ---
