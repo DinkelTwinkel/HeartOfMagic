@@ -3,7 +3,9 @@
 # Uses CMAKE_CURRENT_LIST_DIR so this module works regardless of
 # which CMakeLists.txt includes it.
 
-set(CommonLibPath "${CMAKE_CURRENT_LIST_DIR}/../external/commonlibsse-ng")
+# Use shared workspace CommonLib instead of git submodule
+# Original submodule path: ${CMAKE_CURRENT_LIST_DIR}/../external/commonlibsse-ng
+set(CommonLibPath "${CMAKE_CURRENT_LIST_DIR}/../../../../shared/CommonLibSSE-NG")
 set(CommonLibName "CommonLibSSE")
 
 # Read CommonLibSSE version from its vcpkg.json
