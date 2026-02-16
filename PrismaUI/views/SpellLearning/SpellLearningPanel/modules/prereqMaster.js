@@ -9,7 +9,7 @@
  *   1. User configures settings (global %, tier %, pool, constraints)
  *   2. User clicks "Apply Locks"
  *   3. buildLockRequest() filters eligible spells and builds candidate pools
- *   4. Scoring: Python NLP (preferred) or JS fallback (token matching)
+ *   4. Scoring: NLP (preferred) or JS fallback (token matching)
  *   5. applyLocks() assigns top-scoring candidates as lock prereqs
  *   6. Tree re-renders with chain edges for revealed locks
  */
@@ -475,7 +475,7 @@
 
     function buildTextBlob(node) {
         var parts = [];
-        // Weight name 2x (repeat it) to match Python scorer behavior
+        // Weight name 2x (repeat it) to match NLP scorer behavior
         if (node.name) { parts.push(node.name); parts.push(node.name); }
         if (node.desc) parts.push(node.desc);
         if (node.effects && Array.isArray(node.effects)) {
@@ -550,7 +550,7 @@
     }
 
     /**
-     * JS TF-IDF similarity scorer (fallback when Python unavailable).
+     * JS TF-IDF similarity scorer (fallback when C++ unavailable).
      * Builds a per-pair TF-IDF corpus and scores via cosine similarity.
      * Matches the algorithm in prereq_master_scorer.py.
      */
@@ -1045,9 +1045,9 @@
     }
 
     /**
-     * Build the payload for Python NLP scoring (same format as prereq_master_scorer.py expects).
+     * Build the payload for NLPscoring (same format as prereq_master_scorer.py expects).
      */
-    function _buildPythonPayload(request) {
+    function _buildTreePayload(request) {
         return {
             pairs: request.eligible.map(function(item) {
                 return {
@@ -1082,21 +1082,21 @@
 
     /**
      * Apply locks using the best available scorer.
-     * Tries Python NLP via C++ bridge first, falls back to JS TF-IDF.
-     * @returns {number} Lock count (sync), or -1 if async (Python)
+     * Tries NLPvia C++ bridge first, falls back to JS TF-IDF.
+     * @returns {number} Lock count (sync), or -1 if async (C++)
      */
     function applyLocksWithScorer(request) {
         if (!request || !request.eligible || request.eligible.length === 0) return 0;
 
-        // Try Python NLP via C++ bridge
+        // Try NLPvia C++ bridge
         if (window.callCpp) {
             try {
-                var payload = _buildPythonPayload(request);
-                _prmLog('Sending ' + payload.pairs.length + ' pairs to Python NLP scorer...');
+                var payload = _buildTreePayload(request);
+                _prmLog('Sending ' + payload.pairs.length + ' pairs to NLPscorer...');
                 window.callCpp('PreReqMasterScore', JSON.stringify(payload));
                 return -1; // Async - result comes via onPreReqMasterComplete callback
             } catch (e) {
-                _prmLog('Python bridge failed, using JS TF-IDF fallback: ' + e.message);
+                _prmLog('C++ bridge failed, using JS TF-IDF fallback: ' + e.message);
             }
         }
 
@@ -1105,14 +1105,14 @@
     }
 
     /**
-     * Callback from Python NLP scoring.
+     * Callback from NLPscoring.
      * @param {string} resultStr - JSON string with scored results
      */
     window.onPreReqMasterComplete = function(resultStr) {
         try {
-            // Respect PRM toggle — if user disabled PRM while Python was scoring, bail out
+            // Respect PRM toggle -- if user disabled PRM while C++ was scoring, bail out
             if (!isEnabled()) {
-                _prmLog('PRM disabled during Python scoring — discarding results');
+                _prmLog('PRM disabled during C++ scoring -- discarding results');
                 updateStatus('Prerequisite locks disabled');
                 if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
                     BuildProgress.setStage('finalize');
@@ -1123,7 +1123,7 @@
 
             var result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
             if (!result.success || !result.scores) {
-                _prmLog('Python scoring failed: ' + (result.error || 'unknown') + ' - falling back to JS TF-IDF');
+                _prmLog('C++ scoring failed: ' + (result.error || 'unknown') + ' - falling back to JS TF-IDF');
                 // Fall back to JS TF-IDF scorer
                 var request = buildLockRequest();
                 if (request) {
@@ -1139,7 +1139,7 @@
                 return;
             }
 
-            // Apply Python NLP results with cycle validation + weighted random + target cap
+            // Apply NLPresults with cycle validation + weighted random + target cap
             var lockCount = 0;
             var skippedCount = 0;
             var nlpNodes = _getAllNodes();
@@ -1235,8 +1235,8 @@
                 _prmLog('Reachability check passed - all nodes reachable from root');
             }
 
-            _prmLog('Applied ' + lockCount + ' locks (Python NLP, ' + (result.count || lockCount) + ' scored, ' + skippedCount + ' rejected)');
-            updateStatus(lockCount + ' locks applied (Python NLP)');
+            _prmLog('Applied ' + lockCount + ' locks (NLP, ' + (result.count || lockCount) + ' scored, ' + skippedCount + ' rejected)');
+            updateStatus(lockCount + ' locks applied (NLP)');
             onLocksChanged();
 
             // Notify animation to start chain phase
@@ -1253,7 +1253,7 @@
                 }, 400);
             }
         } catch (e) {
-            _prmLog('ERROR processing Python results: ' + e.message + ' - falling back to JS TF-IDF');
+            _prmLog('ERROR processing C++ results: ' + e.message + ' - falling back to JS TF-IDF');
             // Fall back to JS scorer on parse error
             var fbRequest = buildLockRequest();
             if (fbRequest) {
@@ -2085,8 +2085,8 @@
 
         var result = applyLocksWithScorer(request);
         if (result === -1) {
-            // Async (Python NLP) - callback will handle status + onLocksChanged + BuildProgress
-            updateStatus('Scoring with Python NLP...');
+            // Async (NLP) - callback will handle status + onLocksChanged + BuildProgress
+            updateStatus('Scoring with NLP...');
         } else {
             updateStatus(result + ' locks auto-applied');
             onLocksChanged();
@@ -2217,8 +2217,8 @@
 
                 var result = applyLocksWithScorer(request);
                 if (result === -1) {
-                    // Async (Python NLP) - callback will handle status + onLocksChanged
-                    updateStatus('Scoring with Python NLP...');
+                    // Async (NLP) - callback will handle status + onLocksChanged
+                    updateStatus('Scoring with NLP...');
                 } else {
                     _prmLog('Locks applied: ' + result);
                     updateStatus(result + ' locks applied');

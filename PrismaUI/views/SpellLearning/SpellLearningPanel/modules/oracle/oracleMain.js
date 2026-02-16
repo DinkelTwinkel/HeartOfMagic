@@ -7,7 +7,7 @@
  * side - like parallel railroad tracks, each chain being a track with
  * spells as stations.
  *
- * The Python builder returns extra metadata: chains with names and
+ * The C++ builder returns extra metadata: chains with names and
  * narratives, and each node has a `chain` property identifying which
  * chain it belongs to.
  *
@@ -42,7 +42,6 @@ var TreeGrowthOracle = {
     _treeData: null,
     _layoutData: null,
     _positionMap: null,
-    _pythonInstalled: false,
     _hasSpells: false,
 
     // =========================================================================
@@ -180,7 +179,7 @@ var TreeGrowthOracle = {
     // =========================================================================
 
     /**
-     * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate)
+     * Build tree from scanned spells via C++ (ProceduralTreeGenerate)
      * with the oracle builder command.
      */
     buildTree: function () {
@@ -204,11 +203,11 @@ var TreeGrowthOracle = {
             BuildProgress.start(hasPRM);
         }
 
-        OracleSettings.setStatusText('Building tree (Python/Oracle)...', '#f59e0b');
+        OracleSettings.setStatusText('Building tree (C++/Oracle)...', '#f59e0b');
         var buildBtn = document.getElementById('tgBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
-        // Set pending flag so onProceduralPythonComplete routes result here
+        // Set pending flag so onProceduralTreeComplete routes result here
         if (typeof state !== 'undefined') {
             state._oracleGrowthBuildPending = true;
         }
@@ -230,7 +229,7 @@ var TreeGrowthOracle = {
         }
         console.log('[OracleGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
-        // Gather grid layout info so Python can adapt
+        // Gather grid layout info so C++ can adapt
         var gridHint = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             var previewOut = TreePreview.getOutput();
@@ -263,15 +262,18 @@ var TreeGrowthOracle = {
             grid_hint: gridHint
         };
 
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree_oracle',
-            spells: spellsToProcess,
-            config: config
-        }));
+        // Defer to let UI render progress modal before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify({
+                command: 'build_tree_oracle',
+                spells: spellsToProcess,
+                config: config
+            }));
+        }, 0);
     },
 
     /**
-     * Receive tree data from the C++ / Python backend callback.
+     * Receive tree data from the C++ backend callback.
      * Parses chain metadata, runs layout, and triggers a re-render.
      *
      * @param {Object} data - Raw tree structure from the backend, includes
@@ -442,7 +444,7 @@ var TreeGrowthOracle = {
                 // Only include nodes that were actually placed by the layout
                 if (!placedSet[sn.formId]) continue;
 
-                // Use layout-derived children and prereqs instead of Python builder's
+                // Use layout-derived children and prereqs instead of C++ builder's
                 var layoutChildren = childrenLookup[sn.formId] || [];
                 var layoutPrereqs = prereqLookup[sn.formId] || [];
 
@@ -622,22 +624,6 @@ var TreeGrowthOracle = {
         console.log('[OracleGrowth] Zoom to fit: zoom=' + zoom.toFixed(2) +
             ' bounds=' + Math.round(treeW) + 'x' + Math.round(treeH) +
             ' center=' + Math.round(centerX) + ',' + Math.round(centerY));
-    },
-
-    // =========================================================================
-    // PYTHON STATUS INTEGRATION
-    // =========================================================================
-
-    /**
-     * Called when Python environment status changes.
-     *
-     * @param {boolean} installed - Whether Python is installed and usable
-     * @param {boolean} hasScript - Whether the growth script exists
-     * @param {boolean} hasPython - Whether the Python binary is available
-     */
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        OracleSettings.onPythonStatusChanged(installed, hasScript, hasPython);
     },
 
     // =========================================================================

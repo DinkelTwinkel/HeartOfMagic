@@ -7,7 +7,7 @@
  * Global classes: GlowSpriteCache, TextCache, DendrogramRenderer
  * Dependencies: spatial-hash.js (SpatialHashGrid)
  *
- * Expected node format (from Python JSON, after reference resolution in app.js):
+ * Expected node format (from JSON, after reference resolution in app.js):
  *   {
  *     id, x, y, zone, depth, parent (object|null), children (array),
  *     thickness, isHub, isOrbital, assignedSpell: { formId, name, skillLevel, magickaCost }

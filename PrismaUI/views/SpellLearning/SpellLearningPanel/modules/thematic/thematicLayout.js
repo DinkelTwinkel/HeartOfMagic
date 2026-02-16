@@ -27,7 +27,7 @@ var ThematicLayout = {
     /**
      * Layout all schools, dispatching to themed or normal mode.
      *
-     * @param {Object} treeData - Tree data from Python backend
+     * @param {Object} treeData - Tree data from C++ backend
      * @param {Object} baseData - Output from TreePreview.getOutput()
      * @param {Object} settings - Layout settings
      * @returns {{ schools: Object }} Result with positioned nodes per school

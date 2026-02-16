@@ -12,7 +12,6 @@
 
 // =============================================================================
 // STOP WORDS — words filtered from TF-IDF analysis
-// Matches Python SPELL_STOP_WORDS + sklearn english stop words
 // =============================================================================
 
 static const std::unordered_set<std::string> kStopWords = {

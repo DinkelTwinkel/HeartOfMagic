@@ -13,7 +13,6 @@
  * Usage:
  *   var html = OracleSettings.buildHTML(settings);
  *   OracleSettings.bindEvents({ onSettingChanged });
- *   OracleSettings.updatePythonStatus(installed, hasScript, hasPython);
  *   OracleSettings.updateScanStatus(hasSpells);
  *   OracleSettings.setTreeBuilt(built, nodeCount, totalPool);
  *   OracleSettings.setStatusText(text, color);
@@ -24,7 +23,6 @@
 var OracleSettings = {
 
     // Internal state tracking
-    _pythonInstalled: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -468,19 +466,6 @@ var OracleSettings = {
         dot.style.background = color;
         label.textContent = text;
         label.style.color = color;
-    },
-
-    // =========================================================================
-    // PYTHON STATUS
-    // =========================================================================
-
-    updatePythonStatus: function (installed, hasScript, hasPython) {
-        if (typeof TreeGrowth !== 'undefined') TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
-    },
-
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        this.updatePythonStatus(installed, hasScript, hasPython);
     },
 
     // =========================================================================

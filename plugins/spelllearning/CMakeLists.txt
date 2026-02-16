@@ -7,7 +7,7 @@ string(APPEND CMAKE_CXX_FLAGS " /openmp")
 
 project(
     SpellLearning
-    VERSION 2.3.0
+    VERSION ${PROJECT_VERSION}
     DESCRIPTION "AI-Generated Spell Learning Tree System"
     LANGUAGES CXX
 )
@@ -58,10 +58,13 @@ add_commonlibsse_plugin(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
 # Precompiled header
-target_precompile_headers(${PROJECT_NAME} PRIVATE include/PCH.h)
+target_precompile_headers(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../PCH.h
+)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 
@@ -83,31 +86,3 @@ set_source_files_properties(src/SimdKernels.cpp PROPERTIES
 set_target_properties(${PROJECT_NAME} PROPERTIES
     OUTPUT_NAME "${PROJECT_NAME}"
 )
-
-# Generate fomod/info.xml from template with current version
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../fomod/info.xml.in"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../fomod/info.xml"
-    @ONLY
-)
-
-# Post-build: Copy DLL to MO2 RELEASE folder
-#set(MO2_RELEASE_PATH "D:/MODDING/Mod Development Zone 2/MO2/mods/HeartOfMagic_RELEASE/SKSE/Plugins")
-#add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E make_directory "${MO2_RELEASE_PATH}"
-#    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}> "${MO2_RELEASE_PATH}/"
-#    COMMENT "Copying DLL to MO2 RELEASE folder"
-#)
-
-# Post-build: Copy PrismaUI views to MO2 RELEASE folder
-# PrismaUI expects views in: PrismaUI/views/{ViewName}/index.html
-# UIManager creates views with path "SpellLearning/SpellLearningPanel/index.html"
-# So the full path should be: PrismaUI/views/SpellLearning/SpellLearningPanel/index.html
-# Note: Tree viewer is now a tab in SpellLearningPanel, not a separate view
-#set(PRISMAUI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../PrismaUI/views/SpellLearning")
-#set(PRISMAUI_DST "D:/MODDING/Mod Development Zone 2/MO2/mods/HeartOfMagic_RELEASE/PrismaUI/views/${PROJECT_NAME}")
-#add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E make_directory "${PRISMAUI_DST}/SpellLearningPanel"
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory "${PRISMAUI_SRC}/SpellLearningPanel" "${PRISMAUI_DST}/SpellLearningPanel"
-#    COMMENT "Copying PrismaUI views to MO2 RELEASE folder"
-#)

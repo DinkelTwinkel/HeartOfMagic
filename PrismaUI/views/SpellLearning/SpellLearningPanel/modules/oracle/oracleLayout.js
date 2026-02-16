@@ -423,7 +423,7 @@ var OracleLayout = {
     buildChainMeta: function (schoolTree, schoolColor) {
         if (!schoolTree) return [];
 
-        // If the Python output includes explicit chains metadata, use it
+        // If the C++ builder output includes explicit chains metadata, use it
         if (schoolTree.chains && schoolTree.chains.length > 0) {
             var meta = [];
             for (var i = 0; i < schoolTree.chains.length; i++) {

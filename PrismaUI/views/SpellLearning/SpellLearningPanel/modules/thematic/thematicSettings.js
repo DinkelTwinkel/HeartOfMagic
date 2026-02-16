@@ -8,8 +8,7 @@
  *
  * Usage:
  *   var html = ThematicSettings.buildHTML(settings);
- *   ThematicSettings.bindEvents({ onBuild, onApply, onClear, onSetupPython, onSettingChanged });
- *   ThematicSettings.updatePythonStatus(installed, hasScript, hasPython);
+ *   ThematicSettings.bindEvents({ onBuild, onApply, onClear, onSettingChanged });
  *   ThematicSettings.updateScanStatus(hasSpells);
  *   ThematicSettings.setTreeBuilt(built, nodeCount, totalPool);
  *   ThematicSettings.setStatusText(text, color);
@@ -20,7 +19,6 @@
 var ThematicSettings = {
 
     // Internal state tracking
-    _pythonInstalled: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -117,7 +115,6 @@ var ThematicSettings = {
      * @param {function} callbacks.onBuild - Called when Build Tree is clicked
      * @param {function} callbacks.onApply - Called when Apply Tree is clicked
      * @param {function} callbacks.onClear - Called when Clear Tree is clicked
-     * @param {function} callbacks.onSetupPython - Called when Setup Python is clicked
      * @param {function} callbacks.onSettingChanged - Called with (key, value)
      */
     bindEvents: function (callbacks) {
@@ -219,23 +216,6 @@ var ThematicSettings = {
      */
     setStatusText: function (text, color) {
         if (typeof TreeGrowth !== 'undefined') TreeGrowth.setStatusText(text, color);
-    },
-
-    /**
-     * Called when Python environment status changes.
-     *
-     * @param {boolean} installed - True if Python environment is fully ready
-     * @param {boolean} hasScript - True if SpellTreeBuilder script exists on disk
-     * @param {boolean} hasPython - True if Python binary is detected
-     */
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        this.updatePythonStatus(installed, hasScript, hasPython);
-    },
-
-    updatePythonStatus: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        if (typeof TreeGrowth !== 'undefined') TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
     },
 
     /**

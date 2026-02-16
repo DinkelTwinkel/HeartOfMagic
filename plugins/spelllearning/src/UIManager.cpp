@@ -1,4 +1,4 @@
-#include "PCH.h"
+#include "Common.h"
 #include "UIManager.h"
 #include "SpellScanner.h"
 #include "OpenRouterAPI.h"
@@ -136,7 +136,7 @@ bool UIManager::Initialize()
     m_prismaUI->RegisterJSListener(m_view, "LogMessage", OnLogMessage);
     
     // Register JS callbacks - Procedural tree generation (C++ native)
-    m_prismaUI->RegisterJSListener(m_view, "ProceduralPythonGenerate", OnProceduralPythonGenerate);
+    m_prismaUI->RegisterJSListener(m_view, "ProceduralTreeGenerate", OnProceduralTreeGenerate);
 
     // Register JS callbacks - Pre Req Master NLP scoring (C++ native)
     m_prismaUI->RegisterJSListener(m_view, "PreReqMasterScore", OnPreReqMasterScore);
@@ -152,6 +152,14 @@ bool UIManager::Initialize()
     // Register JS callbacks - Auto-test
     m_prismaUI->RegisterJSListener(m_view, "loadTestConfig", OnLoadTestConfig);
     m_prismaUI->RegisterJSListener(m_view, "saveTestResults", OnSaveTestResults);
+
+    // Register console message callback (API v2+)
+    auto prismaUIapiVersion = PRISMA_UI_API::GetAPIVersion();
+    logger::info("UIManager: Detected PrismaUI API version {}", prismaUIapiVersion);
+    if (prismaUIapiVersion > 1) {
+        m_prismaUI->RegisterConsoleCallback(m_view, OnConsoleMessage);
+        logger::info("UIManager: Console callback registered");
+    }
 
     logger::info("UIManager: JS listeners registered");
 
@@ -396,37 +404,48 @@ void UIManager::OnScanSpells(const char* argument)
 {
     logger::info("UIManager: ScanSpells callback triggered");
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument ? argument : "");
 
-    // Parse the scan configuration
-    SpellScanner::ScanConfig scanConfig;
-    bool useTomeMode = false;
-    
-    if (argument && strlen(argument) > 0) {
-        try {
-            json j = json::parse(argument);
-            scanConfig = SpellScanner::ParseScanConfig(argument);
-            
-            // Check for scan mode
-            if (j.contains("scanMode") && j["scanMode"].get<std::string>() == "tomes") {
-                useTomeMode = true;
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for ScanSpells");
+        return;
+    }
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Parse the scan configuration
+        SpellScanner::ScanConfig scanConfig;
+        bool useTomeMode = false;
+
+        if (!argStr.empty()) {
+            try {
+                json j = json::parse(argStr);
+                scanConfig = SpellScanner::ParseScanConfig(argStr.c_str());
+
+                // Check for scan mode
+                if (j.contains("scanMode") && j["scanMode"].get<std::string>() == "tomes") {
+                    useTomeMode = true;
+                }
+            } catch (...) {
+                // If parsing fails, use defaults
             }
-        } catch (...) {
-            // If parsing fails, use defaults
         }
-    }
 
-    std::string result;
-    if (useTomeMode) {
-        instance->UpdateStatus("Scanning spell tomes...");
-        result = SpellScanner::ScanSpellTomes(scanConfig);
-    } else {
-        instance->UpdateStatus("Scanning all spells...");
-        result = SpellScanner::ScanAllSpells(scanConfig);
-    }
+        std::string result;
+        if (useTomeMode) {
+            instance->UpdateStatus("Scanning spell tomes...");
+            result = SpellScanner::ScanSpellTomes(scanConfig);
+        } else {
+            instance->UpdateStatus("Scanning all spells...");
+            result = SpellScanner::ScanAllSpells(scanConfig);
+        }
 
-    // Send result back to UI
-    instance->SendSpellData(result);
+        // Send result back to UI
+        instance->SendSpellData(result);
+    });
 }
 
 void UIManager::OnSaveOutput(const char* argument)
@@ -438,30 +457,38 @@ void UIManager::OnSaveOutput(const char* argument)
         return;
     }
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    // Create output directory
-    std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
-    std::filesystem::create_directories(outputDir);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    // Write to file
-    std::filesystem::path outputPath = outputDir / "spell_scan_output.json";
-    
-    try {
-        std::ofstream file(outputPath);
-        if (file.is_open()) {
-            file << argument;
-            file.close();
-            logger::info("UIManager: Saved output to {}", outputPath.string());
-            instance->UpdateStatus("Saved to spell_scan_output.json");
-        } else {
-            logger::error("UIManager: Failed to open output file");
-            instance->UpdateStatus("Failed to save file");
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Create output directory
+        std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
+        std::filesystem::create_directories(outputDir);
+
+        // Write to file
+        std::filesystem::path outputPath = outputDir / "spell_scan_output.json";
+
+        try {
+            std::ofstream file(outputPath);
+            if (file.is_open()) {
+                file << argStr;
+                file.close();
+                logger::info("UIManager: Saved output to {}", outputPath.string());
+                instance->UpdateStatus("Saved to spell_scan_output.json");
+            } else {
+                logger::error("UIManager: Failed to open output file");
+                instance->UpdateStatus("Failed to save file");
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception while saving: {}", e.what());
+            instance->UpdateStatus("Error saving file");
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception while saving: {}", e.what());
-        instance->UpdateStatus("Error saving file");
-    }
+    });
 }
 
 void UIManager::OnSaveOutputBySchool(const char* argument)
@@ -473,79 +500,94 @@ void UIManager::OnSaveOutputBySchool(const char* argument)
         return;
     }
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    try {
-        // Parse the JSON object containing school outputs
-        json schoolOutputs = json::parse(argument);
-        
-        // Create output directory
-        std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning/schools";
-        std::filesystem::create_directories(outputDir);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-        int savedCount = 0;
-        
-        // Save each school to its own file
-        for (auto& [school, content] : schoolOutputs.items()) {
-            std::string filename = school + "_spells.json";
-            std::filesystem::path outputPath = outputDir / filename;
-            
-            std::ofstream file(outputPath);
-            if (file.is_open()) {
-                // Content is already a JSON string, write it directly
-                if (content.is_string()) {
-                    file << content.get<std::string>();
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            // Parse the JSON object containing school outputs
+            json schoolOutputs = json::parse(argStr);
+
+            // Create output directory
+            std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning/schools";
+            std::filesystem::create_directories(outputDir);
+
+            int savedCount = 0;
+
+            // Save each school to its own file
+            for (auto& [school, content] : schoolOutputs.items()) {
+                std::string filename = school + "_spells.json";
+                std::filesystem::path outputPath = outputDir / filename;
+
+                std::ofstream file(outputPath);
+                if (file.is_open()) {
+                    // Content is already a JSON string, write it directly
+                    if (content.is_string()) {
+                        file << content.get<std::string>();
+                    } else {
+                        file << content.dump(2);
+                    }
+                    file.close();
+                    logger::info("UIManager: Saved {} to {}", school, outputPath.string());
+                    savedCount++;
                 } else {
-                    file << content.dump(2);
+                    logger::error("UIManager: Failed to save {}", school);
                 }
-                file.close();
-                logger::info("UIManager: Saved {} to {}", school, outputPath.string());
-                savedCount++;
-            } else {
-                logger::error("UIManager: Failed to save {}", school);
             }
+
+            std::string statusMsg = "Saved " + std::to_string(savedCount) + " school files to /schools/";
+            logger::info("UIManager: {}", statusMsg);
+            instance->UpdateStatus(statusMsg);
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception in SaveOutputBySchool: {}", e.what());
+            instance->UpdateStatus("Error saving school files");
         }
-
-        std::string statusMsg = "Saved " + std::to_string(savedCount) + " school files to /schools/";
-        logger::info("UIManager: {}", statusMsg);
-        instance->UpdateStatus(statusMsg);
-
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception in SaveOutputBySchool: {}", e.what());
-        instance->UpdateStatus("Error saving school files");
-    }
+    });
 }
 
 void UIManager::OnLoadPrompt([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LoadPrompt callback triggered");
 
-    auto* instance = GetSingleton();
-    auto promptPath = GetPromptFilePath();
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    // Check if saved prompt exists
-    if (!std::filesystem::exists(promptPath)) {
-        logger::info("UIManager: No saved prompt file found, using default");
-        return;
-    }
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
-    try {
-        std::ifstream file(promptPath);
-        if (file.is_open()) {
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            file.close();
-            
-            std::string promptContent = buffer.str();
-            logger::info("UIManager: Loaded prompt from file ({} bytes)", promptContent.size());
-            
-            instance->SendPrompt(promptContent);
-        } else {
-            logger::warn("UIManager: Could not open prompt file");
+        auto promptPath = GetPromptFilePath();
+
+        // Check if saved prompt exists
+        if (!std::filesystem::exists(promptPath)) {
+            logger::info("UIManager: No saved prompt file found, using default");
+            return;
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception while loading prompt: {}", e.what());
-    }
+
+        try {
+            std::ifstream file(promptPath);
+            if (file.is_open()) {
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                file.close();
+
+                std::string promptContent = buffer.str();
+                logger::info("UIManager: Loaded prompt from file ({} bytes)", promptContent.size());
+
+                instance->SendPrompt(promptContent);
+            } else {
+                logger::warn("UIManager: Could not open prompt file");
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception while loading prompt: {}", e.what());
+        }
+    });
 }
 
 void UIManager::OnSavePrompt(const char* argument)
@@ -557,29 +599,37 @@ void UIManager::OnSavePrompt(const char* argument)
         return;
     }
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    // Create output directory
-    std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
-    std::filesystem::create_directories(outputDir);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    auto promptPath = GetPromptFilePath();
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
-    try {
-        std::ofstream file(promptPath);
-        if (file.is_open()) {
-            file << argument;
-            file.close();
-            logger::info("UIManager: Saved prompt to {}", promptPath.string());
-            instance->NotifyPromptSaved(true);
-        } else {
-            logger::error("UIManager: Failed to open prompt file for writing");
+        // Create output directory
+        std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
+        std::filesystem::create_directories(outputDir);
+
+        auto promptPath = GetPromptFilePath();
+
+        try {
+            std::ofstream file(promptPath);
+            if (file.is_open()) {
+                file << argStr;
+                file.close();
+                logger::info("UIManager: Saved prompt to {}", promptPath.string());
+                instance->NotifyPromptSaved(true);
+            } else {
+                logger::error("UIManager: Failed to open prompt file for writing");
+                instance->NotifyPromptSaved(false);
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception while saving prompt: {}", e.what());
             instance->NotifyPromptSaved(false);
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception while saving prompt: {}", e.what());
-        instance->NotifyPromptSaved(false);
-    }
+    });
 }
 
 // =============================================================================
@@ -590,102 +640,112 @@ void UIManager::OnLoadSpellTree([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LoadSpellTree callback triggered");
 
-    auto* instance = GetSingleton();
-    auto treePath = GetTreeFilePath();
-
-    // Check if saved tree exists
-    if (!std::filesystem::exists(treePath)) {
-        logger::info("UIManager: No saved spell tree found");
-        instance->UpdateTreeStatus("No saved tree - import one");
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for LoadSpellTree");
         return;
     }
 
-    try {
-        std::ifstream file(treePath);
-        if (file.is_open()) {
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            file.close();
-            
-            std::string treeContent = buffer.str();
-            logger::info("UIManager: Loaded spell tree from file ({} bytes)", treeContent.size());
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
-            // Parse and validate tree - this resolves persistentId to current formId
-            // when load order has changed since tree was generated
-            try {
-                json treeData = json::parse(treeContent);
+        auto treePath = GetTreeFilePath();
 
-                // Validate and fix form IDs using persistent IDs
-                auto validationResult = SpellScanner::ValidateAndFixTree(treeData);
-                if (validationResult.resolvedFromPersistent > 0) {
-                    logger::info("UIManager: Resolved {} spells from persistent IDs (load order changed)",
-                        validationResult.resolvedFromPersistent);
-                    // Update tree content with resolved form IDs
-                    treeContent = treeData.dump();
-                }
-                if (validationResult.invalidNodes > 0) {
-                    logger::warn("UIManager: {} spells could not be resolved (plugins may be missing)",
-                        validationResult.invalidNodes);
-                }
+        // Check if saved tree exists
+        if (!std::filesystem::exists(treePath)) {
+            logger::info("UIManager: No saved spell tree found");
+            instance->UpdateTreeStatus("No saved tree - import one");
+            return;
+        }
 
-                // Send validated tree data to viewer
-                instance->SendTreeData(treeContent);
+        try {
+            std::ifstream file(treePath);
+            if (file.is_open()) {
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                file.close();
 
-                // Collect all formIds, fetch spell info, and sync requiredXP to ProgressionManager
-                std::vector<std::string> formIds;
-                auto* pm = ProgressionManager::GetSingleton();
-                int xpSyncCount = 0;
+                std::string treeContent = buffer.str();
+                logger::info("UIManager: Loaded spell tree from file ({} bytes)", treeContent.size());
 
-                if (treeData.contains("schools")) {
-                    for (auto& [schoolName, schoolData] : treeData["schools"].items()) {
-                        if (schoolData.contains("nodes")) {
-                            for (auto& node : schoolData["nodes"]) {
-                                if (node.contains("formId")) {
-                                    std::string formIdStr = node["formId"].get<std::string>();
-                                    formIds.push_back(formIdStr);
+                // Parse and validate tree - this resolves persistentId to current formId
+                // when load order has changed since tree was generated
+                try {
+                    json treeData = json::parse(treeContent);
 
-                                    // Sync requiredXP from tree to ProgressionManager
-                                    if (node.contains("requiredXP") && node["requiredXP"].is_number()) {
-                                        float reqXP = node["requiredXP"].get<float>();
-                                        if (reqXP > 0) {
-                                            RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-                                            pm->SetRequiredXP(formId, reqXP);
-                                            xpSyncCount++;
+                    // Validate and fix form IDs using persistent IDs
+                    auto validationResult = SpellScanner::ValidateAndFixTree(treeData);
+                    if (validationResult.resolvedFromPersistent > 0) {
+                        logger::info("UIManager: Resolved {} spells from persistent IDs (load order changed)",
+                            validationResult.resolvedFromPersistent);
+                        // Update tree content with resolved form IDs
+                        treeContent = treeData.dump();
+                    }
+                    if (validationResult.invalidNodes > 0) {
+                        logger::warn("UIManager: {} spells could not be resolved (plugins may be missing)",
+                            validationResult.invalidNodes);
+                    }
+
+                    // Send validated tree data to viewer
+                    instance->SendTreeData(treeContent);
+
+                    // Collect all formIds, fetch spell info, and sync requiredXP to ProgressionManager
+                    std::vector<std::string> formIds;
+                    auto* pm = ProgressionManager::GetSingleton();
+                    int xpSyncCount = 0;
+
+                    if (treeData.contains("schools")) {
+                        for (auto& [schoolName, schoolData] : treeData["schools"].items()) {
+                            if (schoolData.contains("nodes")) {
+                                for (auto& node : schoolData["nodes"]) {
+                                    if (node.contains("formId")) {
+                                        std::string formIdStr = node["formId"].get<std::string>();
+                                        formIds.push_back(formIdStr);
+
+                                        // Sync requiredXP from tree to ProgressionManager
+                                        if (node.contains("requiredXP") && node["requiredXP"].is_number()) {
+                                            float reqXP = node["requiredXP"].get<float>();
+                                            if (reqXP > 0) {
+                                                RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+                                                pm->SetRequiredXP(formId, reqXP);
+                                                xpSyncCount++;
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                if (xpSyncCount > 0) {
-                    logger::info("UIManager: Synced requiredXP for {} spells from tree to ProgressionManager", xpSyncCount);
-                }
-
-                // Fetch spell info for all formIds and send as batch
-                if (!formIds.empty()) {
-                    json spellInfoArray = json::array();
-                    for (const auto& formIdStr : formIds) {
-                        auto spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
-                        if (!spellInfo.empty()) {
-                            spellInfoArray.push_back(json::parse(spellInfo));
-                        }
+                    if (xpSyncCount > 0) {
+                        logger::info("UIManager: Synced requiredXP for {} spells from tree to ProgressionManager", xpSyncCount);
                     }
-                    instance->SendSpellInfoBatch(spellInfoArray.dump());
-                }
-            } catch (const std::exception& e) {
-                logger::error("UIManager: Failed to parse/validate tree: {}", e.what());
-                // Still try to send raw content as fallback
-                instance->SendTreeData(treeContent);
-            }
 
-        } else {
-            logger::warn("UIManager: Could not open spell tree file");
+                    // Fetch spell info for all formIds and send as batch
+                    if (!formIds.empty()) {
+                        json spellInfoArray = json::array();
+                        for (const auto& formIdStr : formIds) {
+                            auto spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
+                            if (!spellInfo.empty()) {
+                                spellInfoArray.push_back(json::parse(spellInfo));
+                            }
+                        }
+                        instance->SendSpellInfoBatch(spellInfoArray.dump());
+                    }
+                } catch (const std::exception& e) {
+                    logger::error("UIManager: Failed to parse/validate tree: {}", e.what());
+                    // Still try to send raw content as fallback
+                    instance->SendTreeData(treeContent);
+                }
+
+            } else {
+                logger::warn("UIManager: Could not open spell tree file");
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception while loading spell tree: {}", e.what());
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception while loading spell tree: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnGetSpellInfo(const char* argument)
@@ -697,16 +757,24 @@ void UIManager::OnGetSpellInfo(const char* argument)
 
     logger::info("UIManager: GetSpellInfo for formId: {}", argument);
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    // Get spell info from SpellScanner
-    std::string spellInfo = SpellScanner::GetSpellInfoByFormId(argument);
-    
-    if (!spellInfo.empty()) {
-        instance->SendSpellInfo(spellInfo);
-    } else {
-        logger::warn("UIManager: No spell found for formId: {}", argument);
-    }
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Get spell info from SpellScanner
+        std::string spellInfo = SpellScanner::GetSpellInfoByFormId(argStr);
+
+        if (!spellInfo.empty()) {
+            instance->SendSpellInfo(spellInfo);
+        } else {
+            logger::warn("UIManager: No spell found for formId: {}", argStr);
+        }
+    });
 }
 
 void UIManager::OnGetSpellInfoBatch(const char* argument)
@@ -716,59 +784,70 @@ void UIManager::OnGetSpellInfoBatch(const char* argument)
         return;
     }
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    try {
-        // Parse JSON array of formIds
-        json formIdArray = json::parse(argument);
-        
-        if (!formIdArray.is_array()) {
-            logger::error("UIManager: GetSpellInfoBatch - expected JSON array");
-            return;
-        }
-
-        logger::info("UIManager: GetSpellInfoBatch for {} formIds", formIdArray.size());
-
-        json resultArray = json::array();
-        int foundCount = 0;
-        int notFoundCount = 0;
-
-        for (const auto& formIdJson : formIdArray) {
-            std::string formIdStr = formIdJson.get<std::string>();
-            
-            // Validate formId format (should be 0x followed by 8 hex chars)
-            if (formIdStr.length() < 3 || formIdStr.substr(0, 2) != "0x") {
-                logger::warn("UIManager: Invalid formId format: {}", formIdStr);
-                json notFound;
-                notFound["formId"] = formIdStr;
-                notFound["notFound"] = true;
-                resultArray.push_back(notFound);
-                notFoundCount++;
-                continue;
-            }
-
-            std::string spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
-            
-            if (!spellInfo.empty()) {
-                resultArray.push_back(json::parse(spellInfo));
-                foundCount++;
-            } else {
-                json notFound;
-                notFound["formId"] = formIdStr;
-                notFound["notFound"] = true;
-                resultArray.push_back(notFound);
-                notFoundCount++;
-            }
-        }
-
-        logger::info("UIManager: Batch result - {} found, {} not found", foundCount, notFoundCount);
-
-        // Send batch result
-        instance->SendSpellInfoBatch(resultArray.dump());
-
-    } catch (const std::exception& e) {
-        logger::error("UIManager: GetSpellInfoBatch exception: {}", e.what());
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for GetSpellInfoBatch");
+        return;
     }
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            // Parse JSON array of formIds
+            json formIdArray = json::parse(argStr);
+
+            if (!formIdArray.is_array()) {
+                logger::error("UIManager: GetSpellInfoBatch - expected JSON array");
+                return;
+            }
+
+            logger::info("UIManager: GetSpellInfoBatch for {} formIds", formIdArray.size());
+
+            json resultArray = json::array();
+            int foundCount = 0;
+            int notFoundCount = 0;
+
+            for (const auto& formIdJson : formIdArray) {
+                std::string formIdStr = formIdJson.get<std::string>();
+
+                // Validate formId format (should be 0x followed by 8 hex chars)
+                if (formIdStr.length() < 3 || formIdStr.substr(0, 2) != "0x") {
+                    logger::warn("UIManager: Invalid formId format: {}", formIdStr);
+                    json notFound;
+                    notFound["formId"] = formIdStr;
+                    notFound["notFound"] = true;
+                    resultArray.push_back(notFound);
+                    notFoundCount++;
+                    continue;
+                }
+
+                std::string spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
+
+                if (!spellInfo.empty()) {
+                    resultArray.push_back(json::parse(spellInfo));
+                    foundCount++;
+                } else {
+                    json notFound;
+                    notFound["formId"] = formIdStr;
+                    notFound["notFound"] = true;
+                    resultArray.push_back(notFound);
+                    notFoundCount++;
+                }
+            }
+
+            logger::info("UIManager: Batch result - {} found, {} not found", foundCount, notFoundCount);
+
+            // Send batch result
+            instance->SendSpellInfoBatch(resultArray.dump());
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: GetSpellInfoBatch exception: {}", e.what());
+        }
+    });
 }
 
 void UIManager::OnSaveSpellTree(const char* argument)
@@ -780,30 +859,38 @@ void UIManager::OnSaveSpellTree(const char* argument)
         return;
     }
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    // Create output directory
-    std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
-    std::filesystem::create_directories(outputDir);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    // Write to file
-    auto treePath = GetTreeFilePath();
-    
-    try {
-        std::ofstream file(treePath);
-        if (file.is_open()) {
-            file << argument;
-            file.close();
-            logger::info("UIManager: Saved spell tree to {}", treePath.string());
-            instance->UpdateTreeStatus("Tree saved");
-        } else {
-            logger::error("UIManager: Failed to open spell tree file for writing");
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Create output directory
+        std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
+        std::filesystem::create_directories(outputDir);
+
+        // Write to file
+        auto treePath = GetTreeFilePath();
+
+        try {
+            std::ofstream file(treePath);
+            if (file.is_open()) {
+                file << argStr;
+                file.close();
+                logger::info("UIManager: Saved spell tree to {}", treePath.string());
+                instance->UpdateTreeStatus("Tree saved");
+            } else {
+                logger::error("UIManager: Failed to open spell tree file for writing");
+                instance->UpdateTreeStatus("Save failed");
+            }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception while saving spell tree: {}", e.what());
             instance->UpdateTreeStatus("Save failed");
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception while saving spell tree: {}", e.what());
-        instance->UpdateTreeStatus("Save failed");
-    }
+    });
 }
 
 void UIManager::OnSetLearningTarget(const char* argument)
@@ -815,58 +902,67 @@ void UIManager::OnSetLearningTarget(const char* argument)
 
     logger::info("UIManager: SetLearningTarget: {}", argument);
 
-    try {
-        json request = json::parse(argument);
-        std::string school = request.value("school", "");
-        std::string formIdStr = request.value("formId", "");
-        
-        if (school.empty() || formIdStr.empty()) {
-            logger::warn("UIManager: SetLearningTarget - missing school or formId");
-            return;
-        }
-        
-        // Parse formId (handle 0x prefix)
-        RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-        
-        // Parse prerequisites array if provided
-        std::vector<RE::FormID> prereqs;
-        if (request.contains("prerequisites") && request["prerequisites"].is_array()) {
-            for (const auto& prereqJson : request["prerequisites"]) {
-                std::string prereqStr = prereqJson.get<std::string>();
-                RE::FormID prereqId = std::stoul(prereqStr, nullptr, 0);
-                if (prereqId != 0) {
-                    prereqs.push_back(prereqId);
+    std::string argStr(argument);
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
+            std::string school = request.value("school", "");
+            std::string formIdStr = request.value("formId", "");
+
+            if (school.empty() || formIdStr.empty()) {
+                logger::warn("UIManager: SetLearningTarget - missing school or formId");
+                return;
+            }
+
+            // Parse formId (handle 0x prefix)
+            RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+
+            // Parse prerequisites array if provided
+            std::vector<RE::FormID> prereqs;
+            if (request.contains("prerequisites") && request["prerequisites"].is_array()) {
+                for (const auto& prereqJson : request["prerequisites"]) {
+                    std::string prereqStr = prereqJson.get<std::string>();
+                    RE::FormID prereqId = std::stoul(prereqStr, nullptr, 0);
+                    if (prereqId != 0) {
+                        prereqs.push_back(prereqId);
+                    }
+                }
+                logger::info("UIManager: Received {} direct prerequisites for {:08X}", prereqs.size(), formId);
+            }
+
+            auto* pm = ProgressionManager::GetSingleton();
+            pm->SetLearningTarget(school, formId, prereqs);
+
+            // Set requiredXP from tree data if provided (syncs JS tree XP to C++)
+            if (request.contains("requiredXP") && request["requiredXP"].is_number()) {
+                float requiredXP = request["requiredXP"].get<float>();
+                if (requiredXP > 0) {
+                    pm->SetRequiredXP(formId, requiredXP);
+                    logger::info("UIManager: Set requiredXP for {:08X} to {:.0f} (from tree)", formId, requiredXP);
                 }
             }
-            logger::info("UIManager: Received {} direct prerequisites for {:08X}", prereqs.size(), formId);
+
+            // Notify UI
+            json response;
+            response["success"] = true;
+            response["school"] = school;
+            response["formId"] = formIdStr;
+            instance->m_prismaUI->InteropCall(instance->m_view, "onLearningTargetSet", response.dump().c_str());
+
+            // Update spell state to "learning" so canvas renderer shows learning visuals
+            instance->UpdateSpellState(formIdStr, "learning");
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: SetLearningTarget exception: {}", e.what());
         }
-        
-        auto* pm = ProgressionManager::GetSingleton();
-        pm->SetLearningTarget(school, formId, prereqs);
-
-        // Set requiredXP from tree data if provided (syncs JS tree XP to C++)
-        if (request.contains("requiredXP") && request["requiredXP"].is_number()) {
-            float requiredXP = request["requiredXP"].get<float>();
-            if (requiredXP > 0) {
-                pm->SetRequiredXP(formId, requiredXP);
-                logger::info("UIManager: Set requiredXP for {:08X} to {:.0f} (from tree)", formId, requiredXP);
-            }
-        }
-
-        // Notify UI
-        auto* instance = GetSingleton();
-        json response;
-        response["success"] = true;
-        response["school"] = school;
-        response["formId"] = formIdStr;
-        instance->m_prismaUI->InteropCall(instance->m_view, "onLearningTargetSet", response.dump().c_str());
-
-        // Update spell state to "learning" so canvas renderer shows learning visuals
-        instance->UpdateSpellState(formIdStr, "learning");
-        
-    } catch (const std::exception& e) {
-        logger::error("UIManager: SetLearningTarget exception: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnClearLearningTarget(const char* argument)
@@ -877,28 +973,37 @@ void UIManager::OnClearLearningTarget(const char* argument)
 
     logger::info("UIManager: ClearLearningTarget: {}", argument);
 
-    try {
-        json request = json::parse(argument);
-        std::string school = request.value("school", "");
-        
-        if (!school.empty()) {
-            // Get the current learning target formId BEFORE clearing
-            RE::FormID targetId = ProgressionManager::GetSingleton()->GetLearningTarget(school);
-            
-            ProgressionManager::GetSingleton()->ClearLearningTarget(school);
-            
-            // Update UI to show spell is no longer in learning state
-            if (targetId != 0) {
-                auto* instance = GetSingleton();
-                std::stringstream ss;
-                ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << targetId;
-                instance->UpdateSpellState(ss.str(), "available");
-                logger::info("UIManager: Cleared learning target {} - set to available", ss.str());
+    std::string argStr(argument);
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
+            std::string school = request.value("school", "");
+
+            if (!school.empty()) {
+                // Get the current learning target formId BEFORE clearing
+                RE::FormID targetId = ProgressionManager::GetSingleton()->GetLearningTarget(school);
+
+                ProgressionManager::GetSingleton()->ClearLearningTarget(school);
+
+                // Update UI to show spell is no longer in learning state
+                if (targetId != 0) {
+                    std::stringstream ss;
+                    ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << targetId;
+                    instance->UpdateSpellState(ss.str(), "available");
+                    logger::info("UIManager: Cleared learning target {} - set to available", ss.str());
+                }
             }
+        } catch (const std::exception& e) {
+            logger::error("UIManager: ClearLearningTarget exception: {}", e.what());
         }
-    } catch (const std::exception& e) {
-        logger::error("UIManager: ClearLearningTarget exception: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnUnlockSpell(const char* argument)
@@ -910,152 +1015,177 @@ void UIManager::OnUnlockSpell(const char* argument)
 
     logger::info("UIManager: UnlockSpell: {}", argument);
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    try {
-        json request = json::parse(argument);
-        std::string formIdStr = request.value("formId", "");
-        
-        if (formIdStr.empty()) {
-            logger::warn("UIManager: UnlockSpell - no formId");
-            return;
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
+            std::string formIdStr = request.value("formId", "");
+
+            if (formIdStr.empty()) {
+                logger::warn("UIManager: UnlockSpell - no formId");
+                return;
+            }
+
+            RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+
+            bool success = ProgressionManager::GetSingleton()->UnlockSpell(formId);
+
+            instance->NotifySpellUnlocked(formId, success);
+
+            if (success) {
+                instance->UpdateSpellState(formIdStr, "unlocked");
+            }
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: UnlockSpell exception: {}", e.what());
         }
-        
-        RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-        
-        bool success = ProgressionManager::GetSingleton()->UnlockSpell(formId);
-        
-        instance->NotifySpellUnlocked(formId, success);
-        
-        if (success) {
-            instance->UpdateSpellState(formIdStr, "unlocked");
-        }
-        
-    } catch (const std::exception& e) {
-        logger::error("UIManager: UnlockSpell exception: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnGetProgress([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: GetProgress requested");
-    
-    auto* instance = GetSingleton();
-    std::string progressJson = ProgressionManager::GetSingleton()->GetProgressJSON();
-    instance->SendProgressData(progressJson);
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        std::string progressJson = ProgressionManager::GetSingleton()->GetProgressJSON();
+        instance->SendProgressData(progressJson);
+    });
 }
 
 void UIManager::OnGetPlayerKnownSpells([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: GetPlayerKnownSpells requested");
-    
-    auto* instance = GetSingleton();
-    auto* player = RE::PlayerCharacter::GetSingleton();
-    
-    if (!player) {
-        logger::error("UIManager: Cannot get player spells - player not found");
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for GetPlayerKnownSpells");
         return;
     }
-    
-    json result;
-    json knownSpells = json::array();
-    json weakenedSpells = json::array();  // Track which spells are early-learned/weakened
-    std::set<RE::FormID> foundSpells;  // Track to avoid duplicates
-    
-    // Get effectiveness hook for checking weakened state
-    auto* effectivenessHook = SpellEffectivenessHook::GetSingleton();
-    
-    // Helper lambda to check if a spell is a valid combat spell (not ability/passive)
-    auto isValidCombatSpell = [](RE::SpellItem* spell) -> bool {
-        if (!spell) return false;
-        
-        // Filter by spell type - only include actual spells, not abilities/powers/etc
-        auto spellType = spell->GetSpellType();
-        if (spellType != RE::MagicSystem::SpellType::kSpell) {
-            return false;
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+
+        if (!player) {
+            logger::error("UIManager: Cannot get player spells - player not found");
+            return;
         }
-        
-        // Must have a casting type (not constant effect)
-        auto castType = spell->GetCastingType();
-        if (castType == RE::MagicSystem::CastingType::kConstantEffect) {
-            return false;
-        }
-        
-        // Must have a magicka cost (filters out free abilities)
-        auto* costEffect = spell->GetCostliestEffectItem();
-        if (!costEffect || !costEffect->baseEffect) {
-            return false;
-        }
-        
-        // Check it's from a magic school
-        auto school = costEffect->baseEffect->GetMagickSkill();
-        if (school != RE::ActorValue::kAlteration &&
-            school != RE::ActorValue::kConjuration &&
-            school != RE::ActorValue::kDestruction &&
-            school != RE::ActorValue::kIllusion &&
-            school != RE::ActorValue::kRestoration) {
-            return false;
-        }
-        
-        return true;
-    };
-    
-    // Get the player's spell list from ActorBase
-    auto* actorBase = player->GetActorBase();
-    if (actorBase) {
-        auto* spellList = actorBase->GetSpellList();
-        if (spellList && spellList->spells) {
-            for (uint32_t i = 0; i < spellList->numSpells; ++i) {
-                auto* spell = spellList->spells[i];
-                if (spell && foundSpells.find(spell->GetFormID()) == foundSpells.end()) {
-                    if (isValidCombatSpell(spell)) {
-                        std::stringstream ss;
-                        ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << spell->GetFormID();
-                        knownSpells.push_back(ss.str());
-                        foundSpells.insert(spell->GetFormID());
-                        
-                        // Check if this spell is weakened (early-learned)
-                        if (effectivenessHook && effectivenessHook->IsEarlyLearnedSpell(spell->GetFormID())) {
-                            weakenedSpells.push_back(ss.str());
-                            logger::info("UIManager: Player knows spell: {} ({}) [WEAKENED]", spell->GetName(), ss.str());
+
+        json result;
+        json knownSpells = json::array();
+        json weakenedSpells = json::array();  // Track which spells are early-learned/weakened
+        std::set<RE::FormID> foundSpells;  // Track to avoid duplicates
+
+        // Get effectiveness hook for checking weakened state
+        auto* effectivenessHook = SpellEffectivenessHook::GetSingleton();
+
+        // Helper lambda to check if a spell is a valid combat spell (not ability/passive)
+        auto isValidCombatSpell = [](RE::SpellItem* spell) -> bool {
+            if (!spell) return false;
+
+            // Filter by spell type - only include actual spells, not abilities/powers/etc
+            auto spellType = spell->GetSpellType();
+            if (spellType != RE::MagicSystem::SpellType::kSpell) {
+                return false;
+            }
+
+            // Must have a casting type (not constant effect)
+            auto castType = spell->GetCastingType();
+            if (castType == RE::MagicSystem::CastingType::kConstantEffect) {
+                return false;
+            }
+
+            // Must have a magicka cost (filters out free abilities)
+            auto* costEffect = spell->GetCostliestEffectItem();
+            if (!costEffect || !costEffect->baseEffect) {
+                return false;
+            }
+
+            // Check it's from a magic school
+            auto school = costEffect->baseEffect->GetMagickSkill();
+            if (school != RE::ActorValue::kAlteration &&
+                school != RE::ActorValue::kConjuration &&
+                school != RE::ActorValue::kDestruction &&
+                school != RE::ActorValue::kIllusion &&
+                school != RE::ActorValue::kRestoration) {
+                return false;
+            }
+
+            return true;
+        };
+
+        // Get the player's spell list from ActorBase
+        auto* actorBase = player->GetActorBase();
+        if (actorBase) {
+            auto* spellList = actorBase->GetSpellList();
+            if (spellList && spellList->spells) {
+                for (uint32_t i = 0; i < spellList->numSpells; ++i) {
+                    auto* spell = spellList->spells[i];
+                    if (spell && foundSpells.find(spell->GetFormID()) == foundSpells.end()) {
+                        if (isValidCombatSpell(spell)) {
+                            std::stringstream ss;
+                            ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << spell->GetFormID();
+                            knownSpells.push_back(ss.str());
+                            foundSpells.insert(spell->GetFormID());
+
+                            // Check if this spell is weakened (early-learned)
+                            if (effectivenessHook && effectivenessHook->IsEarlyLearnedSpell(spell->GetFormID())) {
+                                weakenedSpells.push_back(ss.str());
+                                logger::info("UIManager: Player knows spell: {} ({}) [WEAKENED]", spell->GetName(), ss.str());
+                            } else {
+                                logger::info("UIManager: Player knows spell: {} ({})", spell->GetName(), ss.str());
+                            }
                         } else {
-                            logger::info("UIManager: Player knows spell: {} ({})", spell->GetName(), ss.str());
+                            logger::trace("UIManager: Skipping non-combat spell/ability: {} ({:08X})",
+                                spell->GetName(), spell->GetFormID());
                         }
-                    } else {
-                        logger::trace("UIManager: Skipping non-combat spell/ability: {} ({:08X})", 
-                            spell->GetName(), spell->GetFormID());
                     }
                 }
             }
         }
-    }
-    
-    // Also check spells added at runtime via AddSpell
-    for (auto* spell : player->GetActorRuntimeData().addedSpells) {
-        if (spell && foundSpells.find(spell->GetFormID()) == foundSpells.end()) {
-            if (isValidCombatSpell(spell)) {
-                std::stringstream ss;
-                ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << spell->GetFormID();
-                knownSpells.push_back(ss.str());
-                foundSpells.insert(spell->GetFormID());
-                
-                // Check if this spell is weakened (early-learned)
-                if (effectivenessHook && effectivenessHook->IsEarlyLearnedSpell(spell->GetFormID())) {
-                    weakenedSpells.push_back(ss.str());
-                    logger::info("UIManager: Player added spell: {} ({}) [WEAKENED]", spell->GetName(), ss.str());
-                } else {
-                    logger::info("UIManager: Player added spell: {} ({})", spell->GetName(), ss.str());
+
+        // Also check spells added at runtime via AddSpell
+        for (auto* spell : player->GetActorRuntimeData().addedSpells) {
+            if (spell && foundSpells.find(spell->GetFormID()) == foundSpells.end()) {
+                if (isValidCombatSpell(spell)) {
+                    std::stringstream ss;
+                    ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << spell->GetFormID();
+                    knownSpells.push_back(ss.str());
+                    foundSpells.insert(spell->GetFormID());
+
+                    // Check if this spell is weakened (early-learned)
+                    if (effectivenessHook && effectivenessHook->IsEarlyLearnedSpell(spell->GetFormID())) {
+                        weakenedSpells.push_back(ss.str());
+                        logger::info("UIManager: Player added spell: {} ({}) [WEAKENED]", spell->GetName(), ss.str());
+                    } else {
+                        logger::info("UIManager: Player added spell: {} ({})", spell->GetName(), ss.str());
+                    }
                 }
             }
         }
-    }
-    
-    result["knownSpells"] = knownSpells;
-    result["weakenedSpells"] = weakenedSpells;  // Include list of early-learned spells
-    result["count"] = knownSpells.size();
-    
-    logger::info("UIManager: Found {} valid combat spells", knownSpells.size());
-    instance->m_prismaUI->InteropCall(instance->m_view, "onPlayerKnownSpells", result.dump().c_str());
+
+        result["knownSpells"] = knownSpells;
+        result["weakenedSpells"] = weakenedSpells;  // Include list of early-learned spells
+        result["count"] = knownSpells.size();
+
+        logger::info("UIManager: Found {} valid combat spells", knownSpells.size());
+        instance->m_prismaUI->InteropCall(instance->m_view, "onPlayerKnownSpells", result.dump().c_str());
+    });
 }
 
 void UIManager::OnCheatUnlockSpell(const char* argument)
@@ -1067,39 +1197,47 @@ void UIManager::OnCheatUnlockSpell(const char* argument)
 
     logger::info("UIManager: CheatUnlockSpell (cheat mode): {}", argument);
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    try {
-        json request = json::parse(argument);
-        std::string formIdStr = request.value("formId", "");
-        
-        if (formIdStr.empty()) {
-            logger::warn("UIManager: CheatUnlockSpell - no formId");
-            return;
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
+            std::string formIdStr = request.value("formId", "");
+
+            if (formIdStr.empty()) {
+                logger::warn("UIManager: CheatUnlockSpell - no formId");
+                return;
+            }
+
+            RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+
+            // Get player and spell
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formId);
+
+            if (!player || !spell) {
+                logger::error("UIManager: CheatUnlockSpell - failed to get player or spell {:08X}", formId);
+                return;
+            }
+
+            // Add spell to player (cheat - no XP required)
+            player->AddSpell(spell);
+
+            logger::info("UIManager: Cheat unlocked spell {} ({:08X})", spell->GetName(), formId);
+
+            instance->NotifySpellUnlocked(formId, true);
+            instance->UpdateSpellState(formIdStr, "unlocked");
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: CheatUnlockSpell exception: {}", e.what());
         }
-        
-        RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-        
-        // Get player and spell
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formId);
-        
-        if (!player || !spell) {
-            logger::error("UIManager: CheatUnlockSpell - failed to get player or spell {:08X}", formId);
-            return;
-        }
-        
-        // Add spell to player (cheat - no XP required)
-        player->AddSpell(spell);
-        
-        logger::info("UIManager: Cheat unlocked spell {} ({:08X})", spell->GetName(), formId);
-        
-        instance->NotifySpellUnlocked(formId, true);
-        instance->UpdateSpellState(formIdStr, "unlocked");
-        
-    } catch (const std::exception& e) {
-        logger::error("UIManager: CheatUnlockSpell exception: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnRelockSpell(const char* argument)
@@ -1111,47 +1249,55 @@ void UIManager::OnRelockSpell(const char* argument)
 
     logger::info("UIManager: RelockSpell (cheat mode): {}", argument);
 
-    auto* instance = GetSingleton();
+    std::string argStr(argument);
 
-    try {
-        json request = json::parse(argument);
-        std::string formIdStr = request.value("formId", "");
-        
-        if (formIdStr.empty()) {
-            logger::warn("UIManager: RelockSpell - no formId");
-            return;
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
+            std::string formIdStr = request.value("formId", "");
+
+            if (formIdStr.empty()) {
+                logger::warn("UIManager: RelockSpell - no formId");
+                return;
+            }
+
+            RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+
+            // Get player and spell
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formId);
+
+            if (!player || !spell) {
+                logger::error("UIManager: RelockSpell - failed to get player or spell {:08X}", formId);
+                return;
+            }
+
+            // Remove spell from player
+            player->RemoveSpell(spell);
+
+            logger::info("UIManager: Relocked spell {} ({:08X})", spell->GetName(), formId);
+
+            // Notify UI that spell was relocked
+            json notify;
+            std::stringstream ss;
+            ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << formId;
+            notify["formId"] = ss.str();
+            notify["success"] = true;
+            notify["relocked"] = true;
+
+            instance->m_prismaUI->InteropCall(instance->m_view, "onSpellRelocked", notify.dump().c_str());
+            instance->UpdateSpellState(formIdStr, "available");
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: RelockSpell exception: {}", e.what());
         }
-        
-        RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-        
-        // Get player and spell
-        auto* player = RE::PlayerCharacter::GetSingleton();
-        auto* spell = RE::TESForm::LookupByID<RE::SpellItem>(formId);
-        
-        if (!player || !spell) {
-            logger::error("UIManager: RelockSpell - failed to get player or spell {:08X}", formId);
-            return;
-        }
-        
-        // Remove spell from player
-        player->RemoveSpell(spell);
-        
-        logger::info("UIManager: Relocked spell {} ({:08X})", spell->GetName(), formId);
-        
-        // Notify UI that spell was relocked
-        json notify;
-        std::stringstream ss;
-        ss << "0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(8) << formId;
-        notify["formId"] = ss.str();
-        notify["success"] = true;
-        notify["relocked"] = true;
-        
-        instance->m_prismaUI->InteropCall(instance->m_view, "onSpellRelocked", notify.dump().c_str());
-        instance->UpdateSpellState(formIdStr, "available");
-        
-    } catch (const std::exception& e) {
-        logger::error("UIManager: RelockSpell exception: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnSetSpellXP(const char* argument)
@@ -1434,9 +1580,18 @@ void MergeJsonNonNull(json& dst, const json& src) {
 void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LoadUnifiedConfig requested");
-    
-    auto* instance = GetSingleton();
-    auto path = GetUnifiedConfigPath();
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for LoadUnifiedConfig");
+        return;
+    }
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        auto path = GetUnifiedConfigPath();
     
     // Also check legacy paths and merge if needed
     auto legacySettingsPath = GetSettingsFilePath();
@@ -1650,6 +1805,7 @@ void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
 
     // Notify UI of ISL detection status (fresh detection, not from saved config)
     instance->NotifyISLDetectionStatus();
+    });
 }
 
 void UIManager::OnSetHotkey(const char* argument)
@@ -2292,77 +2448,93 @@ void UIManager::OnCopyToClipboard(const char* argument)
 
     logger::info("UIManager: CopyToClipboard ({} bytes)", strlen(argument));
 
-    auto* instance = GetSingleton();
-    bool success = false;
+    std::string argStr(argument);
 
-    // Use Windows clipboard API
-    if (OpenClipboard(nullptr)) {
-        EmptyClipboard();
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-        // Calculate size needed (including null terminator)
-        size_t len = strlen(argument) + 1;
-        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
-        
-        if (hMem) {
-            char* pMem = static_cast<char*>(GlobalLock(hMem));
-            if (pMem) {
-                memcpy(pMem, argument, len);
-                GlobalUnlock(hMem);
-                
-                if (SetClipboardData(CF_TEXT, hMem)) {
-                    success = true;
-                    logger::info("UIManager: Successfully copied to clipboard");
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        bool success = false;
+
+        // Use Windows clipboard API
+        if (OpenClipboard(nullptr)) {
+            EmptyClipboard();
+
+            // Calculate size needed (including null terminator)
+            size_t len = argStr.size() + 1;
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
+
+            if (hMem) {
+                char* pMem = static_cast<char*>(GlobalLock(hMem));
+                if (pMem) {
+                    memcpy(pMem, argStr.c_str(), len);
+                    GlobalUnlock(hMem);
+
+                    if (SetClipboardData(CF_TEXT, hMem)) {
+                        success = true;
+                        logger::info("UIManager: Successfully copied to clipboard");
+                    } else {
+                        logger::error("UIManager: SetClipboardData failed");
+                        GlobalFree(hMem);
+                    }
                 } else {
-                    logger::error("UIManager: SetClipboardData failed");
+                    logger::error("UIManager: GlobalLock failed");
                     GlobalFree(hMem);
                 }
             } else {
-                logger::error("UIManager: GlobalLock failed");
-                GlobalFree(hMem);
+                logger::error("UIManager: GlobalAlloc failed");
             }
+
+            CloseClipboard();
         } else {
-            logger::error("UIManager: GlobalAlloc failed");
+            logger::error("UIManager: OpenClipboard failed");
         }
 
-        CloseClipboard();
-    } else {
-        logger::error("UIManager: OpenClipboard failed");
-    }
-
-    instance->NotifyCopyComplete(success);
+        instance->NotifyCopyComplete(success);
+    });
 }
 
 void UIManager::OnGetClipboard([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: GetClipboard callback triggered");
 
-    auto* instance = GetSingleton();
-    std::string content;
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    // Use Windows clipboard API
-    if (OpenClipboard(nullptr)) {
-        HANDLE hData = GetClipboardData(CF_TEXT);
-        
-        if (hData) {
-            char* pszText = static_cast<char*>(GlobalLock(hData));
-            if (pszText) {
-                content = pszText;
-                GlobalUnlock(hData);
-                logger::info("UIManager: Read {} bytes from clipboard", content.size());
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        std::string content;
+
+        // Use Windows clipboard API
+        if (OpenClipboard(nullptr)) {
+            HANDLE hData = GetClipboardData(CF_TEXT);
+
+            if (hData) {
+                char* pszText = static_cast<char*>(GlobalLock(hData));
+                if (pszText) {
+                    content = pszText;
+                    GlobalUnlock(hData);
+                    logger::info("UIManager: Read {} bytes from clipboard", content.size());
+                } else {
+                    logger::warn("UIManager: GlobalLock failed on clipboard data");
+                }
             } else {
-                logger::warn("UIManager: GlobalLock failed on clipboard data");
+                logger::warn("UIManager: No text data in clipboard");
             }
+
+            CloseClipboard();
         } else {
-            logger::warn("UIManager: No text data in clipboard");
+            logger::error("UIManager: OpenClipboard failed");
         }
 
-        CloseClipboard();
-    } else {
-        logger::error("UIManager: OpenClipboard failed");
-    }
-
-    // Send content to UI (even if empty)
-    instance->SendClipboardContent(content);
+        // Send content to UI (even if empty)
+        instance->SendClipboardContent(content);
+    });
 }
 
 // =============================================================================
@@ -2372,39 +2544,52 @@ void UIManager::OnGetClipboard([[maybe_unused]] const char* argument)
 void UIManager::OnCheckLLM([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: CheckLLM callback triggered (OpenRouter mode)");
-    
-    auto* instance = GetSingleton();
-    
-    // Initialize OpenRouter API
-    bool hasApiKey = OpenRouterAPI::Initialize();
-    
-    json result;
-    result["available"] = hasApiKey;
-    result["version"] = hasApiKey ? "OpenRouter: " + OpenRouterAPI::GetConfig().model : "No API key";
-    
-    if (!hasApiKey) {
-        logger::warn("UIManager: OpenRouter API key not configured. Edit: Data/SKSE/Plugins/SpellLearning/openrouter_config.json");
-    } else {
-        logger::info("UIManager: OpenRouter ready with model: {}", OpenRouterAPI::GetConfig().model);
-    }
-    
-    // Send result to UI
-    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMStatus", result.dump().c_str());
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Initialize OpenRouter API
+        bool hasApiKey = OpenRouterAPI::Initialize();
+
+        json result;
+        result["available"] = hasApiKey;
+        result["version"] = hasApiKey ? "OpenRouter: " + OpenRouterAPI::GetConfig().model : "No API key";
+
+        if (!hasApiKey) {
+            logger::warn("UIManager: OpenRouter API key not configured. Edit: Data/SKSE/Plugins/SpellLearning/openrouter_config.json");
+        } else {
+            logger::info("UIManager: OpenRouter ready with model: {}", OpenRouterAPI::GetConfig().model);
+        }
+
+        // Send result to UI
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMStatus", result.dump().c_str());
+    });
 }
 
 void UIManager::OnLLMGenerate([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LLM Generate callback triggered (OpenRouter mode)");
-    
+
     if (!argument || strlen(argument) == 0) {
         logger::warn("UIManager: LLM Generate - no data provided");
         return;
     }
-    
-    auto* instance = GetSingleton();
-    
-    try {
-        json request = json::parse(argument);
+
+    std::string argStr(argument);
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        try {
+            json request = json::parse(argStr);
         
         std::string schoolName = request.value("school", "");
         std::string spellData = request.value("spellData", "");
@@ -2578,69 +2763,76 @@ You have more freedom in tree design:
         
     } catch (const std::exception& e) {
         logger::error("UIManager: LLM Generate exception: {}", e.what());
-        
+
         json errorResult;
         errorResult["hasResponse"] = true;
         errorResult["success"] = 0;
         errorResult["response"] = std::string("Exception: ") + e.what();
         instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", errorResult.dump().c_str());
     }
+    });
 }
 
 void UIManager::OnPollLLMResponse([[maybe_unused]] const char* argument)
 {
-    auto* instance = GetSingleton();
-    
-    std::filesystem::path responsePath = "Data/SKSE/Plugins/SpellLearning/skyrimnet_response.json";
-    
-    json result;
-    result["hasResponse"] = false;
-    
-    if (std::filesystem::exists(responsePath)) {
-        try {
-            std::ifstream file(responsePath);
-            std::string content((std::istreambuf_iterator<char>(file)),
-                               std::istreambuf_iterator<char>());
-            file.close();
-            
-            if (!content.empty()) {
-                // Papyrus writes format: "success|response"
-                // Where success is 0 or 1, and response is the LLM JSON
-                size_t delimPos = content.find('|');
-                
-                if (delimPos != std::string::npos) {
-                    std::string successStr = content.substr(0, delimPos);
-                    std::string response = content.substr(delimPos + 1);
-                    
-                    int success = 0;
-                    try {
-                        success = std::stoi(successStr);
-                    } catch (...) {
-                        logger::warn("UIManager: Failed to parse success value: {}", successStr);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        std::filesystem::path responsePath = "Data/SKSE/Plugins/SpellLearning/skyrimnet_response.json";
+
+        json result;
+        result["hasResponse"] = false;
+
+        if (std::filesystem::exists(responsePath)) {
+            try {
+                std::ifstream file(responsePath);
+                std::string content((std::istreambuf_iterator<char>(file)),
+                                   std::istreambuf_iterator<char>());
+                file.close();
+
+                if (!content.empty()) {
+                    // Papyrus writes format: "success|response"
+                    // Where success is 0 or 1, and response is the LLM JSON
+                    size_t delimPos = content.find('|');
+
+                    if (delimPos != std::string::npos) {
+                        std::string successStr = content.substr(0, delimPos);
+                        std::string response = content.substr(delimPos + 1);
+
+                        int success = 0;
+                        try {
+                            success = std::stoi(successStr);
+                        } catch (...) {
+                            logger::warn("UIManager: Failed to parse success value: {}", successStr);
+                        }
+
+                        result["hasResponse"] = true;
+                        result["success"] = success;
+                        result["response"] = response;
+
+                        logger::info("UIManager: Found LLM response, success={}, length={}",
+                                    success, response.length());
+
+                        // Clear the response file after reading
+                        std::ofstream clearFile(responsePath);
+                        clearFile << "";
+                        clearFile.close();
+                    } else {
+                        logger::warn("UIManager: Response missing delimiter, content: {}",
+                                    content.substr(0, 50));
                     }
-                    
-                    result["hasResponse"] = true;
-                    result["success"] = success;
-                    result["response"] = response;
-                    
-                    logger::info("UIManager: Found LLM response, success={}, length={}", 
-                                success, response.length());
-                    
-                    // Clear the response file after reading
-                    std::ofstream clearFile(responsePath);
-                    clearFile << "";
-                    clearFile.close();
-                } else {
-                    logger::warn("UIManager: Response missing delimiter, content: {}", 
-                                content.substr(0, 50));
                 }
+            } catch (const std::exception& e) {
+                logger::warn("UIManager: Failed to read LLM response: {}", e.what());
             }
-        } catch (const std::exception& e) {
-            logger::warn("UIManager: Failed to read LLM response: {}", e.what());
         }
-    }
-    
-    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", result.dump().c_str());
+
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMPollResult", result.dump().c_str());
+    });
 }
 
 // =============================================================================
@@ -2650,60 +2842,74 @@ void UIManager::OnPollLLMResponse([[maybe_unused]] const char* argument)
 void UIManager::OnLoadLLMConfig([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LoadLLMConfig callback triggered");
-    
-    auto* instance = GetSingleton();
-    
-    // Initialize OpenRouter (loads config from file)
-    OpenRouterAPI::Initialize();
-    
-    auto& config = OpenRouterAPI::GetConfig();
-    
-    json result;
-    result["apiKey"] = config.apiKey;  // Will be masked in JS
-    result["model"] = config.model;
-    result["maxTokens"] = config.maxTokens;
-    
-    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMConfigLoaded", result.dump().c_str());
-    
-    logger::info("UIManager: LLM config sent to UI, hasKey: {}", !config.apiKey.empty());
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        // Initialize OpenRouter (loads config from file)
+        OpenRouterAPI::Initialize();
+
+        auto& config = OpenRouterAPI::GetConfig();
+
+        json result;
+        result["apiKey"] = config.apiKey;  // Will be masked in JS
+        result["model"] = config.model;
+        result["maxTokens"] = config.maxTokens;
+
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMConfigLoaded", result.dump().c_str());
+
+        logger::info("UIManager: LLM config sent to UI, hasKey: {}", !config.apiKey.empty());
+    });
 }
 
 void UIManager::OnSaveLLMConfig(const char* argument)
 {
     logger::info("UIManager: SaveLLMConfig callback triggered");
-    
-    auto* instance = GetSingleton();
-    
-    json result;
-    result["success"] = false;
-    
-    try {
-        json request = json::parse(argument);
-        
-        auto& config = OpenRouterAPI::GetConfig();
-        
-        // Only update API key if a new one was provided
-        std::string newKey = SafeJsonValue<std::string>(request, "apiKey", "");
-        if (!newKey.empty() && newKey.find("...") == std::string::npos) {
-            config.apiKey = newKey;
-            logger::info("UIManager: Updated API key, length: {}", newKey.length());
+
+    std::string argStr(argument ? argument : "");
+
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        json result;
+        result["success"] = false;
+
+        try {
+            json request = json::parse(argStr);
+
+            auto& config = OpenRouterAPI::GetConfig();
+
+            // Only update API key if a new one was provided
+            std::string newKey = SafeJsonValue<std::string>(request, "apiKey", "");
+            if (!newKey.empty() && newKey.find("...") == std::string::npos) {
+                config.apiKey = newKey;
+                logger::info("UIManager: Updated API key, length: {}", newKey.length());
+            }
+
+            // Always update model
+            config.model = SafeJsonValue<std::string>(request, "model", config.model);
+
+            // Save to file
+            OpenRouterAPI::SaveConfig();
+
+            result["success"] = true;
+            logger::info("UIManager: LLM config saved, model: {}", config.model);
+
+        } catch (const std::exception& e) {
+            result["error"] = e.what();
+            logger::error("UIManager: Failed to save LLM config: {}", e.what());
         }
-        
-        // Always update model
-        config.model = SafeJsonValue<std::string>(request, "model", config.model);
-        
-        // Save to file
-        OpenRouterAPI::SaveConfig();
-        
-        result["success"] = true;
-        logger::info("UIManager: LLM config saved, model: {}", config.model);
-        
-    } catch (const std::exception& e) {
-        result["error"] = e.what();
-        logger::error("UIManager: Failed to save LLM config: {}", e.what());
-    }
-    
-    instance->m_prismaUI->InteropCall(instance->m_view, "onLLMConfigSaved", result.dump().c_str());
+
+        instance->m_prismaUI->InteropCall(instance->m_view, "onLLMConfigSaved", result.dump().c_str());
+    });
 }
 
 void UIManager::OnLogMessage(const char* argument)
@@ -2732,54 +2938,44 @@ void UIManager::OnLogMessage(const char* argument)
 // PROCEDURAL TREE GENERATION (C++ native)
 // =============================================================================
 
-void UIManager::OnProceduralPythonGenerate(const char* argument)
+void UIManager::OnProceduralTreeGenerate(const char* argument)
 {
-    logger::info("UIManager: ProceduralPythonGenerate callback triggered (C++ native)");
+    logger::info("UIManager: ProceduralTreeGenerate callback triggered (C++ native)");
 
-    auto* instance = GetSingleton();
-    if (!instance || !instance->m_prismaUI) return;
+    // Copy argument — must defer via AddTask to avoid re-entrant JS calls.
+    // InteropCall back into JS from within a RegisterJSListener callback
+    // doesn't work in Ultralight (re-entrant), so we defer to SKSE task thread.
+    std::string argStr(argument ? argument : "");
 
-    try {
-        nlohmann::json request = nlohmann::json::parse(argument);
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for ProceduralTreeGenerate");
+        return;
+    }
 
-        std::string command = "build_tree";
-        if (request.contains("command") && request["command"].is_string()) {
-            command = request["command"].get<std::string>();
-        }
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
-        auto spellsJson = request.value("spells", nlohmann::json::array());
-        auto configJson = request.value("config", nlohmann::json::object());
+        try {
+            nlohmann::json request = nlohmann::json::parse(argStr);
 
-        // Convert spells array
-        std::vector<json> spells;
-        for (const auto& s : spellsJson) {
-            spells.push_back(s);
-        }
+            std::string command = "build_tree";
+            if (request.contains("command") && request["command"].is_string()) {
+                command = request["command"].get<std::string>();
+            }
 
-        logger::info("UIManager: Building tree via C++ ({} command, {} spells)", command, spells.size());
+            auto spellsJson = request.value("spells", nlohmann::json::array());
+            auto configJson = request.value("config", nlohmann::json::object());
 
-        // Run tree build on SKSE task thread to avoid blocking UI
-        auto* taskInterface = SKSE::GetTaskInterface();
-        if (taskInterface) {
-            taskInterface->AddTask([instance, command, spells = std::move(spells), configJson]() {
-                auto result = TreeBuilder::Build(command, spells, configJson);
+            // Convert spells array
+            std::vector<json> spells;
+            for (const auto& s : spellsJson) {
+                spells.push_back(s);
+            }
 
-                nlohmann::json response;
-                if (result.success) {
-                    response["success"] = true;
-                    response["treeData"] = result.treeData.dump();
-                    response["elapsed"] = result.elapsedMs / 1000.0;
-                    logger::info("UIManager: {} completed in {:.2f}s Data size: {} bytes (C++ native)", command, result.elapsedMs / 1000.0, result.treeData.dump().size());
-                } else {
-                    response["success"] = false;
-                    response["error"] = result.error;
-                    logger::error("UIManager: {} failed: {}", command, result.error);
-                }
+            logger::info("UIManager: Building tree via C++ ({} command, {} spells)", command, spells.size());
 
-                instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
-            });
-        } else {
-            // Fallback: run synchronously
             auto result = TreeBuilder::Build(command, spells, configJson);
 
             nlohmann::json response;
@@ -2787,21 +2983,24 @@ void UIManager::OnProceduralPythonGenerate(const char* argument)
                 response["success"] = true;
                 response["treeData"] = result.treeData.dump();
                 response["elapsed"] = result.elapsedMs / 1000.0;
+                logger::info("UIManager: {} completed in {:.2f}s Data size: {} bytes (C++ native)", command, result.elapsedMs / 1000.0, result.treeData.dump().size());
             } else {
                 response["success"] = false;
                 response["error"] = result.error;
+                logger::error("UIManager: {} failed: {}", command, result.error);
             }
-            instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
+
+            instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralTreeComplete", response.dump().c_str());
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: ProceduralTreeGenerate failed: {}", e.what());
+
+            nlohmann::json response;
+            response["success"] = false;
+            response["error"] = e.what();
+            instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralTreeComplete", response.dump().c_str());
         }
-
-    } catch (const std::exception& e) {
-        logger::error("UIManager: ProceduralPythonGenerate failed: {}", e.what());
-
-        nlohmann::json response;
-        response["success"] = false;
-        response["error"] = e.what();
-        instance->m_prismaUI->InteropCall(instance->m_view, "onProceduralPythonComplete", response.dump().c_str());
-    }
+    });
 }
 
 // =============================================================================
@@ -2812,32 +3011,42 @@ void UIManager::OnPreReqMasterScore(const char* argument)
 {
     logger::info("UIManager: PreReqMasterScore callback triggered (C++ native)");
 
-    auto* instance = GetSingleton();
-    if (!instance || !instance->m_prismaUI) return;
+    std::string argStr(argument ? argument : "");
 
-    auto startTime = std::chrono::high_resolution_clock::now();
-
-    try {
-        nlohmann::json request = nlohmann::json::parse(argument);
-
-        // Process PRM scoring directly in C++
-        auto result = TreeNLP::ProcessPRMRequest(request);
-
-        auto endTime = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
-
-        logger::info("UIManager: prm_score completed in {:.2f}s (C++ native)", elapsed);
-
-        instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", result.dump().c_str());
-
-    } catch (const std::exception& e) {
-        logger::error("UIManager: PRM scoring failed: {}", e.what());
-
-        nlohmann::json response;
-        response["success"] = false;
-        response["error"] = e.what();
-        instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", response.dump().c_str());
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) {
+        logger::error("UIManager: SKSE task interface unavailable for PreReqMasterScore");
+        return;
     }
+
+    taskInterface->AddTask([argStr]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
+
+        auto startTime = std::chrono::high_resolution_clock::now();
+
+        try {
+            nlohmann::json request = nlohmann::json::parse(argStr);
+
+            // Process PRM scoring directly in C++
+            auto result = TreeNLP::ProcessPRMRequest(request);
+
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
+
+            logger::info("UIManager: prm_score completed in {:.2f}s (C++ native)", elapsed);
+
+            instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", result.dump().c_str());
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: PRM scoring failed: {}", e.what());
+
+            nlohmann::json response;
+            response["success"] = false;
+            response["error"] = e.what();
+            instance->m_prismaUI->InteropCall(instance->m_view, "onPreReqMasterComplete", response.dump().c_str());
+        }
+    });
 }
 
 // =============================================================================
@@ -2858,43 +3067,49 @@ void UIManager::OnLoadTestConfig([[maybe_unused]] const char* argument)
 {
     logger::info("UIManager: LoadTestConfig callback triggered");
 
-    auto* instance = GetSingleton();
+    auto* taskInterface = SKSE::GetTaskInterface();
+    if (!taskInterface) return;
 
-    std::filesystem::path configPath = "Data/SKSE/Plugins/SpellLearning/test_config.json";
+    taskInterface->AddTask([]() {
+        auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
-    try {
-        if (!std::filesystem::exists(configPath)) {
-            logger::info("UIManager: No test_config.json found - test mode disabled");
-            // Send empty/disabled response
-            nlohmann::json response;
-            response["enabled"] = false;
-            instance->m_prismaUI->InteropCall(instance->m_view, "onTestConfigLoaded", response.dump().c_str());
-            return;
+        std::filesystem::path configPath = "Data/SKSE/Plugins/SpellLearning/test_config.json";
+
+        try {
+            if (!std::filesystem::exists(configPath)) {
+                logger::info("UIManager: No test_config.json found - test mode disabled");
+                // Send empty/disabled response
+                nlohmann::json response;
+                response["enabled"] = false;
+                instance->m_prismaUI->InteropCall(instance->m_view, "onTestConfigLoaded", response.dump().c_str());
+                return;
+            }
+
+            std::ifstream file(configPath);
+            if (!file.is_open()) {
+                logger::error("UIManager: Failed to open test_config.json");
+                return;
+            }
+
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            file.close();
+
+            // Parse and validate
+            nlohmann::json config = nlohmann::json::parse(buffer.str());
+
+            logger::info("UIManager: Test config loaded - enabled: {}, preset: {}",
+                         config.value("enabled", false),
+                         config.value("preset", "unknown"));
+
+            // Send to JS
+            instance->m_prismaUI->InteropCall(instance->m_view, "onTestConfigLoaded", config.dump().c_str());
+
+        } catch (const std::exception& e) {
+            logger::error("UIManager: Exception loading test config: {}", e.what());
         }
-
-        std::ifstream file(configPath);
-        if (!file.is_open()) {
-            logger::error("UIManager: Failed to open test_config.json");
-            return;
-        }
-
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        file.close();
-
-        // Parse and validate
-        nlohmann::json config = nlohmann::json::parse(buffer.str());
-
-        logger::info("UIManager: Test config loaded - enabled: {}, preset: {}",
-                     config.value("enabled", false),
-                     config.value("preset", "unknown"));
-
-        // Send to JS
-        instance->m_prismaUI->InteropCall(instance->m_view, "onTestConfigLoaded", config.dump().c_str());
-
-    } catch (const std::exception& e) {
-        logger::error("UIManager: Exception loading test config: {}", e.what());
-    }
+    });
 }
 
 void UIManager::OnSaveTestResults(const char* argument)
@@ -2928,6 +3143,28 @@ void UIManager::OnSaveTestResults(const char* argument)
 
     } catch (const std::exception& e) {
         logger::error("UIManager: Exception saving test results: {}", e.what());
+    }
+}
+
+// =============================================================================
+// CONSOLE MESSAGE CALLBACK
+// =============================================================================
+// TODO: change level based on devMode and verboseMode
+void UIManager::OnConsoleMessage(PrismaView view, PRISMA_UI_API::ConsoleMessageLevel level, const char* message)
+{
+    switch (level) {
+        case PRISMA_UI_API::ConsoleMessageLevel::Error:
+            logger::error("[JS]: {}", message);
+            break;
+        case PRISMA_UI_API::ConsoleMessageLevel::Warning:
+            logger::warn("[JS]: {}", message);
+            break;
+        case PRISMA_UI_API::ConsoleMessageLevel::Debug:
+            logger::debug("[JS] View {}: {}", view, message);
+            break;
+        default:
+            logger::info("[JS] View {}: {}", view, message);
+            break;
     }
 }
 

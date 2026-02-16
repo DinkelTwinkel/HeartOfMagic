@@ -5824,29 +5824,6 @@ body {
 }
 
 /* =============================================================================
-   PYTHON SETUP - Button & Modal
-   ============================================================================= */
-
-.gen-mode-btn-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 120px;
-}
-
-.gen-mode-btn-setup {
-    font-size: 0.7em;
-    padding: 4px 8px;
-    min-width: auto;
-    animation: setup-pulse 2s ease-in-out infinite;
-}
-
-@keyframes setup-pulse {
-    0%, 100% { box-shadow: none; }
-    50% { box-shadow: 0 0 8px rgba(184, 168, 120, 0.5); }
-}
-
-/* =============================================================================
    BUILD PROGRESS MODAL
    ============================================================================= */
 
@@ -5963,10 +5940,6 @@ body {
     color: var(--text-muted);
     text-align: center;
     min-height: 18px;
-}
-
-.python-setup-modal {
-    max-width: 420px;
 }
 
 .setup-stage-label {

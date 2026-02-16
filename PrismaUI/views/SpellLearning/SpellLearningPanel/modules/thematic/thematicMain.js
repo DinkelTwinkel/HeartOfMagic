@@ -37,7 +37,6 @@ var TreeGrowthThematic = {
     _treeData: null,
     _layoutData: null,
     _positionMap: null,
-    _pythonInstalled: false,
     _hasSpells: false,
 
     // =========================================================================
@@ -68,9 +67,6 @@ var TreeGrowthThematic = {
             },
             onClear: function () {
                 self.clearTree();
-            },
-            onSetupPython: function () {
-                window.callCpp('SetupPython', '');
             },
             onSettingChanged: function (key, value) {
                 self.settings[key] = value;
@@ -197,7 +193,7 @@ var TreeGrowthThematic = {
     // =========================================================================
 
     /**
-     * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate).
+     * Build tree from scanned spells via C++ (ProceduralTreeGenerate).
      * Uses the thematic builder command.
      */
     buildTree: function () {
@@ -221,11 +217,11 @@ var TreeGrowthThematic = {
             BuildProgress.start(hasPRM);
         }
 
-        ThematicSettings.setStatusText('Building tree (Python/Thematic)...', '#f59e0b');
+        ThematicSettings.setStatusText('Building tree (C++/Thematic)...', '#f59e0b');
         var buildBtn = document.getElementById('tgBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
-        // Set pending flag so onProceduralPythonComplete routes result here
+        // Set pending flag so onProceduralTreeComplete routes result here
         if (typeof state !== 'undefined') {
             state._thematicGrowthBuildPending = true;
         }
@@ -247,7 +243,7 @@ var TreeGrowthThematic = {
         }
         console.log('[ThematicGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
-        // Gather grid layout info so Python can adapt branching
+        // Gather grid layout info so C++ can adapt branching
         var gridHint = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             var previewOut = TreePreview.getOutput();
@@ -273,15 +269,18 @@ var TreeGrowthThematic = {
             grid_hint: gridHint
         };
 
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree_thematic',
-            spells: spellsToProcess,
-            config: config
-        }));
+        // Defer to let UI render progress modal before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify({
+                command: 'build_tree_thematic',
+                spells: spellsToProcess,
+                config: config
+            }));
+        }, 0);
     },
 
     /**
-     * Receive tree data from the C++ / Python backend callback.
+     * Receive tree data from the C++ backend callback.
      * Runs layout and triggers a re-render.
      *
      * @param {Object} data - Raw tree structure from the backend
@@ -663,22 +662,6 @@ var TreeGrowthThematic = {
         }
 
         return trunkNodes;
-    },
-
-    // =========================================================================
-    // PYTHON STATUS INTEGRATION
-    // =========================================================================
-
-    /**
-     * Called when Python environment status changes.
-     *
-     * @param {boolean} installed - Whether Python is installed and usable
-     * @param {boolean} hasScript - Whether the growth script exists
-     * @param {boolean} hasPython - Whether the Python binary is available
-     */
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        ThematicSettings.onPythonStatusChanged(installed, hasScript, hasPython);
     },
 
     // =========================================================================

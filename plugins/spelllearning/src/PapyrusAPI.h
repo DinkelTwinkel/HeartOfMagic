@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
 
 // =============================================================================
 // PapyrusAPI - Exposes functions for other mods to interact with SpellLearning

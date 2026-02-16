@@ -35,7 +35,7 @@ var ELEMENT_KEYWORDS = {
         'discharge', 'chain lightning', 'electrocute', 'voltaic', 'static',
         'thunderbolt', 'arc', 'current', 'voltage'
     ],
-    // Earth/Stone element (from Python improved_discovery.py)
+    // Earth/Stone element
     earth: [
         'earth', 'stone', 'rock', 'boulder', 'gravel', 'terra', 'ground',
         'mineral', 'crystal', 'gem', 'ore', 'mud', 'sand', 'dust', 'pebble',
@@ -149,7 +149,7 @@ var TIER_MAP = {
 /**
  * Detect the element/theme of a spell.
  * Priority:
- *   1. Python TF-IDF discovered themes (via window._pythonFuzzyData)
+ *   1. TF-IDF discovered themes (via window._nlpFuzzyData)
  *   2. LLM cache
  *   3. Keyword-based detection
  *
@@ -159,14 +159,14 @@ var TIER_MAP = {
 function detectSpellElement(spell) {
     if (!spell) return null;
 
-    // === PRIORITY 1: Python TF-IDF Theme Discovery ===
-    // Python's dynamic discovery is more accurate than hardcoded keywords
-    if (window._pythonFuzzyData && window._pythonFuzzyData.themes) {
-        var pythonThemes = window._pythonFuzzyData.themes;
+    // === PRIORITY 1: TF-IDF Theme Discovery ===
+    // Dynamic discovery is more accurate than hardcoded keywords
+    if (window._nlpFuzzyData && window._nlpFuzzyData.themes) {
+        var nlpThemes = window._nlpFuzzyData.themes;
         var spellId = spell.formId || spell.editorId || spell.name;
 
-        for (var themeName in pythonThemes) {
-            var themeSpells = pythonThemes[themeName];
+        for (var themeName in nlpThemes) {
+            var themeSpells = nlpThemes[themeName];
             if (Array.isArray(themeSpells)) {
                 // Check if spell is in this theme (by formId, editorId, or name)
                 for (var i = 0; i < themeSpells.length; i++) {
@@ -175,7 +175,7 @@ function detectSpellElement(spell) {
                         entry === spell.editorId ||
                         entry === spell.name ||
                         (typeof entry === 'object' && entry.formId === spell.formId)) {
-                        return themeName;  // Return Python's discovered theme
+                        return themeName;  // Return discovered theme
                     }
                 }
             }

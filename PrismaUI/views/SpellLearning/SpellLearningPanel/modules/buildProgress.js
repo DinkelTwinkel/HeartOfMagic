@@ -73,7 +73,7 @@ var BuildProgress = (function() {
         _setProgressBar(0);
         _setStatus(t('modals.buildProgress.preparing'));
 
-        // Start at tree stage (native C++ builder — no Python startup needed)
+        // Start at tree stage
         setStage('tree');
     }
 

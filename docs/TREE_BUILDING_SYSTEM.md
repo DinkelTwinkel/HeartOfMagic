@@ -21,9 +21,9 @@ The tree building pipeline has four layers, each with a distinct responsibility:
 ├─────────────────────────────┼────────────────────────┼──────────────────┤
 │  C++ NATIVE BUILDERS (TreeBuilder + TreeNLP)         │                  │
 │  ┌──────────────────────────┴────────────────────────┘                  │
-│  │ OnProceduralPythonGenerate() → TreeBuilder::Build()                 │
+│  │ OnProceduralTreeGenerate() → TreeBuilder::Build()                 │
 │  │ Reads "command" field → routes to correct builder mode              │
-│  │ Async via SKSE TaskInterface → onProceduralPythonComplete() to JS   │
+│  │ Async via SKSE TaskInterface → onProceduralTreeComplete() to JS   │
 │  │                                                                      │
 │  │ Builder Modes:                                                       │
 │  │   ├─ "build_tree_classic"  → BuildClassic()  (Tier-first)           │
@@ -285,14 +285,14 @@ struct TreeNode {
 ### Command Flow (`UIManager.cpp` → `TreeBuilder`)
 
 ```cpp
-OnProceduralPythonGenerate(argument):
+OnProceduralTreeGenerate(argument):
     1. Parse JSON from JS
     2. Read "command" field (default: "build_tree")
     3. Extract spells array and config
     4. Run TreeBuilder::Build(command, spells, config) on SKSE TaskInterface
        → Async: callback fires on SKSE main thread when build completes
     5. Callback packages {success, treeData, elapsed}
-       → InteropCall("onProceduralPythonComplete", response)
+       → InteropCall("onProceduralTreeComplete", response)
 ```
 
 **Commands:**

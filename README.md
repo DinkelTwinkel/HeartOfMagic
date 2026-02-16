@@ -88,9 +88,6 @@ Control exactly which mods contribute spells. Uses stable `plugin:formId` keys t
 - **[Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)**
 - **[PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/)** - UI framework (must load before Heart of Magic)
 
-### Optional
-- **Python 3.9+** - Only if using the LLM/Oracle builder mode with OpenRouter API
-
 ## Installation
 
 ### Using a Mod Manager (Recommended)

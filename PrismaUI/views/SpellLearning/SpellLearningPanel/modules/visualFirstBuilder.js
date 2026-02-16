@@ -3313,7 +3313,7 @@ function generateVisualFirstTree(schoolName, spells, config) {
  * 
  * @param {Array} allSpells - All spells from all schools
  * @param {Object} schoolConfigs - Map of school name to LLM config
- * @param {Object} fuzzyData - Fuzzy NLP relationship data from Python
+ * @param {Object} fuzzyData - Fuzzy NLP relationship data from C++ native
  *   - relationships: {formId: [related formIds]}
  *   - similarity_scores: {formId1:formId2: score}
  *   - groups: {groupName: [formIds]}
@@ -3505,7 +3505,7 @@ function generateAllVisualFirstTrees(allSpells, schoolConfigs, fuzzyData, treeGe
                 // Get hard/soft prerequisite requirements (if assigned)
                 var prereqReqs = p.prereqRequirements || null;
                 
-                // Get theme from fuzzy data (Python TF-IDF discovery)
+                // Get theme from fuzzy data (C++ TF-IDF discovery)
                 var spellThemes = fuzzy.themes ? fuzzy.themes[formId] : null;
                 var theme = spellThemes && spellThemes.length > 0 ? spellThemes[0] : null;
 
@@ -3518,7 +3518,7 @@ function generateAllVisualFirstTrees(allSpells, schoolConfigs, fuzzyData, treeGe
                     softPrereqs: prereqReqs ? prereqReqs.softPrereqs : undefined,
                     softNeeded: prereqReqs ? prereqReqs.softNeeded : undefined,
                     tier: p.tier + 1,
-                    theme: theme,  // Theme from Python fuzzy analysis
+                    theme: theme,  // Theme from C++ NLP fuzzy analysis
                     x: p.x,
                     y: p.y,
                     radius: p.radius,

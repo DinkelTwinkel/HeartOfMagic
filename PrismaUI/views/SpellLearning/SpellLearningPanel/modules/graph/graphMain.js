@@ -37,7 +37,6 @@ var TreeGrowthGraph = {
     _treeData: null,
     _layoutData: null,
     _positionMap: null,
-    _pythonInstalled: false,
     _hasSpells: false,
 
     // =========================================================================
@@ -167,7 +166,7 @@ var TreeGrowthGraph = {
     // =========================================================================
 
     /**
-     * Build tree from scanned spells via Python (C++ ProceduralPythonGenerate).
+     * Build tree from scanned spells via C++ (ProceduralTreeGenerate).
      * Uses the graph builder command (Edmonds' arborescence).
      */
     buildTree: function () {
@@ -191,11 +190,11 @@ var TreeGrowthGraph = {
             BuildProgress.start(hasPRM);
         }
 
-        GraphSettings.setStatusText('Building tree (Python/Graph)...', '#f59e0b');
+        GraphSettings.setStatusText('Building tree (C++/Graph)...', '#f59e0b');
         var buildBtn = document.getElementById('tgBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
-        // Set pending flag so onProceduralPythonComplete routes result here
+        // Set pending flag so onProceduralTreeComplete routes result here
         if (typeof state !== 'undefined') {
             state._graphGrowthBuildPending = true;
         }
@@ -217,7 +216,7 @@ var TreeGrowthGraph = {
         }
         console.log('[GraphGrowth] Filtered spells: ' + spellsToProcess.length + '/' + spellData.spells.length);
 
-        // Gather grid layout info so Python can adapt branching
+        // Gather grid layout info so C++ can adapt branching
         var gridHint = null;
         if (typeof TreePreview !== 'undefined' && TreePreview.getOutput) {
             var previewOut = TreePreview.getOutput();
@@ -245,15 +244,18 @@ var TreeGrowthGraph = {
             grid_hint: gridHint
         };
 
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree_graph',
-            spells: spellsToProcess,
-            config: config
-        }));
+        // Defer to let UI render progress modal before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify({
+                command: 'build_tree_graph',
+                spells: spellsToProcess,
+                config: config
+            }));
+        }, 0);
     },
 
     /**
-     * Receive tree data from the C++ / Python backend callback.
+     * Receive tree data from the C++ backend callback.
      * Runs layout and triggers a re-render.
      *
      * @param {Object} data - Raw tree structure from the backend
@@ -589,15 +591,6 @@ var TreeGrowthGraph = {
             }
         }
         return posMap;
-    },
-
-    // =========================================================================
-    // PYTHON STATUS INTEGRATION
-    // =========================================================================
-
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        GraphSettings.onPythonStatusChanged(installed, hasScript, hasPython);
     },
 
     // =========================================================================

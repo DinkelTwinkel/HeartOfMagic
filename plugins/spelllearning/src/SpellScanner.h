@@ -1,6 +1,10 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
+
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace SpellScanner
 {

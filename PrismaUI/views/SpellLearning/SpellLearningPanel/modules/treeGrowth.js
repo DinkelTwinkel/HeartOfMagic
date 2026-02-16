@@ -22,7 +22,6 @@ var TreeGrowth = {
     _visible: false,
 
     // Shared button state
-    _builderReady: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -588,9 +587,8 @@ var TreeGrowth = {
         }
     },
 
-    /** Called by onPythonAddonStatus — native C++ builder is always ready. */
+    /** Called when builder status is reported -- native C++ builder is always ready. */
     updateBuilderReady: function() {
-        this._builderReady = true;
         this.setStatusText(t('treeGrowth.builderReady') || 'Builder ready', '#22c55e');
         this.updateBuildButton();
     },

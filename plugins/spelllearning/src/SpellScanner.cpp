@@ -1,4 +1,4 @@
-#include "PCH.h"
+#include "Common.h"
 #include "SpellScanner.h"
 #include "SpellEffectivenessHook.h"
 

@@ -1,6 +1,9 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
+
+#include <chrono>
+
 #include "PrismaUI_API.h"
 #include "TreeBuilder.h"
 
@@ -129,7 +132,7 @@ private:
     static void OnLogMessage(const char* argument);
     
     // Procedural tree generation (C++ native)
-    static void OnProceduralPythonGenerate(const char* argument);
+    static void OnProceduralTreeGenerate(const char* argument);
 
     // Pre Req Master NLP scoring (C++ native)
     static void OnPreReqMasterScore(const char* argument);
@@ -145,6 +148,9 @@ private:
     // Auto-test callbacks
     static void OnLoadTestConfig(const char* argument);
     static void OnSaveTestResults(const char* argument);
+
+    // Console message callback
+    static void OnConsoleMessage(PrismaView view, PRISMA_UI_API::ConsoleMessageLevel level, const char* message);
 
     // PrismaUI members
     PRISMA_UI_API::IVPrismaUI1* m_prismaUI = nullptr;

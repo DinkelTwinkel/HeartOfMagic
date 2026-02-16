@@ -1,13 +1,13 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
+
+#include <unordered_set>
+
 #include "TreeNLP.h"
 
 // =============================================================================
 // TreeBuilder — Spell tree construction engine
-//
-// Replaces the Python tree building pipeline (server.py, tree_builder.py,
-// classic_build_tree.py, theme_discovery.py, spell_grouper.py, validator.py).
 //
 // Provides multiple builder modes:
 //   - Classic: Tier-first ordering (Novice→Master depth constraint)
@@ -90,7 +90,7 @@ namespace TreeBuilder
     SimilarityMatrix ComputeSimilarityMatrix(const std::vector<json>& spells);
 
     // =========================================================================
-    // THEME DISCOVERY (replaces theme_discovery.py)
+    // THEME DISCOVERY (replaced former theme_discovery.py)
     // =========================================================================
 
     // Vanilla theme hints per school
@@ -106,7 +106,7 @@ namespace TreeBuilder
                    int maxThemes = 10);
 
     // =========================================================================
-    // SPELL GROUPING (replaces spell_grouper.py)
+    // SPELL GROUPING (replaced former spell_grouper.py)
     // =========================================================================
 
     // Assign each spell to its best-matching theme
@@ -120,7 +120,7 @@ namespace TreeBuilder
     GetSpellPrimaryTheme(const json& spell, const std::vector<std::string>& themes);
 
     // =========================================================================
-    // TREE VALIDATION (replaces validator.py)
+    // TREE VALIDATION (replaced former validator.py)
     // =========================================================================
 
     struct ValidationResult {
@@ -208,7 +208,7 @@ namespace TreeBuilder
     // =========================================================================
 
     struct BuildResult {
-        json treeData;       // Full tree JSON matching Python output format
+        json treeData;
         bool success = false;
         std::string error;
         float elapsedMs = 0.0f;

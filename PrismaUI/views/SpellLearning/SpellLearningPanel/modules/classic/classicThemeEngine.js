@@ -2,7 +2,7 @@
  * ClassicThemeEngine — JS-side dynamic theme discovery for Smart spell matching.
  *
  * Analyzes spell names, effect names, and keywords to discover meaningful theme
- * groups within each school. Produces cleaner themes than Python's TF-IDF by
+ * groups within each school. Produces cleaner themes than basic TF-IDF by
  * merging duplicates (cold/frost), splitting overly generic themes (conjure),
  * and fixing root node assignments.
  *

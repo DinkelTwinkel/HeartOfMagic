@@ -283,23 +283,23 @@ function _getBehaviorParams(behavior, progress) {
  * @param {Object} schoolConfig - Optional per-school configuration
  * @returns {Object} - { nodes: [], links: [], root: formId, stats: {} }
  */
-function buildSchoolTree(spells, settings, seed, schoolName, schoolConfig, pythonData) {
+function buildSchoolTree(spells, settings, seed, schoolName, schoolConfig, nlpData) {
     console.log('[SettingsAwareBuilder] Building tree with', spells.length, 'spells for', schoolName || 'Unknown');
     console.log('[SettingsAwareBuilder] Settings:',
                 'elementIsolation=' + settings.elementIsolation,
                 'strict=' + settings.elementIsolationStrict,
                 'tierOrdering=' + settings.strictTierOrdering);
 
-    // Python data for smart routing
-    pythonData = pythonData || {};
-    var pythonThemes = pythonData.themes || {};
-    var pythonSimilarity = pythonData.similarity_scores || {};
-    var pythonGroups = pythonData.groups || {};
+    // NLP data for smart routing
+    nlpData = nlpData || {};
+    var nlpThemes = nlpData.themes || {};
+    var nlpSimilarity = nlpData.similarity_scores || {};
+    var nlpGroups = nlpData.groups || {};
 
-    // Build spell-to-theme lookup from Python data
+    // Build spell-to-theme lookup from NLP data
     var spellThemeMap = {};
-    for (var themeName in pythonThemes) {
-        var themeSpells = pythonThemes[themeName];
+    for (var themeName in nlpThemes) {
+        var themeSpells = nlpThemes[themeName];
         if (Array.isArray(themeSpells)) {
             themeSpells.forEach(function(spellId) {
                 spellThemeMap[spellId] = themeName;
@@ -307,7 +307,7 @@ function buildSchoolTree(spells, settings, seed, schoolName, schoolConfig, pytho
         }
     }
     if (Object.keys(spellThemeMap).length > 0) {
-        console.log('[SettingsAwareBuilder] Using Python themes for', Object.keys(spellThemeMap).length, 'spells');
+        console.log('[SettingsAwareBuilder] Using NLP themes for', Object.keys(spellThemeMap).length, 'spells');
     }
 
     var rng = createSeededRandom(seed);
@@ -1018,7 +1018,7 @@ function createSeededRandom(seed) {
  * @param {Array} allSpells - All spells
  * @param {Object} schoolConfigs - Per-school configurations
  * @param {Object} treeGeneration - Tree generation settings (from presets)
- * @param {Object} fuzzyData - Python TF-IDF themes, groups, similarity scores (optional)
+ * @param {Object} fuzzyData - C++ TF-IDF themes, groups, similarity scores (optional)
  * @returns {Object} - Complete tree data
  */
 function buildAllTreesSettingsAware(allSpells, schoolConfigs, treeGeneration, fuzzyData) {
@@ -1032,26 +1032,26 @@ function buildAllTreesSettingsAware(allSpells, schoolConfigs, treeGeneration, fu
     console.log('  strictTierOrdering:', treeGeneration.strictTierOrdering);
     console.log('  linkStrategy:', treeGeneration.linkStrategy);
 
-    // Store Python fuzzy data for EdgeScoring to use
-    var pythonData = fuzzyData || {};
-    window._pythonFuzzyData = pythonData;  // Global for EdgeScoring access
+    // Store NLP fuzzy data for EdgeScoring to use
+    var nlpData = fuzzyData || {};
+    window._nlpFuzzyData = nlpData;  // Global for EdgeScoring access
 
-    if (pythonData.themes && Object.keys(pythonData.themes).length > 0) {
-        console.log('[SettingsAwareBuilder] PYTHON THEMES AVAILABLE:');
-        for (var themeName in pythonData.themes) {
-            var themeSpells = pythonData.themes[themeName];
+    if (nlpData.themes && Object.keys(nlpData.themes).length > 0) {
+        console.log('[SettingsAwareBuilder] NLP THEMES AVAILABLE:');
+        for (var themeName in nlpData.themes) {
+            var themeSpells = nlpData.themes[themeName];
             console.log('  ' + themeName + ': ' + (Array.isArray(themeSpells) ? themeSpells.length : 'N/A') + ' spells');
         }
     } else {
-        console.log('[SettingsAwareBuilder] No Python themes - using keyword detection fallback');
+        console.log('[SettingsAwareBuilder] No NLP themes - using keyword detection fallback');
     }
 
-    if (pythonData.groups && Object.keys(pythonData.groups).length > 0) {
-        console.log('[SettingsAwareBuilder] PYTHON GROUPS:', Object.keys(pythonData.groups).length, 'groups');
+    if (nlpData.groups && Object.keys(nlpData.groups).length > 0) {
+        console.log('[SettingsAwareBuilder] NLP GROUPS:', Object.keys(nlpData.groups).length, 'groups');
     }
 
-    if (pythonData.similarity_scores) {
-        console.log('[SettingsAwareBuilder] PYTHON SIMILARITY: scores available for parent selection');
+    if (nlpData.similarity_scores) {
+        console.log('[SettingsAwareBuilder] NLP SIMILARITY: scores available for parent selection');
     }
 
     console.log('='.repeat(60));
@@ -1078,7 +1078,7 @@ function buildAllTreesSettingsAware(allSpells, schoolConfigs, treeGeneration, fu
 
         console.log('[SettingsAwareBuilder] Processing', schoolName, '(' + spells.length + ' spells)');
 
-        var result = buildSchoolTree(spells, treeGeneration, schoolSeed, schoolName, schoolConfig, pythonData);
+        var result = buildSchoolTree(spells, treeGeneration, schoolSeed, schoolName, schoolConfig, nlpData);
 
         schools[schoolName] = {
             root: result.root,

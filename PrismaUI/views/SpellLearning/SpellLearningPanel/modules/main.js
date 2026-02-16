@@ -92,12 +92,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 2000);  // Wait for DOM + C++ to be ready
         }
 
-        // AUTO-TEST: Trigger scan + Python build after short delay (for debugging USVFS/Python issues)
+        // AUTO-TEST: Trigger scan + C++ build after short delay
         if (window.AUTO_TEST_BUILD) {
-            console.log('[SpellLearning] AUTO-TEST: Will trigger Python build in 3 seconds...');
+            console.log('[SpellLearning] AUTO-TEST: Will trigger C++ build in 3 seconds...');
             setTimeout(function() {
-                console.log('[SpellLearning] AUTO-TEST: Triggering "Build Complex" (Python path)...');
-                // Use the Procedural+ click handler which does scan + Python generation
+                console.log('[SpellLearning] AUTO-TEST: Triggering "Build Complex" (C++ path)...');
+                // Use the Procedural+ click handler which does scan + C++ generation
                 if (typeof onProceduralPlusClick === 'function') {
                     onProceduralPlusClick();
                 } else {

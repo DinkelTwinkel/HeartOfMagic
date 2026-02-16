@@ -178,15 +178,16 @@ window.callCpp = function(method, data) {
             break;
 
         case 'SetupPython':
-            if (typeof window.onPythonAddonStatus === 'function') {
+            // Legacy — no-op, builder is always ready
+            if (typeof window.onBuilderStatus === 'function') {
                 setTimeout(function() {
-                    window.onPythonAddonStatus(JSON.stringify({ installed: true, hasScript: true, hasPython: true, pythonSource: 'mock' }));
+                    window.onBuilderStatus(JSON.stringify({ installed: true, hasScript: true }));
                 }, 200);
             }
             break;
 
-        case 'ProceduralPythonGenerate':
-            // Try real Python server first (localhost:5556), fall back to JS builder
+        case 'ProceduralTreeGenerate':
+            // Try dev server first (localhost:5556), fall back to JS builder
             (function() {
                 var request;
                 try { request = JSON.parse(data); } catch(e) { request = { spells: [], config: {} }; }
@@ -194,9 +195,9 @@ window.callCpp = function(method, data) {
                 var spells = request.spells || [];
                 var config = request.config || {};
 
-                console.log('[Bridge] ProceduralPythonGenerate: ' + spells.length + ' spells');
+                console.log('[Bridge] ProceduralTreeGenerate: ' + spells.length + ' spells');
 
-                // Try Python dev server
+                // Try dev server
                 fetch('http://localhost:5556/build', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -205,13 +206,13 @@ window.callCpp = function(method, data) {
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     return resp.json();
                 }).then(function(result) {
-                    console.log('[Bridge] Python server returned result');
-                    logCppCall('in', 'onProceduralPythonComplete', 'Python server: ' + (result.success ? 'OK' : 'FAIL'));
-                    if (typeof window.onProceduralPythonComplete === 'function') {
-                        window.onProceduralPythonComplete(JSON.stringify(result));
+                    console.log('[Bridge] Dev server returned result');
+                    logCppCall('in', 'onProceduralTreeComplete', 'Dev server: ' + (result.success ? 'OK' : 'FAIL'));
+                    if (typeof window.onProceduralTreeComplete === 'function') {
+                        window.onProceduralTreeComplete(JSON.stringify(result));
                     }
                 }).catch(function(err) {
-                    console.log('[Bridge] Python server not available (' + err.message + '), using JS fallback');
+                    console.log('[Bridge] Dev server not available (' + err.message + '), using JS fallback');
                     // JS fallback: use buildProceduralTrees
                     var treeData;
                     if (typeof buildProceduralTrees === 'function' && spells.length > 0) {
@@ -224,9 +225,9 @@ window.callCpp = function(method, data) {
                         treeData: treeData,
                         elapsed: '0.1'
                     };
-                    logCppCall('in', 'onProceduralPythonComplete', 'JS fallback: ' + Object.keys(treeData.schools || {}).length + ' schools');
-                    if (typeof window.onProceduralPythonComplete === 'function') {
-                        window.onProceduralPythonComplete(JSON.stringify(result));
+                    logCppCall('in', 'onProceduralTreeComplete', 'JS fallback: ' + Object.keys(treeData.schools || {}).length + ' schools');
+                    if (typeof window.onProceduralTreeComplete === 'function') {
+                        window.onProceduralTreeComplete(JSON.stringify(result));
                     }
                 });
             })();
@@ -719,16 +720,15 @@ window.addEventListener('load', function() {
             window.onPanelShowing();
         }
 
-        // Probe Python dev server — report real status to UI
-        window._pythonServerAvailable = false;
+        // Probe dev server -- report real status to UI
+        window._devServerAvailable = false;
         fetch('http://localhost:5556/build', { method: 'OPTIONS' })
             .then(function(r) {
-                window._pythonServerAvailable = true;
-                console.log('[DevHarness] Python dev server ONLINE (port 5556)');
-                if (typeof window.onPythonAddonStatus === 'function') {
-                    window.onPythonAddonStatus(JSON.stringify({
-                        installed: true, hasScript: true, hasPython: true,
-                        pythonSource: 'dev_server (localhost:5556)'
+                window._devServerAvailable = true;
+                console.log('[DevHarness] Dev server ONLINE (port 5556)');
+                if (typeof window.onBuilderStatus === 'function') {
+                    window.onBuilderStatus(JSON.stringify({
+                        installed: true, hasScript: true
                     }));
                 }
                 // Show in toolbar
@@ -736,24 +736,22 @@ window.addEventListener('load', function() {
                 if (statusEl) {
                     var tag = document.createElement('span');
                     tag.style.cssText = 'color:#3fb950;font-weight:600;';
-                    tag.textContent = 'Python: LIVE';
+                    tag.textContent = 'Server: LIVE';
                     statusEl.appendChild(tag);
                 }
             })
             .catch(function() {
-                console.log('[DevHarness] Python dev server offline — JS fallback active');
-                console.log('[DevHarness] To enable: python dev_server.py  (in SpellTreeBuilder/)');
-                if (typeof window.onPythonAddonStatus === 'function') {
-                    window.onPythonAddonStatus(JSON.stringify({
-                        installed: true, hasScript: true, hasPython: true,
-                        pythonSource: 'mock (python server offline)'
+                console.log('[DevHarness] Dev server offline -- JS fallback active');
+                if (typeof window.onBuilderStatus === 'function') {
+                    window.onBuilderStatus(JSON.stringify({
+                        installed: true, hasScript: true
                     }));
                 }
                 var statusEl = document.getElementById('harness-status');
                 if (statusEl) {
                     var tag = document.createElement('span');
                     tag.style.cssText = 'color:#d29922;';
-                    tag.textContent = 'Python: offline (JS fallback)';
+                    tag.textContent = 'Server: offline (JS fallback)';
                     statusEl.appendChild(tag);
                 }
             });

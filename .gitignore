@@ -1,5 +1,6 @@
 # Build outputs
 build/
+dist/
 plugin/build/
 plugin/build2/
 compatibility/*/build/
@@ -28,10 +29,7 @@ compile_commands.json
 *.suo
 *.user
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
+# Virtual environments
 .venv/
 venv/
 
@@ -44,14 +42,11 @@ desktop.ini
 *.zip
 *.7z
 
-# Embedded Python (generated during packaging)
-SKSE/Plugins/SpellLearning/SpellTreeBuilder/python/
-
 # Build artifacts
+build_out.txt
 plugin/build/
 *.pex
 Build_Config_Local.ps1
-/Heart of Magic - Test
 nul
 spell_scan_output.json
-/Heart of Magic - Test - Unofficial
+/plugins/external/papyrus-compiler

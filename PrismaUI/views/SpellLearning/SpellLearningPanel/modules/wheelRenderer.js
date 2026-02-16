@@ -55,7 +55,7 @@ var WheelRenderer = {
     // Growth recipes per school
     growthRecipes: {},
     
-    // School configs from Python (shape, density, etc.)
+    // School configs from C++ NLP (shape, density, etc.)
     schoolConfigs: {},
     
     // LLM-enhanced themed groups (with colors)
@@ -285,7 +285,7 @@ var WheelRenderer = {
         console.log('[DebugGrid] Rendered grid points');
     },
     
-    // Store school configs from Python for visual rendering
+    // Store school configs from C++ NLP for visual rendering
     setSchoolConfigs: function(configs) {
         this.schoolConfigs = configs || {};
         console.log('[WheelRenderer] School configs loaded:', Object.keys(this.schoolConfigs));

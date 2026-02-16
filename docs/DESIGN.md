@@ -419,7 +419,7 @@ Tree applied
 **Config:** `LoadUnifiedConfig`, `SaveUnifiedConfig`, `SetHotkey`, `SetPauseGameOnFocus`
 **Presets:** `SavePreset`, `DeletePreset`, `LoadPresets`
 **LLM:** `CheckLLM`, `LLMGenerate`, `PollLLMResponse`, `LoadLLMConfig`, `SaveLLMConfig`
-**Tree Building:** `ProceduralPythonGenerate`, `PreReqMasterScore`
+**Tree Building:** `ProceduralTreeGenerate`, `PreReqMasterScore`
 **Clipboard:** `CopyToClipboard`, `GetClipboard`
 **Other:** `HidePanel`, `LogMessage`, `LoadPrompt`, `SavePrompt`
 
@@ -430,7 +430,7 @@ Tree applied
 **State:** `updateSpellState`, `onResetTreeStates`, `onSaveGameLoaded`
 **Progress:** `onProgressUpdate`, `onSpellReady`, `onSpellUnlocked`, `onProgressData`
 **Config:** `onUnifiedConfigLoaded`, `onPresetsLoaded`
-**Tree Building:** `onProceduralPythonComplete`, `onPreReqMasterComplete`, `onPythonAddonStatus`
+**Tree Building:** `onProceduralTreeComplete`, `onPreReqMasterComplete`, `onBuilderStatus`
 **LLM:** `onLLMStatus`, `onLLMQueued`, `onLLMPollResult`, `onLLMConfigLoaded`
 
 ---

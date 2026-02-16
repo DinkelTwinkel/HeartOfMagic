@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
 #include <chrono>
 
 class SpellCastHandler : public RE::BSTEventSink<RE::TESSpellCastEvent>

@@ -83,9 +83,9 @@ node lang/build-preloads.js
 
 Output:
 ```
-  en.js  (541 keys from en.json)
-  fr.js  (541 keys from fr.json)
-  de.js  (541 keys from de.json)
+  en.js  (524 keys from en.json)
+  fr.js  (524 keys from fr.json)
+  de.js  (524 keys from de.json)
 Done - 3 preload file(s) generated.
 ```
 
@@ -135,7 +135,7 @@ Users install your translation by dropping these 3 files into the `lang/` folder
    ```
 3. Launch the game and open the Heart of Magic panel
 4. If testing in a browser (dev harness), check console (F12) for `[i18n]` messages:
-   - `[i18n] Loaded locale "de" from preload (541 keys)` = working
+   - `[i18n] Loaded locale "de" from preload (524 keys)` = working
    - `[i18n] Preload is "en" but requested "de"` = missing `de.js` preload
 
 **Note:** You do NOT need to edit `index.html`. The loading system automatically picks up any locale that has a matching `.js` preload file.
@@ -170,14 +170,15 @@ Use standard language codes:
 | `fr` | French |
 | `de` | German |
 | `es` | Spanish |
-| `pt-br` | Brazilian Portuguese |
-| `ru` | Russian |
-| `zh-cn` | Simplified Chinese |
-| `zh-tw` | Traditional Chinese |
+| `it` | Italian |
 | `ja` | Japanese |
 | `ko` | Korean |
-| `it` | Italian |
 | `pl` | Polish |
+| `pt-br` | Brazilian Portuguese |
+| `ru` | Russian |
+| `tr` | Turkish |
+| `zh-cn` | Simplified Chinese |
+| `zh-tw` | Traditional Chinese |
 
 ## Tips
 

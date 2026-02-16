@@ -13,8 +13,8 @@ endif()
 #   - Compiler flags (plugins/cmake/CompilerFlags.cmake)
 #   - Static MSVC runtime
 # ============================================================================
-
-project(HeartOfMagic LANGUAGES CXX)
+set(PROJECT_VERSION "2.3.0")
+project(HeartOfMagic VERSION ${PROJECT_VERSION} LANGUAGES CXX)
 
 # Prevent in-source builds
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
@@ -32,6 +32,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Shared cmake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/plugins/cmake")
+
 
 # Apply compiler flags globally (MSVC optimizations, /EHa, /GL, linker flags)
 include(CompilerFlags)
@@ -56,6 +57,23 @@ find_package(hwy CONFIG REQUIRED)
 # Sub-projects
 # ============================================================================
 
+set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist")
+set(DIST_VERSION_DIR "${DIST_DIR}/${PROJECT_NAME}_${PROJECT_VERSION}")
+
 add_subdirectory(plugins/spelllearning)
-add_subdirectory(plugins/compatibility/DummyDEST)
-add_subdirectory(plugins/addons/BookXP)
+add_subdirectory(plugins/DummyDEST)
+add_subdirectory(plugins/BookXP)
+add_subdirectory(tools)
+
+# Generate fomod/info.xml from template with current version
+configure_file(
+    "${CMAKE_SOURCE_DIR}/fomod/info.xml.in"
+    "${CMAKE_SOURCE_DIR}/fomod/info.xml"
+    @ONLY
+)
+
+# Papyrus script compilation
+include(Papyrus)
+
+# Distribution folder assembly
+include(Distribution)

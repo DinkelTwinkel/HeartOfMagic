@@ -2,13 +2,12 @@
  * ClassicSettings Module - Settings panel for Classic Growth mode
  *
  * Builds the Classic Growth settings panel HTML (buttons, status, sliders)
- * and binds event handlers for user interaction. Tracks Python addon status
- * and spell scan state to enable/disable the Build, Apply, and Clear buttons.
+ * and binds event handlers for user interaction. Tracks builder and
+ * spell scan state to enable/disable the Build, Apply, and Clear buttons.
  *
  * Usage:
  *   var html = ClassicSettings.buildHTML(settings);
- *   ClassicSettings.bindEvents({ onBuild, onApply, onClear, onSetupPython, onSettingChanged });
- *   ClassicSettings.updatePythonStatus(installed, hasScript, hasPython);
+ *   ClassicSettings.bindEvents({ onBuild, onApply, onClear, onSettingChanged });
  *   ClassicSettings.updateScanStatus(hasSpells);
  *   ClassicSettings.setTreeBuilt(built);
  *   ClassicSettings.setStatusText(text, color);
@@ -19,7 +18,6 @@
 var ClassicSettings = {
 
     // Internal state tracking
-    _pythonInstalled: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -84,8 +82,8 @@ var ClassicSettings = {
             '</div>' +
             '<div id="tgClassicMatchDesc" style="font-size:9px; color:rgba(184,168,120,0.35); padding:0 4px 4px; min-height:22px;">' +
                 (spellMatching === 'simple' ? 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.' :
-                 spellMatching === 'smart' ? 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.' :
-                 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.') +
+                 spellMatching === 'smart' ? 'Re-discovers themes in JS, overrides NLP assignments. Strongest clustering but slower.' :
+                 'Uses NLP-assigned themes for spatial clustering. Same-theme spells group angularly. Default.') +
             '</div>' +
 
             // --- Slider grid ---
@@ -170,7 +168,6 @@ var ClassicSettings = {
      * @param {function} callbacks.onBuild - Called when Build Tree is clicked
      * @param {function} callbacks.onApply - Called when Apply Tree is clicked
      * @param {function} callbacks.onClear - Called when Clear Tree is clicked
-     * @param {function} callbacks.onSetupPython - Called when Setup Python is clicked
      * @param {function} callbacks.onSettingChanged - Called with (key, value)
      */
     bindEvents: function (callbacks) {
@@ -220,8 +217,8 @@ var ClassicSettings = {
         };
         var matchDescs = {
             simple: 'No theme awareness. Placement by distance, tier, and radial bias only. Fastest.',
-            layered: 'Uses Python-assigned themes for spatial clustering. Same-theme spells group angularly. Default.',
-            smart: 'Re-discovers themes in JS, overrides Python assignments. Strongest clustering but slower.'
+            layered: 'Uses NLP-assigned themes for spatial clustering. Same-theme spells group angularly. Default.',
+            smart: 'Re-discovers themes in JS, overrides NLP assignments. Strongest clustering but slower.'
         };
         var descEl = document.getElementById('tgClassicMatchDesc');
         var modes = ['simple', 'layered', 'smart'];
@@ -372,21 +369,6 @@ var ClassicSettings = {
     },
 
     // =========================================================================
-    // PYTHON STATUS
-    // =========================================================================
-
-    /**
-     * Update the status text and button states based on Python addon status.
-     *
-     * @param {boolean} installed - True if Python environment is fully ready
-     * @param {boolean} hasScript - True if SpellTreeBuilder script exists on disk
-     * @param {boolean} hasPython - True if Python binary is detected
-     */
-    updatePythonStatus: function (installed, hasScript, hasPython) {
-        if (typeof TreeGrowth !== 'undefined') TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
-    },
-
-    // =========================================================================
     // SCAN STATUS
     // =========================================================================
 
@@ -433,7 +415,7 @@ var ClassicSettings = {
 
     /**
      * Enable or disable the Build Tree button based on current state.
-     * Requires both Python installed AND spells scanned.
+     * Requires spells scanned.
      * @private
      */
     _updateBuildButton: function () {

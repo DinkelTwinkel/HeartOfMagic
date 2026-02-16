@@ -1,4 +1,7 @@
 #include "PassiveLearningSource.h"
+
+#include <chrono>
+
 #include "ProgressionManager.h"
 #include "UIManager.h"
 

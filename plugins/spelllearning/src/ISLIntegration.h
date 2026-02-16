@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
 #include <SKSE/RegistrationSet.h>
 
 // =============================================================================

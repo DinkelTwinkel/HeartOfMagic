@@ -77,10 +77,10 @@ function syncDuplicateState(sourceNode) {
 
 /**
  * Called by C++ when panel opens to report builder availability.
- * Native C++ builder is always available — enables Build button.
+ * Native C++ builder is always available -- enables Build button.
  */
-window.onPythonAddonStatus = function(statusStr) {
-    // Native C++ builder — always ready
+window.onBuilderStatus = function(statusStr) {
+    // Native C++ builder -- always ready
     console.log('[SpellLearning] Builder status: native C++');
     if (typeof TreeGrowth !== 'undefined') {
         TreeGrowth.updateBuilderReady();
@@ -316,11 +316,11 @@ window.updateSpellData = function(jsonStr) {
             }
         }, 100);
     } else if (state.proceduralPlusScanPending && scanSuccess) {
-        // Trigger Python procedural generation
-        console.log('[SpellLearning] Procedural+ (Python): Starting tree generation...');
+        // Trigger procedural generation
+        console.log('[SpellLearning] Procedural+: Starting tree generation...');
         state.proceduralPlusScanPending = false;
         setTimeout(function() {
-            startProceduralPythonGenerate();
+            startProceduralTreeGenerate();
         }, 100);
     } else {
         // Reset all buttons if not continuing

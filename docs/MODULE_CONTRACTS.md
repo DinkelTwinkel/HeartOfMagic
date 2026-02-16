@@ -308,7 +308,7 @@ Trigger tree construction. Sends spell data to the C++ native builder via `windo
         };
 
         // Call C++ native builder
-        window.callCpp('RunProceduralPython', JSON.stringify({
+        window.callCpp('RunProceduralTree', JSON.stringify({
             command: 'build_tree_mymode',
             spells: spellData.spells,
             config: config
@@ -475,7 +475,7 @@ if (command == "build_tree_mymode") {
 
 3. **JS sends command** from growth module:
 ```javascript
-window.callCpp('RunProceduralPython', JSON.stringify({
+window.callCpp('RunProceduralTree', JSON.stringify({
     command: 'build_tree_mymode',
     spells: spellData.spells,
     config: config

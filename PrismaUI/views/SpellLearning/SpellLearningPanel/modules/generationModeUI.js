@@ -763,7 +763,7 @@ function createSchoolControlsHTML(schoolName) {
             '</div>' +
         '</details>';
     
-    // Generate buttons - Complex (Python) and Simple (JS only)
+    // Generate buttons - Complex and Simple (JS only)
     html += '' +
         '<div class="school-control-actions">' +
             '<button class="btn btn-accent btn-sm" onclick="rerunSchool(\'' + schoolName + '\', \'complex\', true)" title="Regenerate with settings-aware builder (uses scoring, element isolation, tier ordering)">Complex</button>' +
@@ -902,8 +902,8 @@ function rerunSchool(schoolName, mode, useExistingSlice) {
                 // Get global tree generation settings (same as doVisualFirstGenerate line 1988)
                 var treeGeneration = settings.treeGeneration || {};
                 
-                // Get stored Python fuzzy data (same as doVisualFirstGenerate line 1858)
-                var fuzzy = window._pythonFuzzyData || {
+                // Get stored NLP fuzzy data (same as doVisualFirstGenerate line 1858)
+                var fuzzy = window._nlpFuzzyData || {
                     relationships: {},
                     similarity_scores: {},
                     groups: {},
@@ -1067,12 +1067,12 @@ function rerunSchool(schoolName, mode, useExistingSlice) {
             }
         }, 50);
         
-    } else if (mode === 'python') {
-        // Python generation for single school
-        if (typeof startProceduralPythonGenerate === 'function') {
-            startProceduralPythonGenerate(schoolName, getSchoolConfig(schoolName));
+    } else if (mode === 'native') {
+        // C++ native generation for single school
+        if (typeof startProceduralTreeGenerate === 'function') {
+            startProceduralTreeGenerate(schoolName, getSchoolConfig(schoolName));
         } else {
-            updateStatus('Python generation not available');
+            updateStatus('Native C++ generation not available');
             setStatusIcon('X');
         }
     }

@@ -178,6 +178,7 @@ Use standard language codes:
 | `ko` | Korean |
 | `it` | Italian |
 | `pl` | Polish |
+| `tr` | Turkish |
 
 ## Tips
 

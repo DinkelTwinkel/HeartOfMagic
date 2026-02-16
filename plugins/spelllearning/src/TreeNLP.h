@@ -1,6 +1,11 @@
 #pragma once
 
-#include "PCH.h"
+#include "Common.h"
+
+#include <nlohmann/json.hpp>
+#include <unordered_map>
+
+using json = nlohmann::json;
 
 // =============================================================================
 // TreeNLP — Core NLP algorithms for spell tree generation
@@ -9,7 +14,6 @@
 // similarity, and fuzzy string matching. These are the building blocks
 // used by all tree builder modes.
 //
-// Replaces the Python prereq_master_scorer.py + spell_grouper.py algorithms.
 // =============================================================================
 
 namespace TreeNLP
@@ -64,7 +68,7 @@ namespace TreeNLP
     float CharNgramSimilarity(const std::string& a, const std::string& b, int n = 3);
 
     // =========================================================================
-    // FUZZY STRING MATCHING (replaces Python thefuzz library)
+    // FUZZY STRING MATCHING
     // =========================================================================
 
     // Levenshtein edit distance between two strings
@@ -82,7 +86,7 @@ namespace TreeNLP
     int FuzzyTokenSetRatio(const std::string& a, const std::string& b);
 
     // =========================================================================
-    // THEME SCORING (replaces spell_grouper.py::calculate_theme_score)
+    // THEME SCORING (replaced former spell_grouper.py::calculate_theme_score)
     // =========================================================================
 
     // Score how well a spell matches a theme using multiple fuzzy strategies.
@@ -97,7 +101,7 @@ namespace TreeNLP
     bool IsStopWord(const std::string& word);
 
     // =========================================================================
-    // PRE-REQ MASTER SCORING (replaces prereq_master_scorer.py)
+    // PRE-REQ MASTER SCORING (replaced former prereq_master_scorer.py)
     // =========================================================================
 
     // PRM scoring settings
@@ -115,7 +119,7 @@ namespace TreeNLP
         const PRMSettings& settings,
         int topN = 5);
 
-    // Process a full PRM scoring request (matches Python process_request API)
+    // Process a full PRM scoring request
     json ProcessPRMRequest(const json& request);
 
     // =========================================================================

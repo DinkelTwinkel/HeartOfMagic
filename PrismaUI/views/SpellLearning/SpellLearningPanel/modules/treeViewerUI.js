@@ -633,7 +633,7 @@ function _loadTrustedTree(data, switchToTreeTab) {
             }
 
             // Root nodes must never have prerequisites — they are school entry points.
-            // Old trees (pre-parentMap fix) had Python NLP prereqs on roots, causing
+            // Old trees (pre-parentMap fix) had NLP prereqs on roots, causing
             // entire schools to be unreachable orphan chains.
             if (nd.isRoot || id === sd.root) {
                 _hardPrereqs = [];

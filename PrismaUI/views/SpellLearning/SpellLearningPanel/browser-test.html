@@ -155,7 +155,6 @@
     <script src="modules/llmApiSettings.js"></script>
     <script src="modules/buttonHandlers.js"></script>
     <script src="modules/cppCallbacks.js"></script>
-    <script src="modules/pythonSetup.js"></script>
     <script src="modules/llmIntegration.js"></script>
     <script src="modules/proceduralTreeBuilder.js"></script>
     <script src="modules/layoutGenerator.js"></script>
@@ -496,7 +495,7 @@
                 buildAndRender();
             });
         } else {
-            loadingEl.textContent = 'Must be served via HTTP. Run: python -m http.server 8765';
+            loadingEl.textContent = 'Must be served via HTTP Web server.';
         }
     })();
     </script>

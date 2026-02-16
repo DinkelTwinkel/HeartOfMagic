@@ -8,7 +8,6 @@
  * Usage:
  *   var html = GraphSettings.buildHTML(settings);
  *   GraphSettings.bindEvents({ onSettingChanged });
- *   GraphSettings.updatePythonStatus(installed, hasScript, hasPython);
  *   GraphSettings.updateScanStatus(hasSpells);
  *   GraphSettings.setTreeBuilt(built, nodeCount, totalPool);
  *   GraphSettings.setStatusText(text, color);
@@ -19,7 +18,6 @@
 var GraphSettings = {
 
     // Internal state tracking
-    _pythonInstalled: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -155,16 +153,6 @@ var GraphSettings = {
 
     setStatusText: function (text, color) {
         if (typeof TreeGrowth !== 'undefined') TreeGrowth.setStatusText(text, color);
-    },
-
-    updatePythonStatus: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        if (typeof TreeGrowth !== 'undefined') TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
-    },
-
-    onPythonStatusChanged: function (installed, hasScript, hasPython) {
-        this._pythonInstalled = installed;
-        this.updatePythonStatus(installed, hasScript, hasPython);
     },
 
     updateScanStatus: function (hasSpells) {

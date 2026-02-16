@@ -31,7 +31,7 @@ var TreeGrowthTree = {
     _cache: null,
     _lastCacheKey: '',
 
-    // Built tree data (from Python backend)
+    // Built tree data (from C++ backend)
     _treeData: null,
     _builtPlacements: null,
 
@@ -55,7 +55,6 @@ var TreeGrowthTree = {
             onBuild: function() { self.buildTree(); },
             onApply: function() { self.applyTree(); },
             onClear: function() { self.clearTree(); },
-            onSetupPython: function() { window.callCpp('SetupPython', ''); },
             onSettingChanged: function(key, value) {
                 self.settings[key] = value;
                 self._cache = null;
@@ -99,12 +98,12 @@ var TreeGrowthTree = {
             BuildProgress.start(hasPRM);
         }
 
-        TreeSettings.setStatusText('Building tree (Python)...', '#f59e0b');
+        TreeSettings.setStatusText('Building tree (C++)...', '#f59e0b');
         if (typeof updateScanStatus === 'function') updateScanStatus(t('status.buildingTree'), 'working');
         var buildBtn = document.getElementById('tgTreeBuildBtn');
         if (buildBtn) buildBtn.disabled = true;
 
-        // Set pending flag so onProceduralPythonComplete routes result here
+        // Set pending flag so onProceduralTreeComplete routes result here
         if (typeof state !== 'undefined') {
             state._treeGrowthBuildPending = true;
         }
@@ -145,11 +144,14 @@ var TreeGrowthTree = {
             selected_roots: TreePreview._flattenSelectedRoots()
         };
 
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-            command: 'build_tree',
-            spells: spellsToProcess,
-            config: config
-        }));
+        // Defer to let UI render progress modal before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify({
+                command: 'build_tree',
+                spells: spellsToProcess,
+                config: config
+            }));
+        }, 0);
     },
 
     loadTreeData: function(data) {
@@ -222,7 +224,7 @@ var TreeGrowthTree = {
         }
 
         // Build layout-derived edge lookups from parentMap
-        // This replaces Python NLP edges with edges that match the visual layout
+        // This replaces C++ NLP edges with edges that match the visual layout
         var childrenLookup = {};
         var prereqLookup = {};
         if (layout && layout.parentMap) {
@@ -298,7 +300,7 @@ var TreeGrowthTree = {
                 // (they weren't placed by the layout engine)
                 if (hasLayoutEdges && !posLookup[sn.formId]) continue;
 
-                // Use layout-derived edges when available, fall back to Python NLP edges
+                // Use layout-derived edges when available, fall back to C++ NLP edges
                 var layoutChildren = hasLayoutEdges ? (childrenLookup[sn.formId] || []) : (sn.children || []);
                 var layoutPrereqs = hasLayoutEdges ? (prereqLookup[sn.formId] || []) : (sn.prerequisites || []);
 

@@ -366,7 +366,7 @@ struct SparseVector {
 
 **High-Level API:**
 ```cpp
-// Called from UIManager::OnProceduralPythonGenerate
+// Called from UIManager::OnProceduralTreeGenerate
 BuildResult Build(command, spells, configJson);
 // Commands: "build_tree_classic", "build_tree", "build_tree_graph",
 //           "build_tree_thematic", "build_tree_oracle"
@@ -376,7 +376,7 @@ BuildResult Build(command, spells, configJson);
 ```
 C++ (UIManager)                    TreeBuilder
     │                                   │
-    ├─OnProceduralPythonGenerate()─────►│
+    ├─OnProceduralTreeGenerate()─────►│
     │  (SKSE TaskInterface async)       │
     │                                   ├─Build(command, spells, config)
     │                                   │  ├─DiscoverThemesPerSchool()
@@ -387,7 +387,7 @@ C++ (UIManager)                    TreeBuilder
     │                                   │  └─FixUnreachableNodes()
     │                                   │
     │◄─callback(BuildResult)────────────┤
-    │  → InteropCall("onProceduralPythonComplete")
+    │  → InteropCall("onProceduralTreeComplete")
 ```
 
 **Key Data Types:**
@@ -564,7 +564,7 @@ amount → × source multiplier (0-200%) → × global multiplier
 | `progressionUI.js` | How-to-Learn panel, learning status badges |
 | `difficultyProfiles.js` | Profile management, presets, custom profiles |
 | `generationModeUI.js` | Generation UI (seed, LLM options); dev-only rows |
-| `cppCallbacks.js` | C++ ↔ JS (e.g. ProceduralPythonGenerate, GetProgress); enables Complex/Simple buttons when spells loaded |
+| `cppCallbacks.js` | C++ ↔ JS (e.g. ProceduralTreeGenerate, GetProgress); enables Complex/Simple buttons when spells loaded |
 | `llmIntegration.js` | LLM tree generation (AUTO AI), validation, retry |
 | `llmTreeFeatures.js` | LLM preprocessing: auto-config, keyword expansion, **keyword classification**; batched per-school classification |
 | `llmApiSettings.js` | LLM API configuration (model, endpoint, API key) |
@@ -632,14 +632,14 @@ amount → × source multiplier (0-200%) → × global multiplier
 
 ```
 UIManager.cpp
-  └─ OnProceduralPythonGenerate()
+  └─ OnProceduralTreeGenerate()
        └─ SKSE TaskInterface (async)
             └─ TreeBuilder::Build(command, spells, config)
                  ├─ TreeNLP (TF-IDF, cosine sim, fuzzy matching)
                  ├─ Theme discovery + spell grouping
                  ├─ Per-school tree construction
                  └─ Validation + repair
-                      └─ BuildResult → callback → InteropCall("onProceduralPythonComplete")
+                      └─ BuildResult → callback → InteropCall("onProceduralTreeComplete")
 ```
 
 ### Builder Modes
@@ -707,10 +707,10 @@ User clicks "Scan" → SpellScanner::ScanAllSpells()
 ### Tree Generation Flow (user-facing modes, outside developer mode)
 
 **BUILD TREE (Complex)** — `visualFirstBtn` → `startVisualFirstGenerate()`:
-1. `startVisualFirstPythonConfig()`: build config (fuzzy + optional LLM), call C++ `ProceduralPythonGenerate`.
+1. `startVisualFirstTreeConfig()`: build config (fuzzy + optional LLM), call C++ `ProceduralTreeGenerate`.
 2. C++ runs `TreeBuilder::Build(command, spells, config)` on SKSE TaskInterface thread. Executes native NLP algorithms (TF-IDF, fuzzy matching, tree construction).
 3. `TreeBuilder` returns `BuildResult` with full tree JSON.
-4. Callback fires on SKSE main thread → `onProceduralPythonComplete`.
+4. Callback fires on SKSE main thread → `onProceduralTreeComplete`.
 5. `doVisualFirstGenerate(schoolConfigs, fuzzyData)` → **`buildAllTreesSettingsAware()`** → LayoutEngine → TreeParser → render.
 
 **BUILD TREE (Simple)** — `proceduralBtn` (click bound in script.js) → `onProceduralClick()` → `startProceduralGenerate()`:

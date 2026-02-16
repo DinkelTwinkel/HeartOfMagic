@@ -8,7 +8,6 @@
  */
 var TreeSettings = {
 
-    _pythonInstalled: false,
     _hasSpells: false,
     _treeBuilt: false,
     _nodeCount: 0,
@@ -145,11 +144,6 @@ var TreeSettings = {
                 pctSpan.textContent = text;
             }
         }
-    },
-
-    /** Update status text and button states based on Python addon status. */
-    updatePythonStatus: function (installed, hasScript, hasPython) {
-        if (typeof TreeGrowth !== 'undefined') TreeGrowth.updatePythonStatus(installed, hasScript, hasPython);
     },
 
     /** Called when spell scan data changes. */

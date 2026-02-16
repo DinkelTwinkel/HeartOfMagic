@@ -8,7 +8,7 @@
  * 
  * Two modes:
  * - JavaScript (instant, in-browser) - "Procedural" button
- * - Python (better TF-IDF/fuzzy matching) - "Procedural+" button
+ * - C++ (better TF-IDF/fuzzy matching) - "Procedural+" button
  * 
  * Depends on:
  * - modules/state.js (state, settings)
@@ -1157,11 +1157,11 @@ function onProceduralClick() {
 }
 
 // =============================================================================
-// UI HANDLERS - PYTHON VERSION (calls C++)
-// All LLM calls happen in Python - JS just passes API credentials
+// UI HANDLERS - C++ VERSION
+// All LLM calls happen in C++ - JS just passes API credentials
 // =============================================================================
 
-function startProceduralPythonGenerate(schoolFilter, schoolConfig) {
+function startProceduralTreeGenerate(schoolFilter, schoolConfig) {
     if (!state.lastSpellData || !state.lastSpellData.spells) {
         updateStatus('No spell data - scan spells first');
         setStatusIcon('X');
@@ -1207,7 +1207,7 @@ function startProceduralPythonGenerate(schoolFilter, schoolConfig) {
         console.log('[Procedural] Using seed:', seed);
     }
     
-    // LLM options - ALL LLM calls happen in Python
+    // LLM options - ALL LLM calls happen in C++
     config.llm_auto_configure = {
         enabled: llmAutoConfigCheck ? llmAutoConfigCheck.checked : false,
         prompt_template: typeof getAutoConfigPrompt === 'function' ? getAutoConfigPrompt() : ''
@@ -1228,7 +1228,7 @@ function startProceduralPythonGenerate(schoolFilter, schoolConfig) {
         min_confidence: 40
     };
 
-    // Pass API credentials to Python for LLM calls
+    // Pass API credentials to C++ for LLM calls
     var llmEnabled = config.llm_auto_configure.enabled || config.llm_groups.enabled || config.llm_keyword_classification.enabled;
     if (llmEnabled && state.llmConfig && state.llmConfig.apiKey) {
         config.llm_api = {
@@ -1289,7 +1289,7 @@ function startProceduralPythonGenerate(schoolFilter, schoolConfig) {
 
     // Update status based on LLM options
     var statusMsg = schoolFilter ? 'Regenerating ' + schoolFilter : 'Generating trees';
-    statusMsg += ' (Python';
+    statusMsg += ' (C++';
     if (config.llm_auto_configure.enabled) statusMsg += ' + LLM Config';
     if (config.llm_groups.enabled) statusMsg += ' + LLM Groups';
     statusMsg += ')...';
@@ -1297,19 +1297,22 @@ function startProceduralPythonGenerate(schoolFilter, schoolConfig) {
     updateStatus(statusMsg);
     setStatusIcon('...');
     
-    // Send to Python via C++
+    // Send to C++
     if (window.callCpp) {
         var request = {
             spells: spellsToProcess,
             config: config,
             schoolFilter: schoolFilter || null
         };
-        console.log('[Procedural] Python request:', {
+        console.log('[Procedural] C++ request:', {
             spells: spellsToProcess.length,
             llmConfig: config.llm_auto_configure.enabled,
             llmGroups: config.llm_groups.enabled
         });
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify(request));
+        // Defer to let UI render progress modal before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify(request));
+        }, 0);
     } else {
         updateStatus('C++ bridge not available');
         setStatusIcon('X');
@@ -1327,16 +1330,16 @@ function resetProceduralPlusButton() {
 }
 
 function onProceduralPlusClick() {
-    console.log('[Procedural] Python button clicked');
+    console.log('[Procedural] C++ button clicked');
     var btn = document.getElementById('proceduralPlusBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="btn-icon">...</span> Python...';
+        btn.innerHTML = '<span class="btn-icon">...</span> Building...';
     }
     state.proceduralPlusPending = true;
     
     if (state.lastSpellData && state.lastSpellData.spells) {
-        startProceduralPythonGenerate();
+        startProceduralTreeGenerate();
     } else {
         updateStatus('Scanning spells...');
         state.proceduralPlusScanPending = true;
@@ -1345,10 +1348,10 @@ function onProceduralPlusClick() {
 }
 
 /**
- * Shared error handler for Python tree build failures.
+ * Shared error handler for C++ tree build failures.
  * Used by both Classic and Tree growth mode routing.
  *
- * @param {string} error - Error string from Python/C++
+ * @param {string} error - Error string from C++
  * @param {string} pendingKey - State key to set for retry (e.g. '_classicGrowthBuildPending')
  * @param {Object|null} settingsModule - ClassicSettings or TreeSettings (has .setStatusText)
  * @param {Object} retryConfig - Config to pass on retry {command, config}
@@ -1356,7 +1359,7 @@ function onProceduralPlusClick() {
  * @param {string} logPrefix - Console log prefix e.g. '[ClassicGrowth]'
  */
 function _handleBuildFailure(error, pendingKey, settingsModule, retryConfig, buildBtnId, logPrefix) {
-    console.error(logPrefix + ' Python build failed:', error);
+    console.error(logPrefix + ' C++ build failed:', error);
     var errorMsg = 'Tree build failed: ' + error + '\nPlease report this error on the mod page.';
     var retryFn = function() {
         if (state.lastSpellData && state.lastSpellData.spells && window.callCpp) {
@@ -1364,12 +1367,15 @@ function _handleBuildFailure(error, pendingKey, settingsModule, retryConfig, bui
             var hasPRM = typeof PreReqMaster !== 'undefined' && PreReqMaster.isEnabled && PreReqMaster.isEnabled();
             if (typeof BuildProgress !== 'undefined') BuildProgress.start(hasPRM);
             if (settingsModule) settingsModule.setStatusText('Retrying with fallback...', '#f59e0b');
-            window.callCpp('ProceduralPythonGenerate', JSON.stringify({
-                command: retryConfig.command || 'build_tree',
-                spells: state.lastSpellData.spells,
-                config: retryConfig.config || {},
-                fallback: true
-            }));
+            // Defer to let UI render before blocking on JSON.stringify
+            setTimeout(function() {
+                window.callCpp('ProceduralTreeGenerate', JSON.stringify({
+                    command: retryConfig.command || 'build_tree',
+                    spells: state.lastSpellData.spells,
+                    config: retryConfig.config || {},
+                    fallback: true
+                }));
+            }, 0);
         }
     };
     if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive()) {
@@ -1384,18 +1390,13 @@ function _handleBuildFailure(error, pendingKey, settingsModule, retryConfig, bui
 }
 
 /**
- * Callback from C++ when Python procedural generation completes
+ * Callback from C++ when procedural tree generation completes
  */
-window.onProceduralPythonComplete = function(resultStr) {
-    console.log('[Procedural] Python result received');
+window.onProceduralTreeComplete = function(resultStr) {
+    console.log('[Procedural] C++ result received');
 
     try {
         var result = typeof resultStr === 'string' ? JSON.parse(resultStr) : resultStr;
-
-        // If python stage is still active (first spawn), advance past it now that Python responded
-        if (typeof BuildProgress !== 'undefined' && BuildProgress.isActive() && BuildProgress.getCurrentStage() === 'python') {
-            BuildProgress.setStage('tree');
-        }
 
         // Route to Classic Growth mode if it triggered this build
         if (state._classicGrowthBuildPending) {
@@ -1554,12 +1555,12 @@ window.onProceduralPythonComplete = function(resultStr) {
         // Check if visual-first mode was waiting for LLM configs + fuzzy data
         if (state.visualFirstConfigPending && result.success) {
             state.visualFirstConfigPending = false;
-            console.log('[VisualFirst] Received Python response, extracting configs + fuzzy data...');
+            console.log('[VisualFirst] Received C++ response, extracting configs + fuzzy data...');
             
             var treeData = typeof result.treeData === 'string' ? JSON.parse(result.treeData) : result.treeData;
             var schoolConfigs = treeData.school_configs || {};
             
-            // Extract fuzzy relationship data from Python response
+            // Extract fuzzy relationship data from C++ response
             var fuzzyData = {
                 relationships: treeData.fuzzy_relationships || {},  // spell -> [related spells]
                 similarity_scores: treeData.similarity_scores || {},  // spell pairs -> similarity
@@ -1575,7 +1576,7 @@ window.onProceduralPythonComplete = function(resultStr) {
                 console.log('[VisualFirst] Sample themes:', sampleKeys.map(function(k) { return k + ': ' + fuzzyData.themes[k]; }));
             }
 
-            // Use configs + fuzzy data with visual-first builder (ignore Python's tree structure)
+            // Use configs + fuzzy data with visual-first builder (ignore C++ tree structure)
             doVisualFirstGenerate(schoolConfigs, fuzzyData);
             resetProceduralPlusButton();
             return;
@@ -1611,7 +1612,7 @@ window.onProceduralPythonComplete = function(resultStr) {
                 if (treeData.school_configs[sc].source === 'llm') llmConfigCount++;
             }
             
-            var statusMsg = 'Python: ' + schoolCount + ' schools, ' + nodeCount + ' spells';
+            var statusMsg = 'C++ NLP: ' + schoolCount + ' schools, ' + nodeCount + ' spells';
             if (llmConfigCount > 0) {
                 statusMsg += ' (LLM configured ' + llmConfigCount + ' schools)';
             }
@@ -1630,23 +1631,23 @@ window.onProceduralPythonComplete = function(resultStr) {
             // Check if visual-first was pending - fall back to defaults
             if (state.visualFirstConfigPending) {
                 state.visualFirstConfigPending = false;
-                console.warn('[VisualFirst] Python failed, using default configs (no fuzzy data)');
+                console.warn('[VisualFirst] C++ build failed, using default configs (no fuzzy data)');
                 doVisualFirstGenerate({}, null);
                 return;
             }
-            updateStatus('Python failed: ' + (result.error || 'Unknown error'));
+            updateStatus('Build failed: ' + (result.error || 'Unknown error'));
             setStatusIcon('X');
         }
     } catch (e) {
-        console.error('[Procedural] Error parsing Python result:', e);
+        console.error('[Procedural] Error parsing C++ result:', e);
         // Check if visual-first was pending - fall back to defaults
         if (state.visualFirstConfigPending) {
             state.visualFirstConfigPending = false;
-            console.warn('[VisualFirst] Python error, using default configs (no fuzzy data)');
+            console.warn('[VisualFirst] C++ error, using default configs (no fuzzy data)');
             doVisualFirstGenerate({}, null);
             return;
         }
-        updateStatus('Python result parse error');
+        updateStatus('Result parse error');
         setStatusIcon('X');
     }
     
@@ -1654,7 +1655,7 @@ window.onProceduralPythonComplete = function(resultStr) {
 };
 
 /**
- * Apply school configs from Python to the per-school UI controls
+ * Apply school configs from C++ to the per-school UI controls
  */
 function applySchoolConfigsToUI(schoolConfigs) {
     for (var schoolName in schoolConfigs) {
@@ -1721,7 +1722,7 @@ function applySchoolConfigsToUI(schoolConfigs) {
 
 /**
  * Generate all trees using the visual-first layout system.
- * This calls Python for LLM school configs, then uses visual-first layout in JS.
+ * This calls C++ for LLM school configs, then uses visual-first layout in JS.
  */
 function startVisualFirstGenerate() {
     console.log('[VisualFirst] Button clicked');
@@ -1744,8 +1745,8 @@ function startVisualFirstGenerate() {
         return;
     }
     
-    // Call Python for LLM school configs
-    startVisualFirstPythonConfig();
+    // Call C++ for LLM school configs
+    startVisualFirstTreeConfig();
 }
 
 // Default prompt in case the UI element doesn't exist
@@ -1841,14 +1842,14 @@ function buildAllSchoolsSummary(spells) {
 }
 
 /**
- * Call Python to get LLM school configurations AND run fuzzy NLP analysis.
- * Python will:
+ * Call C++ to get LLM school configurations AND run fuzzy NLP analysis.
+ * C++ will:
  * 1. Call LLM for ALL schools at once (full context)
  * 2. Run TF-IDF/fuzzy matching to find spell relationships
  * 3. Return both configs and relationship data for visual-first layout
  */
-function startVisualFirstPythonConfig() {
-    updateStatus('Running Python fuzzy analysis + LLM configs...');
+function startVisualFirstTreeConfig() {
+    updateStatus('Running C++ fuzzy analysis + LLM configs...');
     setStatusIcon('...');
     
     // Get LLM options from Visual-First specific checkbox (or fallback to shared one)
@@ -1876,7 +1877,7 @@ function startVisualFirstPythonConfig() {
     console.log('[VisualFirst] Auto-config prompt length:', autoConfigPrompt.length);
     console.log('[VisualFirst] Prompt includes', schoolsSummary.schools.length, 'schools context');
     
-    // Build config for Python - enable fuzzy analysis AND LLM config
+    // Build config for C++ - enable fuzzy analysis AND LLM config
     var config = {
         shape: 'organic',
         density: 0.6,
@@ -1909,7 +1910,7 @@ function startVisualFirstPythonConfig() {
             min_confidence: 40
         },
 
-        // Flag to tell Python we want visual-first output format
+        // Flag to tell C++ we want visual-first output format
         visual_first_mode: true,
         
         // Include fuzzy relationship data in response
@@ -1919,7 +1920,7 @@ function startVisualFirstPythonConfig() {
         schools_summary: schoolsSummary.text
     };
     
-    // Pass API credentials to Python for LLM calls
+    // Pass API credentials to C++ for LLM calls
     console.log('[VisualFirst] === LLM Configuration ===');
     console.log('[VisualFirst] Visual-First LLM checkbox:', visualFirstLLMCheck ? visualFirstLLMCheck.checked : 'N/A (using fallback)');
     console.log('[VisualFirst] Effective LLM enabled:', llmAutoConfigCheck ? llmAutoConfigCheck.checked : false);
@@ -2004,11 +2005,14 @@ function startVisualFirstPythonConfig() {
     state.visualFirstConfigPending = true;
     
     if (window.callCpp) {
-        console.log('[VisualFirst] Calling Python for fuzzy analysis + LLM configs...');
+        console.log('[VisualFirst] Calling C++ for fuzzy analysis + LLM configs...');
         console.log('[VisualFirst] Spells:', state.lastSpellData.spells.length);
         console.log('[VisualFirst] LLM Auto-Config:', config.llm_auto_configure.enabled);
         console.log('[VisualFirst] LLM Groups:', config.llm_groups.enabled);
-        window.callCpp('ProceduralPythonGenerate', JSON.stringify(request));
+        // Defer to let UI render before blocking on JSON.stringify
+        setTimeout(function() {
+            window.callCpp('ProceduralTreeGenerate', JSON.stringify(request));
+        }, 0);
     } else {
         console.warn('[VisualFirst] C++ bridge not available, using JS fallback');
         doVisualFirstGenerate({}, null);
@@ -2024,7 +2028,7 @@ function resetVisualFirstButton() {
 }
 
 /**
- * Called after Python returns LLM configs (or directly with defaults).
+ * Called after C++ returns LLM configs (or directly with defaults).
  * Uses visual-first layout system with the provided school configs.
  * 
  * Priority for config: LLM > UI Controls > Defaults
@@ -2039,7 +2043,7 @@ function doVisualFirstGenerate(schoolConfigs, fuzzyData) {
     console.log('='.repeat(60));
     
     // Log received configs
-    console.log('[VisualFirst] Received school configs from Python:');
+    console.log('[VisualFirst] Received school configs from C++:');
     if (schoolConfigs && Object.keys(schoolConfigs).length > 0) {
         for (var sc in schoolConfigs) {
             var cfg = schoolConfigs[sc];
@@ -2172,14 +2176,14 @@ function doVisualFirstGenerate(schoolConfigs, fuzzyData) {
                 // Filter spells
                 var filteredSpells = filterWhitelistedSpells(filterBlacklistedSpells(state.lastSpellData.spells));
 
-                // Build tree using new unified builder - PASS PYTHON FUZZY DATA!
-                // fuzzy contains: themes, groups, relationships, similarity_scores from Python TF-IDF
+                // Build tree using new unified builder - PASS C++ NLP FUZZY DATA!
+                // fuzzy contains: themes, groups, relationships, similarity_scores from C++ TF-IDF
                 console.log('[ComplexBuild] Passing fuzzy data to builder:', Object.keys(fuzzy));
                 if (fuzzy.themes) {
-                    console.log('[ComplexBuild]   Python discovered themes:', Object.keys(fuzzy.themes));
+                    console.log('[ComplexBuild]   NLP discovered themes:', Object.keys(fuzzy.themes));
                 }
                 if (fuzzy.groups) {
-                    console.log('[ComplexBuild]   Python spell groups:', Object.keys(fuzzy.groups).length);
+                    console.log('[ComplexBuild]   NLP spell groups:', Object.keys(fuzzy.groups).length);
                 }
                 var treeData = buildAllTreesSettingsAware(filteredSpells, finalConfigs, settings.treeGeneration, fuzzy);
 
@@ -2249,12 +2253,12 @@ function doVisualFirstGenerate(schoolConfigs, fuzzyData) {
 window.buildProceduralTrees = buildProceduralTrees;
 window.startProceduralGenerate = startProceduralGenerate;
 window.startVisualFirstGenerate = startVisualFirstGenerate;
-window.startVisualFirstPythonConfig = startVisualFirstPythonConfig;
+window.startVisualFirstTreeConfig = startVisualFirstTreeConfig;
 window.doVisualFirstGenerate = doVisualFirstGenerate;
 window.resetVisualFirstButton = resetVisualFirstButton;
 window.onProceduralClick = onProceduralClick;
 window.resetProceduralButton = resetProceduralButton;
-window.startProceduralPythonGenerate = startProceduralPythonGenerate;
+window.startProceduralTreeGenerate = startProceduralTreeGenerate;
 window.onProceduralPlusClick = onProceduralPlusClick;
 window.resetProceduralPlusButton = resetProceduralPlusButton;
 window.applySchoolConfigsToUI = applySchoolConfigsToUI;
