@@ -3162,9 +3162,9 @@ void UIManager::OnConsoleMessage(PrismaView view, PRISMA_UI_API::ConsoleMessageL
         case PRISMA_UI_API::ConsoleMessageLevel::Debug:
             logger::debug("[JS] View {}: {}", view, message);
             break;
-        default:
-            logger::info("[JS] View {}: {}", view, message);
-            break;
+        //default:
+        //    logger::info("[JS] View {}: {}", view, message);
+        //    break;
     }
 }
 

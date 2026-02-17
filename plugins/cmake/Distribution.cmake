@@ -44,11 +44,23 @@ add_custom_command(TARGET assemble_dist POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy
     "$<TARGET_FILE:SpellLearning>"
     "${DIST_VERSION_DIR}/SKSE/Plugins/"
+    COMMAND "${CMAKE_COMMAND}" -E $<IF:$<BOOL:$<TARGET_PDB_FILE:SpellLearning>>,copy,true>
+    "$<$<BOOL:$<TARGET_PDB_FILE:SpellLearning>>:$<TARGET_PDB_FILE:SpellLearning>>"
+    "${DIST_VERSION_DIR}/SKSE/Plugins/"
+
+
     COMMAND "${CMAKE_COMMAND}" -E copy
     "$<TARGET_FILE:SL_BookXP>"
     "${DIST_VERSION_DIR}/SKSE/Plugins/"
+    COMMAND "${CMAKE_COMMAND}" -E $<IF:$<BOOL:$<TARGET_PDB_FILE:SL_BookXP>>,copy,true>
+    "$<$<BOOL:$<TARGET_PDB_FILE:SL_BookXP>>:$<TARGET_PDB_FILE:SL_BookXP>>"
+    "${DIST_VERSION_DIR}/SKSE/Plugins/"
+
     COMMAND "${CMAKE_COMMAND}" -E copy
     "$<TARGET_FILE:DontEatSpellTomes>"
+    "${DIST_VERSION_DIR}/optional/ISLPatch/SKSE/Plugins/"
+    COMMAND "${CMAKE_COMMAND}" -E $<IF:$<BOOL:$<TARGET_PDB_FILE:DontEatSpellTomes>>,copy,true>
+    "$<$<BOOL:$<TARGET_PDB_FILE:DontEatSpellTomes>>:$<TARGET_PDB_FILE:DontEatSpellTomes>>"
     "${DIST_VERSION_DIR}/optional/ISLPatch/SKSE/Plugins/"
     COMMAND "${CMAKE_COMMAND}" -E echo "Copying DLLs..."
     VERBATIM
