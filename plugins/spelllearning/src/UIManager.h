@@ -68,8 +68,8 @@ public:
     void NotifyISLDetectionStatus();  // Notify UI of ISL-DESTified mod detection
 
     // Get the PrismaUI API (for SpellScanner to use)
-    PRISMA_UI_API::IVPrismaUI1* GetAPI() const { return m_prismaUI; }
-    PrismaView GetView() const { return m_view; }
+    //PRISMA_UI_API::IVPrismaUI1* GetAPI() const { return m_prismaUI; }
+    //PrismaView GetView() const { return m_view; }
 
     // File paths
     static std::filesystem::path GetPromptFilePath();
@@ -154,6 +154,7 @@ private:
 
     // PrismaUI members
     PRISMA_UI_API::IVPrismaUI1* m_prismaUI = nullptr;
+    PRISMA_UI_API::IVPrismaUI2* m_prismaUIv2 = nullptr;
     PrismaView m_view = 0;
     bool m_isPanelVisible = false;
     bool m_isInitialized = false;

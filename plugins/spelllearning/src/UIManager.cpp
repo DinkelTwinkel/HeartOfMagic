@@ -67,9 +67,7 @@ bool UIManager::Initialize()
     logger::info("UIManager: Initializing PrismaUI connection...");
 
     // Request the PrismaUI API
-    m_prismaUI = static_cast<PRISMA_UI_API::IVPrismaUI1*>(
-        PRISMA_UI_API::RequestPluginAPI(PRISMA_UI_API::InterfaceVersion::V1)
-    );
+    m_prismaUI = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
 
     if (!m_prismaUI) {
         logger::error("UIManager: Failed to get PrismaUI API - is PrismaUI.dll loaded?");
@@ -154,11 +152,11 @@ bool UIManager::Initialize()
     m_prismaUI->RegisterJSListener(m_view, "saveTestResults", OnSaveTestResults);
 
     // Register console message callback (API v2+)
-    auto prismaUIapiVersion = PRISMA_UI_API::GetAPIVersion();
-    logger::info("UIManager: Detected PrismaUI API version {}", prismaUIapiVersion);
-    if (prismaUIapiVersion > 1) {
-        m_prismaUI->RegisterConsoleCallback(m_view, OnConsoleMessage);
+    if ((m_prismaUIv2 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>())) {
+        m_prismaUIv2->RegisterConsoleCallback(m_view, OnConsoleMessage);
         logger::info("UIManager: Console callback registered");
+    } else {
+        logger::warn("UIManager: PrismaUI v2 API not available - console callback not registered");
     }
 
     logger::info("UIManager: JS listeners registered");
