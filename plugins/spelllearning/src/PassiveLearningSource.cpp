@@ -1,9 +1,10 @@
 #include "PassiveLearningSource.h"
+#include "ThreadUtils.h"
 
 #include <chrono>
 
 #include "ProgressionManager.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 
 namespace SpellLearning {
 
@@ -76,7 +77,7 @@ void PassiveLearningSource::PollLoop() {
         }
 
         // Must read Calendar on the game thread
-        SKSE::GetTaskInterface()->AddTask([this, currentSettings]() {
+        AddTaskToGameThread("PassiveLearningTick", [this, currentSettings]() {
             auto* calendar = RE::Calendar::GetSingleton();
             if (!calendar) return;
 

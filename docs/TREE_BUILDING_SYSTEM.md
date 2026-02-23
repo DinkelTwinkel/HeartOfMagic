@@ -23,7 +23,8 @@ The tree building pipeline has four layers, each with a distinct responsibility:
 │  ┌──────────────────────────┴────────────────────────┘                  │
 │  │ OnProceduralTreeGenerate() → TreeBuilder::Build()                 │
 │  │ Reads "command" field → routes to correct builder mode              │
-│  │ Async via SKSE TaskInterface → onProceduralTreeComplete() to JS   │
+│  │ Build runs on background thread → result dispatched to game thread  │
+│  │ via SKSE AddTask → onProceduralTreeComplete() to JS                 │
 │  │                                                                      │
 │  │ Builder Modes:                                                       │
 │  │   ├─ "build_tree_classic"  → BuildClassic()  (Tier-first)           │
@@ -289,9 +290,11 @@ OnProceduralTreeGenerate(argument):
     1. Parse JSON from JS
     2. Read "command" field (default: "build_tree")
     3. Extract spells array and config
-    4. Run TreeBuilder::Build(command, spells, config) on SKSE TaskInterface
-       → Async: callback fires on SKSE main thread when build completes
-    5. Callback packages {success, treeData, elapsed}
+    4. Launch background std::thread for TreeBuilder::Build()
+       → TreeBuilder has zero RE:: dependencies, safe to run off game thread
+       → OpenMP used for inner-loop parallelism (similarity matrices)
+    5. On completion, dispatch result back to game thread via SKSE AddTask
+    6. Callback packages {success, treeData, elapsed}
        → InteropCall("onProceduralTreeComplete", response)
 ```
 
@@ -600,7 +603,7 @@ All C++ builders output the same JSON schema so all downstream JS systems (layou
      - Expert under Adept (depth 3), Master under Expert (depth 4)
    - Validates: all 47 Destruction nodes reachable ✓
 
-5. Result returns through SKSE TaskInterface callback to JS
+5. Result returns through background thread → SKSE AddTask → game thread → InteropCall to JS
 
 6. proceduralTreeBuilder.js routes to TreeGrowthClassic.loadTreeData()
 

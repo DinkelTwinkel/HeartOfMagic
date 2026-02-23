@@ -1,6 +1,7 @@
 // CommonLib must come FIRST, then Windows headers
 #include "Common.h"
 #include "OpenRouterAPI.h"
+#include "ThreadUtils.h"
 
 #include <curl/curl.h>
 
@@ -339,18 +340,11 @@ namespace OpenRouterAPI {
                         response.success, response.content.length(), response.error);
             
             // Call callback on main thread via SKSE task
-            auto* taskInterface = SKSE::GetTaskInterface();
-            if (taskInterface) {
-                logger::info("OpenRouterAPI: Adding task to SKSE task interface");
-                taskInterface->AddTask([callback, response]() {
-                    logger::info("OpenRouterAPI: SKSE task executing callback");
-                    callback(response);
-                    logger::info("OpenRouterAPI: Callback completed");
-                });
-            } else {
-                logger::error("OpenRouterAPI: SKSE task interface is null! Calling callback directly (may cause issues)");
+            AddTaskToGameThread("OpenRouterCallback", [callback, response]() {
+                logger::info("OpenRouterAPI: SKSE task executing callback");
                 callback(response);
-            }
+                logger::info("OpenRouterAPI: Callback completed");
+            });
         }).detach();
         
         logger::info("OpenRouterAPI: Thread detached");

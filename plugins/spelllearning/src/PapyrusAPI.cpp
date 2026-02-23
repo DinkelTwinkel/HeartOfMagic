@@ -1,5 +1,5 @@
 #include "PapyrusAPI.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 #include "ProgressionManager.h"
 #include "SKSE/SKSE.h"
 

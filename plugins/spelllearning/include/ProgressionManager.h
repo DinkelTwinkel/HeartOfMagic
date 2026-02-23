@@ -5,6 +5,23 @@
 #include <string>
 #include <filesystem>
 
+// =============================================================================
+// ProgressionManager — Spell learning progress and XP tracking
+//
+// THREADING INVARIANT: All public methods MUST be called from the game thread.
+// This class has no internal synchronization (no mutex). Thread safety is
+// guaranteed by the fact that all callers dispatch through AddTaskToGameThread():
+//   - SpellCastHandler event sink (game thread inherently)
+//   - SpellTomeHook (game thread inherently)
+//   - UIManager callbacks (deferred via AddTaskToGameThread)
+//   - PassiveLearningSource (dispatches XP grants via AddTaskToGameThread)
+//   - SKSE serialization callbacks (game thread)
+//   - PapyrusAPI native functions (VM thread = game thread)
+//   - BookXP addon via API (MenuOpenCloseEvent = game thread)
+//
+// DO NOT call ProgressionManager methods from background threads directly.
+// Use AddTaskToGameThread() to marshal calls to the game thread.
+// =============================================================================
 class ProgressionManager
 {
 public:

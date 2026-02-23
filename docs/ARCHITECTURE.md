@@ -65,7 +65,7 @@ Runtime FormID (e.g. 0x02001234) → "Skyrim.esm|0x001234"
 - On tree load, stale FormIDs auto-resolved from persistentId field
 ```
 
-### 2. **UIManager** (`plugin/src/UIManager.cpp/h`)
+### 2. **UIManager** (`plugin/src/uimanager/UIManager*.cpp`, `include/UIManager.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -94,7 +94,7 @@ CreateView("SpellLearning/SpellLearningPanel/index.html", ...)
 MO2/mods/HeartOfMagic_RELEASE/PrismaUI/views/SpellLearning/SpellLearningPanel/
 ```
 
-### 3. **ProgressionManager** (`plugin/src/ProgressionManager.cpp/h`)
+### 3. **ProgressionManager** (`plugin/progressionmanager/ProgressionManager.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -150,7 +150,7 @@ struct XPSettings {
 std::unordered_map<RE::FormID, std::vector<RE::FormID>> m_targetPrerequisites;
 ```
 
-### 4. **SpellEffectivenessHook** (`plugin/src/SpellEffectivenessHook.cpp/h`)
+### 4. **SpellEffectivenessHook** (`plugin/src/spelleffectiveness/SpellEffectivenessHook.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -313,7 +313,7 @@ the mod - always available. SpellTomeHook handles the core tome interception in 
 - `SendPrompt(systemPrompt, userPrompt)` - Blocking call
 - `GetConfig()` / `SaveConfig()` - Persistence
 
-### 8. **TreeNLP** (`plugin/src/TreeNLP.cpp/h`)
+### 8. **TreeNLP** (`plugin/src/treebuilder/TreeNLP.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -344,7 +344,7 @@ struct SparseVector {
 };
 ```
 
-### 9. **TreeBuilder** (`plugin/src/TreeBuilder.cpp/h`)
+### 9. **TreeBuilder** (`plugin/src/treebuilder/TreeBuilder.cpp/h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -513,6 +513,31 @@ amount → × source multiplier (0-200%) → × global multiplier
 
 ## Performance Optimizations
 
+### Threading Model
+
+The plugin uses a game-thread-primary model with targeted background offloading. All game-thread dispatch goes through `AddTaskToGameThread()` (defined in `ThreadUtils.h`), which provides null-safety, exception handling, and named-task logging.
+
+**Game thread (SKSE main thread):**
+- All `RE::` engine calls (form lookups, spell add/remove, HUD messages)
+- Event sinks (SpellCastHandler, InputHandler, BookMenuWatcher)
+- Hooks (SpellTomeHook, SpellEffectivenessHook)
+- Papyrus native functions (PapyrusAPI, ISLIntegration)
+- SKSE serialization callbacks (co-save read/write)
+- UIManager callbacks dispatch to game thread via `AddTaskToGameThread()`
+
+**Background threads:**
+- `PassiveLearningSource` — dedicated `std::thread` polling every 3s, dispatches XP grants back to game thread via `AddTaskToGameThread()`
+- `OpenRouterAPI` — detached `std::thread` for HTTP requests, dispatches callback to game thread via `AddTaskToGameThread()`
+- `TreeBuilder::Build()` — detached `std::thread` for NLP tree construction (TF-IDF, similarity matrices, Edmonds' arborescence). Uses OpenMP for inner-loop parallelism. No `RE::` dependencies. Result dispatched to game thread via `AddTaskToGameThread()`
+- `TreeNLP::ProcessPRMRequest()` — detached `std::thread` for prerequisite-master scoring. No `RE::` dependencies. Result dispatched to game thread via `AddTaskToGameThread()`
+
+**Synchronization primitives:**
+- `SpellEffectivenessHook` — `std::shared_mutex` (reader-writer) for hot-path spell data
+- `SpellTomeHook` — `std::mutex` for tome XP tracking set
+- `PassiveLearningSource` — `std::mutex` for settings, `std::atomic<bool>` for lifecycle
+- `UIManager` — `std::atomic<bool>` guards for concurrent build/score prevention
+- `ProgressionManager` — no mutex (game-thread-only invariant, documented in header)
+
 ### C++ Plugin Performance (Feb 2026)
 - **`std::shared_mutex`** for read-heavy concurrent access (replaces `std::mutex`)
   - Read operations use `std::shared_lock` (non-blocking concurrent reads)
@@ -631,7 +656,7 @@ amount → × source multiplier (0-200%) → × global multiplier
 ### Architecture
 
 ```
-UIManager.cpp
+UIManagerTree.cpp
   └─ OnProceduralTreeGenerate()
        └─ SKSE TaskInterface (async)
             └─ TreeBuilder::Build(command, spells, config)
@@ -916,7 +941,14 @@ HeartOfMagic/
 │   │       ├── Main.cpp                     ✅ Entry point, event registration, serialization
 │   │       ├── PrismaUI_API.h               ✅ PrismaUI modder interface
 │   │       ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
-│   │       ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
+│   │       ├── UIManagerCore.cpp             ✅ Singleton, init, panel visibility, DOM bridge
+│   │       ├── UIManagerNotify.cpp          ✅ C++→JS data push (Send*/Notify* methods)
+│   │       ├── UIManagerScanner.cpp         ✅ Scanner tab callbacks
+│   │       ├── UIManagerTree.cpp            ✅ Tree tab callbacks, procedural gen, PRM scoring
+│   │       ├── UIManagerProgression.cpp     ✅ Progression system callbacks
+│   │       ├── UIManagerConfig.cpp          ✅ Unified config load/save/apply
+│   │       ├── UIManagerLLM.cpp             ✅ LLM/OpenRouter integration
+│   │       ├── UIManagerIO.cpp              ✅ Clipboard, presets, auto-test I/O
 │   │       ├── UICallbacks.h                ✅ UI callback declarations (categorized)
 │   │       ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
 │   │       ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling

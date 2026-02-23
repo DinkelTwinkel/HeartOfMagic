@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TreeBuilder.h"
+#include "treebuilder/TreeBuilder.h"
 
 #include <random>
 

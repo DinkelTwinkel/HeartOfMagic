@@ -84,6 +84,7 @@ namespace SpellScanner
     TreeValidationResult ValidateAndFixTree(json& treeData);
 
     // Helper functions
+    bool IsValidMagicSchool(RE::ActorValue school);
     std::string GetSchoolName(RE::ActorValue school);
     std::string GetCastingTypeName(RE::MagicSystem::CastingType type);
     std::string GetDeliveryName(RE::MagicSystem::Delivery delivery);
@@ -91,4 +92,11 @@ namespace SpellScanner
     std::string GetSkillLevelFromPerk(RE::BGSPerk* perk);
     std::string DetermineSpellTier(RE::SpellItem* spell);
     std::string GetPluginName(RE::FormID formId);
+
+    // UTF-8 encoding helpers (used across scanner files)
+    std::string ConvertToUTF8(const std::string& input);
+    std::string SanitizeToUTF8(const std::string& input);
+
+    // Internal scanning (returns spell array JSON, used by ScanAllSpells/ScanSpellTomes)
+    json ScanSpellsToJson(const FieldConfig& fields);
 }

@@ -20,7 +20,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "TreeBuilder.h"
+#include "treebuilder/TreeBuilder.h"
 
 using json = nlohmann::json;
 

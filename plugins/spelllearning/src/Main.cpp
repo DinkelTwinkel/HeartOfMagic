@@ -1,5 +1,5 @@
 #include "Common.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 #include "SpellScanner.h"
 #include "SpellCastHandler.h"
 #include "ProgressionManager.h"

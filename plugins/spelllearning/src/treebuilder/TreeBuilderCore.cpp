@@ -1,4 +1,4 @@
-#include "TreeBuilderInternal.h"
+#include "treebuilder/TreeBuilderInternal.h"
 #include "SimdKernels.h"
 
 #include <hwy/aligned_allocator.h>

@@ -4,7 +4,7 @@
 
 #include <unordered_set>
 
-#include "TreeNLP.h"
+#include "treebuilder/TreeNLP.h"
 
 // =============================================================================
 // TreeBuilder — Spell tree construction engine
