@@ -201,6 +201,10 @@ private:
     //   unsigned wraparound and maintain the count == 0 ↔ set-empty invariant.
     std::atomic<size_t> m_earlySpellCount{0};
 
+    // Atomic mirror of m_settings.enabled for lock-free fast-path check.
+    // Maintained by SetSettings. Mirrors the pattern of m_earlySpellCount.
+    std::atomic<bool> m_settingsEnabled{true};
+
     // Reader-writer mutex for thread safety (shared_mutex allows concurrent reads).
     // Protects all internal data structures above. Does NOT protect RE game object
     // fields — those are only accessed from the game thread (see display file comments).

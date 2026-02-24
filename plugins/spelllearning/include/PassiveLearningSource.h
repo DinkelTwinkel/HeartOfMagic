@@ -75,7 +75,6 @@ private:
 
     // Game time tracking
     float m_lastGameTime = 0.0f;
-    std::atomic<bool> m_initialized{false};
 
     static PassiveLearningSource* s_singleton;
 };

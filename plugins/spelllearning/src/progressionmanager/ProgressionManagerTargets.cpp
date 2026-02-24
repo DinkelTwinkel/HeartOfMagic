@@ -432,6 +432,11 @@ bool ProgressionManager::UnlockSpell(RE::FormID formId)
     m_spellProgress[formId].unlocked = true;
     m_dirty = true;
 
+    // Remove from early-learned tracking before clearing target, so ClearLearningTarget
+    // doesn't call RemoveEarlySpellFromPlayer which would undo the AddSpell above.
+    auto* effectivenessHook = SpellEffectivenessHook::GetSingleton();
+    effectivenessHook->MarkMastered(formId);
+
     logger::info("ProgressionManager: Unlocked spell {} ({:08X})", spell->GetName(), formId);
 
     // Clear learning target for this school (spell is learned)

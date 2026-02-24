@@ -110,8 +110,11 @@ namespace SpellScanner
                     case 0x96: case 0x97: result += '-'; break;
                     case 0x85: result += "..."; break;
                     case 0x99: result += "(TM)"; break;
-                    default: break;
+                    default: result += "\xEF\xBF\xBD"; break;  // U+FFFD replacement character
                 }
+            } else {
+                // Unhandled non-ASCII byte (0xA0-0xFF that failed UTF-8 validation)
+                result += "\xEF\xBF\xBD";  // U+FFFD replacement character
             }
             ++i;
         }

@@ -77,6 +77,7 @@ float ProgressionManager::AddSourcedXP(RE::FormID targetId, float amount, const 
             maxFromSource = progress.requiredXP * (m_xpSettings.capDirect / 100.0f);
             currentFromSource = progress.xpFromDirect;
         } else {  // "self" - no cap
+            // Self-casting uses the direct multiplier — casting the target spell IS direct interaction
             adjustedAmount *= m_xpSettings.multiplierDirect;
             maxFromSource = progress.requiredXP;
             currentFromSource = progress.xpFromSelf;

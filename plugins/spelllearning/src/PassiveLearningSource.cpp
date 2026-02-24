@@ -35,6 +35,7 @@ void PassiveLearningSource::Initialize() {
 }
 
 void PassiveLearningSource::Shutdown() {
+    BaseXPSource::Shutdown();
     m_running = false;
     if (m_pollThread.joinable()) {
         m_pollThread.join();

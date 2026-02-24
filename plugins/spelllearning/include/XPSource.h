@@ -2,6 +2,7 @@
 
 #include "Common.h"
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <memory>
 #include <vector>
@@ -208,7 +209,7 @@ protected:
     std::string m_displayName;
     std::string m_description;
     bool m_enabled;
-    bool m_initialized = false;
+    std::atomic<bool> m_initialized{false};
 };
 
 } // namespace SpellLearning

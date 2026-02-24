@@ -23,21 +23,25 @@ void UIManager::OnCopyToClipboard(const char* argument)
 
         bool success = false;
 
-        // Use Windows clipboard API
+        // Convert UTF-8 to UTF-16 for Windows clipboard
+        int wideLen = MultiByteToWideChar(CP_UTF8, 0, argStr.c_str(), -1, nullptr, 0);
+        if (wideLen <= 0) {
+            logger::error("UIManager: MultiByteToWideChar failed to compute length");
+            instance->NotifyCopyComplete(false);
+            return;
+        }
+
         if (OpenClipboard(nullptr)) {
             EmptyClipboard();
 
-            // Calculate size needed (including null terminator)
-            size_t len = argStr.size() + 1;
-            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, len);
-
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, static_cast<size_t>(wideLen) * sizeof(WCHAR));
             if (hMem) {
-                char* pMem = static_cast<char*>(GlobalLock(hMem));
+                WCHAR* pMem = static_cast<WCHAR*>(GlobalLock(hMem));
                 if (pMem) {
-                    memcpy(pMem, argStr.c_str(), len);
+                    MultiByteToWideChar(CP_UTF8, 0, argStr.c_str(), -1, pMem, wideLen);
                     GlobalUnlock(hMem);
 
-                    if (SetClipboardData(CF_TEXT, hMem)) {
+                    if (SetClipboardData(CF_UNICODETEXT, hMem)) {
                         success = true;
                         logger::info("UIManager: Successfully copied to clipboard");
                     } else {
@@ -71,14 +75,19 @@ void UIManager::OnGetClipboard([[maybe_unused]] const char* argument)
 
         std::string content;
 
-        // Use Windows clipboard API
+        // Use Windows clipboard API with UTF-16
         if (OpenClipboard(nullptr)) {
-            HANDLE hData = GetClipboardData(CF_TEXT);
+            HANDLE hData = GetClipboardData(CF_UNICODETEXT);
 
             if (hData) {
-                char* pszText = static_cast<char*>(GlobalLock(hData));
-                if (pszText) {
-                    content = pszText;
+                WCHAR* pWideText = static_cast<WCHAR*>(GlobalLock(hData));
+                if (pWideText) {
+                    // Convert UTF-16 back to UTF-8
+                    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, pWideText, -1, nullptr, 0, nullptr, nullptr);
+                    if (utf8Len > 0) {
+                        content.resize(static_cast<size_t>(utf8Len) - 1);  // -1 to exclude null terminator
+                        WideCharToMultiByte(CP_UTF8, 0, pWideText, -1, content.data(), utf8Len, nullptr, nullptr);
+                    }
                     GlobalUnlock(hData);
                     logger::info("UIManager: Read {} bytes from clipboard", content.size());
                 } else {
@@ -222,6 +231,7 @@ void UIManager::OnLoadPresets(const char* argument)
 
     AddTaskToGameThread("LoadPresets", [argStr]() {
         auto* instance = GetSingleton();
+        if (!instance || !instance->m_prismaUI) return;
 
         try {
             json args = json::parse(argStr);

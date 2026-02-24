@@ -23,12 +23,14 @@ public:
     {}
     
     void Initialize() override {
+        BaseXPSource::Initialize();
         // SpellCastHandler is registered separately in Main.cpp
         // This source just tracks that it's available
         logger::info("SpellCastXPSource: Initialized");
     }
-    
+
     void Shutdown() override {
+        BaseXPSource::Shutdown();
         logger::info("SpellCastXPSource: Shutdown");
     }
     
@@ -60,10 +62,12 @@ public:
             logger::info("ISLTomeXPSource: ISL-DESTified not detected, source unavailable");
             return;
         }
+        BaseXPSource::Initialize();
         logger::info("ISLTomeXPSource: Initialized (ISL-DESTified detected)");
     }
-    
+
     void Shutdown() override {
+        BaseXPSource::Shutdown();
         logger::info("ISLTomeXPSource: Shutdown");
     }
     

@@ -199,7 +199,8 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
 
         std::string id(editorId);
         std::string lower = id;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         // Check for tier keywords in perk editor ID
         // Vanilla pattern: {School}{Tier}{Number} e.g., DestructionMaster100

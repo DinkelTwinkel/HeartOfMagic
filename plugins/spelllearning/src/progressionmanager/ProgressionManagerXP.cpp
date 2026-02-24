@@ -36,7 +36,8 @@ void ProgressionManager::SetXPSettings(const XPSettings& settings)
 float ProgressionManager::GetXPForTier(const std::string& tier) const
 {
     std::string tierLower = tier;
-    std::transform(tierLower.begin(), tierLower.end(), tierLower.begin(), ::tolower);
+    std::transform(tierLower.begin(), tierLower.end(), tierLower.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (tierLower == "novice") return m_xpSettings.xpNovice;
     if (tierLower == "apprentice") return m_xpSettings.xpApprentice;
@@ -252,7 +253,13 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
     float newXP = (std::min)(oldXP + amount, progress.requiredXP);  // Parentheses to avoid Windows min macro
 
     // Update progress percentage
-    progress.progressPercent = progress.requiredXP > 0 ? (newXP / progress.requiredXP) : 1.0f;
+    // requiredXP == 0 means XP requirements not initialized — treat as no progress, not instant mastery
+    if (progress.requiredXP > 0) {
+        progress.progressPercent = newXP / progress.requiredXP;
+    } else {
+        progress.progressPercent = 0.0f;
+        logger::warn("ProgressionManager: AddXP for {:08X} but requiredXP is 0 — XP update ignored", targetSpellId);
+    }
     progress.progressPercent = (std::min)(progress.progressPercent, 1.0f);
     m_dirty = true;
 
@@ -408,7 +415,13 @@ void ProgressionManager::AddXPNoGrant(const std::string& formIdStr, float amount
     float oldXP = progress.GetCurrentXP();
     float newXP = (std::min)(oldXP + amount, progress.requiredXP);
 
-    progress.progressPercent = progress.requiredXP > 0 ? (newXP / progress.requiredXP) : 1.0f;
+    // requiredXP == 0 means XP requirements not initialized — treat as no progress, not instant mastery
+    if (progress.requiredXP > 0) {
+        progress.progressPercent = newXP / progress.requiredXP;
+    } else {
+        progress.progressPercent = 0.0f;
+        logger::warn("ProgressionManager: [ISL-NoGrant] AddXP for {:08X} but requiredXP is 0 — XP update ignored", formId);
+    }
     progress.progressPercent = (std::min)(progress.progressPercent, 1.0f);
     m_dirty = true;
 

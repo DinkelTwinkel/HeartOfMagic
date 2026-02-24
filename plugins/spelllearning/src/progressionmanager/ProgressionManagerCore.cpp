@@ -16,7 +16,7 @@ std::filesystem::path ProgressionManager::GetProgressFilePath() const
     // Sanitize save name — strip path separators and special characters
     std::string safeName = m_currentSaveName;
     for (auto& c : safeName) {
-        if (c == '/' || c == '\\' || c == ':' || c == '.' || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') {
+        if (c == '/' || c == '\\' || c == ':' || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') {
             c = '_';
         }
     }
@@ -49,5 +49,7 @@ void ProgressionManager::ClearAllProgress()
     logger::info("ProgressionManager: Clearing all progress data");
     m_learningTargets.clear();
     m_spellProgress.clear();
+    m_targetPrerequisites.clear();
+    ClearAllTreePrerequisites();  // clears m_prereqRequirements
     m_dirty = false;
 }

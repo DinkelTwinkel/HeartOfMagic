@@ -469,7 +469,7 @@ void SpellEffectivenessHook::RefreshAllDescriptions()
 
 float SpellEffectivenessHook::GetScaledMagnitude(RE::SpellItem* spell, float originalMagnitude) const
 {
-    if (!spell || !m_settings.enabled) {
+    if (!spell || !m_settingsEnabled.load(std::memory_order_acquire)) {
         return originalMagnitude;
     }
 

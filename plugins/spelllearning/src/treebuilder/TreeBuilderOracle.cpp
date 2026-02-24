@@ -171,7 +171,8 @@ static std::vector<json> MergeSimilarChains(const std::vector<json>& chains)
         std::istringstream iss(s);
         std::string word;
         while (iss >> word) {
-            std::transform(word.begin(), word.end(), word.begin(), ::tolower);
+            std::transform(word.begin(), word.end(), word.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             words.insert(word);
         }
         return words;

@@ -162,8 +162,8 @@ void SpellEffectivenessHook::ApplyEffectivenessScalingFast(RE::ActiveEffect* a_e
         return;
     }
 
-    // PERFORMANCE: Check if feature is disabled first (no locks needed)
-    if (!m_settings.enabled) {
+    // PERFORMANCE: Check if feature is disabled first (lock-free atomic check)
+    if (!m_settingsEnabled.load(std::memory_order_acquire)) {
         return;
     }
 
@@ -199,7 +199,12 @@ void SpellEffectivenessHook::ApplyEffectivenessScalingFast(RE::ActiveEffect* a_e
 
         if (isBinaryEffect) {
             float progressPercent = ProgressionManager::GetSingleton()->GetProgress(spellId).progressPercent * 100.0f;
-            if (progressPercent < m_settings.binaryEffectThreshold) {
+            float threshold;
+            {
+                std::shared_lock<std::shared_mutex> lock(m_mutex);
+                threshold = m_settings.binaryEffectThreshold;
+            }
+            if (progressPercent < threshold) {
                 a_effect->magnitude = 0.0f;
                 logger::trace("SpellEffectivenessHook: Binary effect {:08X} blocked", spellId);
                 return;
@@ -241,6 +246,7 @@ void SpellEffectivenessHook::SetSettings(const EarlyLearningSettings& settings)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_settings = settings;
+    m_settingsEnabled.store(settings.enabled, std::memory_order_release);
     logger::info("SpellEffectivenessHook: Settings updated - enabled: {}, unlock: {}%, min: {}%, max: {}%",
         settings.enabled, settings.unlockThreshold, settings.minEffectiveness, settings.maxEffectiveness);
 }
@@ -318,8 +324,8 @@ std::unordered_set<RE::FormID> SpellEffectivenessHook::GetEarlyLearnedSpells() c
 
 bool SpellEffectivenessHook::NeedsNerfing(RE::FormID spellFormId) const
 {
-    // PERFORMANCE: Fast checks first (no locks)
-    if (!m_settings.enabled) {
+    // PERFORMANCE: Fast checks first (lock-free atomics)
+    if (!m_settingsEnabled.load(std::memory_order_acquire)) {
         return false;
     }
     if (m_earlySpellCount.load(std::memory_order_acquire) == 0) {

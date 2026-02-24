@@ -175,8 +175,8 @@ void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
         logger::info("UIManager: No config file found, using defaults");
     }
 
-    // Migrate legacy settings if they exist
-    if (std::filesystem::exists(legacySettingsPath)) {
+    // Migrate legacy settings only if no unified config exists yet
+    if (!configFileExists && std::filesystem::exists(legacySettingsPath)) {
         try {
             std::ifstream file(legacySettingsPath);
             json legacySettings = json::parse(file);
@@ -185,8 +185,8 @@ void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
         } catch (...) {}
     }
 
-    // Migrate legacy LLM config
-    if (std::filesystem::exists(legacyLLMPath)) {
+    // Migrate legacy LLM config only if no unified config exists yet
+    if (!configFileExists && std::filesystem::exists(legacyLLMPath)) {
         try {
             std::ifstream file(legacyLLMPath);
             json legacyLLM = json::parse(file);
@@ -376,13 +376,16 @@ void UIManager::OnSaveUnifiedConfig(const char* argument)
 
     // Debounce: skip if we saved very recently (prevents double-save on panel close)
     auto* instance = GetSingleton();
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - instance->m_lastConfigSaveTime).count();
-    if (elapsed < kConfigSaveDebounceMs) {
-        logger::info("UIManager: SaveUnifiedConfig debounced ({}ms since last save)", elapsed);
-        return;
+    {
+        std::scoped_lock lock(instance->m_configSaveMutex);
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - instance->m_lastConfigSaveTime).count();
+        if (elapsed < kConfigSaveDebounceMs) {
+            logger::info("UIManager: SaveUnifiedConfig debounced ({}ms since last save)", elapsed);
+            return;
+        }
+        instance->m_lastConfigSaveTime = now;
     }
-    instance->m_lastConfigSaveTime = now;
 
     logger::info("UIManager: SaveUnifiedConfig");
 
