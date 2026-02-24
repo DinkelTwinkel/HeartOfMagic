@@ -72,8 +72,8 @@ private:
     SpellTomeHook& operator=(const SpellTomeHook&) = delete;
 
     // Called when player reads a spell tome
-    // Returns true if we handled it (don't teach, don't consume)
-    // Returns false to let vanilla proceed
+    // Handles tome reading: grants XP, sets target, keeps book
+    // Falls through to vanilla if spell not in our system
     static void OnSpellTomeRead(RE::TESObjectBOOK* a_book, RE::SpellItem* a_spell);
 
     // Check prereqs + skill level — returns true if player can learn, false if blocked

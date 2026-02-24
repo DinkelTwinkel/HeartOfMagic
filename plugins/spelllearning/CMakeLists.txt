@@ -32,44 +32,43 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     MINIMUM_SKSE_VERSION "2.0.12"
     VERSION ${PROJECT_VERSION}
     SOURCES
-        src/Main.cpp
-        src/uimanager/UIManagerCore.cpp
-        src/uimanager/UIManagerNotify.cpp
-        src/uimanager/UIManagerScanner.cpp
-        src/uimanager/UIManagerTree.cpp
-        src/uimanager/UIManagerProgression.cpp
-        src/uimanager/UIManagerConfig.cpp
-        src/uimanager/UIManagerLLM.cpp
-        src/uimanager/UIManagerIO.cpp
-        src/spellscanner/SpellScannerEncoding.cpp
-        src/spellscanner/SpellScannerHelpers.cpp
-        src/spellscanner/SpellScannerFormId.cpp
-        src/spellscanner/SpellScannerScan.cpp
-        src/OpenRouterAPI.cpp
-        src/SpellCastHandler.cpp
-        src/progressionmanager/ProgressionManagerCore.cpp
-        src/progressionmanager/ProgressionManagerTargets.cpp
-        src/progressionmanager/ProgressionManagerXP.cpp
-        src/progressionmanager/ProgressionManagerAPI.cpp
-        src/progressionmanager/ProgressionManagerSerialization.cpp
-        src/ISLIntegration.cpp
-        src/SpellCastXPSource.cpp
-        src/PassiveLearningSource.cpp
-        src/spelleffectiveness/SpellEffectivenessHookCore.cpp
-        src/spelleffectiveness/SpellEffectivenessHookDisplay.cpp
-        src/spelleffectiveness/SpellEffectivenessHookGrant.cpp
-        src/spelleffectiveness/SpellEffectivenessHookLegacy.cpp
-        src/SpellTomeHook.cpp
-        src/PapyrusAPI.cpp
-        src/treebuilder/TreeNLP.cpp
-        src/treebuilder/TreeBuilderCore.cpp
-        src/treebuilder/TreeBuilderThemes.cpp
-        src/treebuilder/TreeBuilderClassic.cpp
-        src/treebuilder/TreeBuilderTree.cpp
-        src/treebuilder/TreeBuilderThematic.cpp
-        src/treebuilder/TreeBuilderGraph.cpp
-        src/treebuilder/TreeBuilderOracle.cpp
-        src/treebuilder/SimdKernels.cpp
+    src/Main.cpp
+    src/uimanager/UIManagerCore.cpp
+    src/uimanager/UIManagerNotify.cpp
+    src/uimanager/UIManagerScanner.cpp
+    src/uimanager/UIManagerTree.cpp
+    src/uimanager/UIManagerProgression.cpp
+    src/uimanager/UIManagerConfig.cpp
+    src/uimanager/UIManagerLLM.cpp
+    src/uimanager/UIManagerIO.cpp
+    src/spellscanner/SpellScannerEncoding.cpp
+    src/spellscanner/SpellScannerHelpers.cpp
+    src/spellscanner/SpellScannerFormId.cpp
+    src/spellscanner/SpellScannerScan.cpp
+    src/OpenRouterAPI.cpp
+    src/SpellCastHandler.cpp
+    src/progressionmanager/ProgressionManagerCore.cpp
+    src/progressionmanager/ProgressionManagerTargets.cpp
+    src/progressionmanager/ProgressionManagerXP.cpp
+    src/progressionmanager/ProgressionManagerAPI.cpp
+    src/progressionmanager/ProgressionManagerSerialization.cpp
+    src/ISLIntegration.cpp
+    src/SpellCastXPSource.cpp
+    src/PassiveLearningSource.cpp
+    src/spelleffectiveness/SpellEffectivenessHookCore.cpp
+    src/spelleffectiveness/SpellEffectivenessHookDisplay.cpp
+    src/spelleffectiveness/SpellEffectivenessHookGrant.cpp
+    src/SpellTomeHook.cpp
+    src/PapyrusAPI.cpp
+    src/treebuilder/TreeNLP.cpp
+    src/treebuilder/TreeBuilderCore.cpp
+    src/treebuilder/TreeBuilderThemes.cpp
+    src/treebuilder/TreeBuilderClassic.cpp
+    src/treebuilder/TreeBuilderTree.cpp
+    src/treebuilder/TreeBuilderThematic.cpp
+    src/treebuilder/TreeBuilderGraph.cpp
+    src/treebuilder/TreeBuilderOracle.cpp
+    src/treebuilder/SimdKernels.cpp
 )
 
 # Include directories
@@ -80,7 +79,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Precompiled header
-target_precompile_headers(${PROJECT_NAME} PRIVATE 
+target_precompile_headers(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../PCH.h
 )
 

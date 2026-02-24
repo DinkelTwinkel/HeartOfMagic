@@ -54,6 +54,7 @@ static TreeBuilder::TreeNode* FindBestClassicParent(
     if (candidates.empty()) {
         for (auto& [d, parents] : available) {
             for (auto* p : parents) {
+                // Fallback allows +2 overflow to avoid orphan nodes in edge cases
                 if (static_cast<int>(p->children.size()) < maxChildren + 2) {
                     candidates.emplace_back(p, std::abs(tierIdx - d) + 5);
                 }

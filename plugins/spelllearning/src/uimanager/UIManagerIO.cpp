@@ -150,7 +150,9 @@ void UIManager::OnSavePreset(const char* argument)
             }
 
             std::string safeName = SanitizePresetFilename(name);
-            auto dir = GetPresetsBasePath() / type;
+            // Sanitize type to prevent path traversal
+            std::string safeType = SanitizePresetFilename(type);
+            auto dir = GetPresetsBasePath() / safeType;
             std::filesystem::create_directories(dir);
 
             auto filePath = dir / (safeName + ".json");
@@ -190,7 +192,9 @@ void UIManager::OnDeletePreset(const char* argument)
             }
 
             std::string safeName = SanitizePresetFilename(name);
-            auto filePath = GetPresetsBasePath() / type / (safeName + ".json");
+            // Sanitize type to prevent path traversal
+            std::string safeType = SanitizePresetFilename(type);
+            auto filePath = GetPresetsBasePath() / safeType / (safeName + ".json");
 
             if (std::filesystem::exists(filePath)) {
                 std::filesystem::remove(filePath);
@@ -228,7 +232,9 @@ void UIManager::OnLoadPresets(const char* argument)
                 return;
             }
 
-            auto dir = GetPresetsBasePath() / type;
+            // Sanitize type to prevent path traversal
+            std::string safeType = SanitizePresetFilename(type);
+            auto dir = GetPresetsBasePath() / safeType;
             json result;
             result["type"] = type;
             result["presets"] = json::array();

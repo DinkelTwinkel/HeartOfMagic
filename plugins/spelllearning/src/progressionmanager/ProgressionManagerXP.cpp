@@ -59,7 +59,7 @@ void ProgressionManager::SetSpellXP(RE::FormID formId, float xp)
     if (progress.requiredXP > 0) {
         progress.progressPercent = xp / progress.requiredXP;
     } else {
-        progress.progressPercent = 0.0f;
+        progress.progressPercent = 0.0f;  // Don't mark as mastered when requiredXP is not set
     }
 
     m_dirty = true;
@@ -504,5 +504,9 @@ ProgressionManager::SpellProgress ProgressionManager::GetProgress(RE::FormID for
 
 void ProgressionManager::SetRequiredXP(RE::FormID formId, float required)
 {
+    if (required <= 0.0f) {
+        logger::warn("ProgressionManager: SetRequiredXP called with non-positive value {:.1f} for {:08X}, clamping to 1.0", required, formId);
+        required = 1.0f;
+    }
     m_spellProgress[formId].requiredXP = required;
 }

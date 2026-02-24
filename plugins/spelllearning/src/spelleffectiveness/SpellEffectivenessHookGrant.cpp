@@ -74,7 +74,7 @@ void SpellEffectivenessHook::RegisterISLPendingSpell(RE::SpellItem* spell)
                 spell->GetName(), formId);
             return;
         }
-        m_earlyLearnedSpells.insert(formId);
+        AddToEarlySet(formId);
     }
 
     logger::info("SpellEffectivenessHook: Registered ISL pending spell {} ({:08X}) for weakness tracking",
@@ -227,11 +227,17 @@ void SpellEffectivenessHook::OnGameSaved(SKSE::SerializationInterface* a_intfc)
 
     // Write count
     uint32_t count = static_cast<uint32_t>(m_earlyLearnedSpells.size());
-    a_intfc->WriteRecordData(&count, sizeof(count));
+    if (!a_intfc->WriteRecordData(&count, sizeof(count))) {
+        logger::error("SpellEffectivenessHook: Failed to write early-learned spell count");
+        return;
+    }
 
     // Write each formId
     for (RE::FormID formId : m_earlyLearnedSpells) {
-        a_intfc->WriteRecordData(&formId, sizeof(formId));
+        if (!a_intfc->WriteRecordData(&formId, sizeof(formId))) {
+            logger::error("SpellEffectivenessHook: Failed to write early-learned spell {:08X}", formId);
+            return;
+        }
     }
 
     logger::info("SpellEffectivenessHook: Saved {} early-learned spells", count);
@@ -255,6 +261,7 @@ void SpellEffectivenessHook::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
 
                 // Read formIds
                 m_earlyLearnedSpells.clear();
+                m_earlySpellCount.store(0, std::memory_order_release);
                 m_displayCache.clear();  // Clear display cache too
 
                 for (uint32_t i = 0; i < count; ++i) {
@@ -274,6 +281,7 @@ void SpellEffectivenessHook::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
                 }
 
                 logger::info("SpellEffectivenessHook: Loaded {} early-learned spells", m_earlyLearnedSpells.size());
+                m_earlySpellCount.store(m_earlyLearnedSpells.size(), std::memory_order_release);
             }
         }
     }
@@ -289,6 +297,7 @@ void SpellEffectivenessHook::OnRevert([[maybe_unused]] SKSE::SerializationInterf
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_earlyLearnedSpells.clear();
+    m_earlySpellCount.store(0, std::memory_order_release);
     m_displayCache.clear();
     m_originalSpellNames.clear();
     m_originalEffectDescriptions.clear();

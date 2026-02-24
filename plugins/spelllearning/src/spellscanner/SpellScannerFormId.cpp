@@ -128,7 +128,8 @@ namespace SpellScanner
                 auto& node = nodes[i];
                 result.totalNodes++;
 
-                if (!node.contains("formId")) {
+                if (!node.contains("formId") || !node["formId"].is_string()) {
+                    logger::warn("SpellScanner: Node missing string formId, skipping");
                     nodesToRemove.push_back(i);
                     result.invalidNodes++;
                     continue;
@@ -137,7 +138,7 @@ namespace SpellScanner
                 std::string formIdStr = node["formId"].get<std::string>();
                 bool isValid = IsFormIdValid(formIdStr);
 
-                if (!isValid && node.contains("persistentId")) {
+                if (!isValid && node.contains("persistentId") && node["persistentId"].is_string()) {
                     // Try to resolve from persistent ID
                     std::string persistentId = node["persistentId"].get<std::string>();
                     RE::FormID resolvedId = ResolvePersistentFormId(persistentId);
@@ -180,7 +181,7 @@ namespace SpellScanner
                     children.erase(
                         std::remove_if(children.begin(), children.end(),
                             [&invalidFormIdsSet](const json& child) {
-                                return invalidFormIdsSet.count(child.get<std::string>()) > 0;
+                                return child.is_string() && invalidFormIdsSet.count(child.get<std::string>()) > 0;
                             }),
                         children.end());
                 }
@@ -189,14 +190,14 @@ namespace SpellScanner
                     prereqs.erase(
                         std::remove_if(prereqs.begin(), prereqs.end(),
                             [&invalidFormIdsSet](const json& prereq) {
-                                return invalidFormIdsSet.count(prereq.get<std::string>()) > 0;
+                                return prereq.is_string() && invalidFormIdsSet.count(prereq.get<std::string>()) > 0;
                             }),
                         prereqs.end());
                 }
             }
 
             // Update root if it was invalid
-            if (schoolData.contains("root")) {
+            if (schoolData.contains("root") && schoolData["root"].is_string()) {
                 std::string rootId = schoolData["root"].get<std::string>();
                 if (invalidFormIdsSet.count(rootId) > 0) {
                     // Find first remaining node as new root

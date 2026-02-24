@@ -2,6 +2,27 @@
 #include <sstream>
 
 // =============================================================================
+// GAME THREAD INVARIANT
+// =============================================================================
+// All functions in this file that read or write RE game object fields
+// (RE::SpellItem::fullName, RE::EffectSetting::magicItemDescription) MUST run
+// on the Skyrim game thread. These fields are NOT protected by m_mutex.
+//
+// m_mutex protects only our internal data structures (m_displayCache,
+// m_originalSpellNames, m_originalEffectDescriptions, m_effectSpellTracking).
+//
+// Game-thread execution is guaranteed by the call chain:
+//   - RefreshAllSpellDisplays()      ← SKSE serialization callback (game thread)
+//   - CheckAndUpdatePowerStep()      ← ProgressionManager update (game thread)
+//   - GrantEarlySpell()              ← SpellCastHandler / SpellTomeHook (game thread)
+//   - MarkMastered()                 ← ProgressionManager (game thread)
+//   - UIManager callbacks            ← marshalled via AddTaskToGameThread()
+//
+// DO NOT call these functions from background threads. Use AddTaskToGameThread()
+// to marshal calls if needed (see ThreadUtils.h).
+// =============================================================================
+
+// =============================================================================
 // DISPLAY CACHE MANAGEMENT
 // =============================================================================
 
@@ -315,6 +336,7 @@ void SpellEffectivenessHook::ApplyModifiedDescriptions(RE::FormID spellFormId)
                 spellSet.insert(spellFormId);
 
                 // Store original description if not already stored
+                // (game-thread read of baseEffect->magicItemDescription — see invariant at top of file)
                 if (m_originalEffectDescriptions.find(effectId) == m_originalEffectDescriptions.end()) {
                     if (baseEffect->magicItemDescription.data()) {
                         m_originalEffectDescriptions[effectId] = baseEffect->magicItemDescription.data();
@@ -363,7 +385,7 @@ void SpellEffectivenessHook::ApplyModifiedDescriptions(RE::FormID spellFormId)
         // Prepend power indicator
         modifiedDesc = "[" + std::to_string(powerPercent) + "% Power] " + modifiedDesc;
 
-        // Apply the modified description
+        // Apply the modified description (game-thread only — not guarded by m_mutex)
         baseEffect->magicItemDescription = modifiedDesc;
 
         logger::info("SpellEffectivenessHook: Modified description for effect {:08X}: '{}'",
@@ -415,6 +437,7 @@ void SpellEffectivenessHook::RestoreOriginalDescriptions(RE::FormID spellFormId)
         }
 
         if (shouldRestore && !originalDesc.empty()) {
+            // Game-thread only — not guarded by m_mutex
             baseEffect->magicItemDescription = originalDesc;
             logger::info("SpellEffectivenessHook: Restored original description for effect {:08X}: '{}'",
                 effectId, originalDesc);
@@ -456,7 +479,7 @@ float SpellEffectivenessHook::GetScaledMagnitude(RE::SpellItem* spell, float ori
     return originalMagnitude * effectiveness;
 }
 
-std::string SpellEffectivenessHook::GetScaledSpellDescription(RE::SpellItem* spell) const
+std::string SpellEffectivenessHook::GetScaledSpellDescription(RE::SpellItem* spell)
 {
     if (!spell) {
         return "";
@@ -495,8 +518,30 @@ std::string SpellEffectivenessHook::GetScaledSpellDescription(RE::SpellItem* spe
 
         // Get the effect's description template
         std::string effectDesc;
-        if (baseEffect->magicItemDescription.data()) {
-            effectDesc = baseEffect->magicItemDescription.data();
+        // Prefer original stored description over potentially-modified game data
+        RE::FormID effectId = baseEffect->GetFormID();
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            auto origIt = m_originalEffectDescriptions.find(effectId);
+            if (origIt != m_originalEffectDescriptions.end()) {
+                effectDesc = origIt->second;
+            }
+        }
+        if (effectDesc.empty()) {
+            // Store original description under exclusive lock on first encounter.
+            // m_mutex protects m_originalEffectDescriptions (our internal cache).
+            // The read of baseEffect->magicItemDescription.data() is safe because
+            // this function runs on the game thread (see invariant at top of file).
+            if (baseEffect->magicItemDescription.data()) {
+                std::unique_lock<std::shared_mutex> lock(m_mutex);
+                auto origIt = m_originalEffectDescriptions.find(effectId);
+                if (origIt != m_originalEffectDescriptions.end()) {
+                    effectDesc = origIt->second;
+                } else {
+                    effectDesc = baseEffect->magicItemDescription.data();
+                    m_originalEffectDescriptions[effectId] = effectDesc;
+                }
+            }
         }
 
         if (effectDesc.empty()) {

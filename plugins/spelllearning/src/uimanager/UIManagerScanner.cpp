@@ -3,6 +3,8 @@
 #include "SpellScanner.h"
 #include "ThreadUtils.h"
 
+using json = nlohmann::json;
+
 // =============================================================================
 // SCANNER TAB CALLBACKS
 // =============================================================================
@@ -66,12 +68,12 @@ void UIManager::OnSaveOutput(const char* argument)
 
         // Create output directory
         std::filesystem::path outputDir = "Data/SKSE/Plugins/SpellLearning";
-        std::filesystem::create_directories(outputDir);
 
         // Write to file
         std::filesystem::path outputPath = outputDir / "spell_scan_output.json";
 
         try {
+            std::filesystem::create_directories(outputDir);
             std::ofstream file(outputPath);
             if (file.is_open()) {
                 file << argStr;
@@ -116,7 +118,15 @@ void UIManager::OnSaveOutputBySchool(const char* argument)
 
             // Save each school to its own file
             for (auto& [school, content] : schoolOutputs.items()) {
-                std::string filename = school + "_spells.json";
+                // Sanitize school name to prevent path traversal
+                std::string safeSchool = school;
+                for (auto& c : safeSchool) {
+                    if (c == '/' || c == '\\' || c == ':' || c == '.' || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') {
+                        c = '_';
+                    }
+                }
+                if (safeSchool.empty()) safeSchool = "unknown_school";
+                std::string filename = safeSchool + "_spells.json";
                 std::filesystem::path outputPath = outputDir / filename;
 
                 std::ofstream file(outputPath);

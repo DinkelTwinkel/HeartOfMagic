@@ -169,7 +169,7 @@ void SpellEffectivenessHook::ApplyEffectivenessScalingFast(RE::ActiveEffect* a_e
 
     // PERFORMANCE: Fast check if we have ANY early-learned spells at all
     // This avoids mutex lock for the common case of no early spells
-    if (m_earlyLearnedSpells.empty()) {
+    if (m_earlySpellCount.load(std::memory_order_acquire) == 0) {
         return;
     }
 
@@ -245,22 +245,59 @@ void SpellEffectivenessHook::SetSettings(const EarlyLearningSettings& settings)
         settings.enabled, settings.unlockThreshold, settings.minEffectiveness, settings.maxEffectiveness);
 }
 
+SpellEffectivenessHook::EarlyLearningSettings SpellEffectivenessHook::GetSettings() const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_settings;
+}
+
+std::vector<SpellEffectivenessHook::PowerStep> SpellEffectivenessHook::GetPowerSteps() const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_powerSteps;
+}
+
+int SpellEffectivenessHook::GetNumPowerSteps() const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return static_cast<int>(m_powerSteps.size());
+}
+
 // =============================================================================
 // EARLY-LEARNED SPELL TRACKING
 // =============================================================================
 
+// =============================================================================
+// CENTRALIZED EARLY-SET MUTATION HELPERS
+// =============================================================================
+// Caller MUST hold unique_lock on m_mutex.
+
+void SpellEffectivenessHook::AddToEarlySet(RE::FormID formId)
+{
+    auto [it, inserted] = m_earlyLearnedSpells.insert(formId);
+    if (inserted) {
+        m_earlySpellCount.fetch_add(1, std::memory_order_release);
+    }
+}
+
+void SpellEffectivenessHook::RemoveFromEarlySet(RE::FormID formId)
+{
+    size_t erased = m_earlyLearnedSpells.erase(formId);
+    if (erased > 0) {
+        m_earlySpellCount.fetch_sub(1, std::memory_order_release);
+    }
+}
+
 void SpellEffectivenessHook::AddEarlyLearnedSpell(RE::FormID formId)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_earlyLearnedSpells.insert(formId);
-    logger::info("SpellEffectivenessHook: Added spell {:08X} to early-learned set", formId);
+    AddToEarlySet(formId);
 }
 
 void SpellEffectivenessHook::RemoveEarlyLearnedSpell(RE::FormID formId)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_earlyLearnedSpells.erase(formId);
-    logger::info("SpellEffectivenessHook: Removed spell {:08X} from early-learned set (mastered)", formId);
+    RemoveFromEarlySet(formId);
 }
 
 bool SpellEffectivenessHook::IsEarlyLearnedSpell(RE::FormID formId) const
@@ -285,7 +322,7 @@ bool SpellEffectivenessHook::NeedsNerfing(RE::FormID spellFormId) const
     if (!m_settings.enabled) {
         return false;
     }
-    if (m_earlyLearnedSpells.empty()) {
+    if (m_earlySpellCount.load(std::memory_order_acquire) == 0) {
         return false;
     }
     return IsEarlyLearnedSpell(spellFormId);

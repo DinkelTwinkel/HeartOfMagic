@@ -350,9 +350,9 @@ void UIManager::OnConsoleMessage(PrismaView view, PRISMA_UI_API::ConsoleMessageL
         case PRISMA_UI_API::ConsoleMessageLevel::Debug:
             logger::debug("[JS] View {}: {}", view, message);
             break;
-        //default:
-        //    logger::info("[JS] View {}: {}", view, message);
-        //    break;
+        default:
+            logger::info("[JS] View {}: {}", view, message);
+            break;
     }
 }
 
@@ -360,7 +360,7 @@ void UIManager::OnConsoleMessage(PrismaView view, PRISMA_UI_API::ConsoleMessageL
 // DEST DETECTION NOTIFICATION
 // =============================================================================
 
-void UIManager::NotifyISLDetectionStatus()
+void UIManager::NotifyDESTDetectionStatus()
 {
     if (!m_prismaUI || !m_prismaUI->IsValid(m_view)) {
         logger::warn("UIManager: Cannot notify DEST status - PrismaUI not valid");

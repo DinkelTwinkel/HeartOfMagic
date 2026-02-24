@@ -13,7 +13,14 @@ ProgressionManager* ProgressionManager::GetSingleton()
 
 std::filesystem::path ProgressionManager::GetProgressFilePath() const
 {
-    std::string filename = "progress_" + m_currentSaveName + ".json";
+    // Sanitize save name — strip path separators and special characters
+    std::string safeName = m_currentSaveName;
+    for (auto& c : safeName) {
+        if (c == '/' || c == '\\' || c == ':' || c == '.' || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') {
+            c = '_';
+        }
+    }
+    std::string filename = "progress_" + safeName + ".json";
     return std::filesystem::path("Data/SKSE/Plugins/SpellLearning") / filename;
 }
 
@@ -23,8 +30,13 @@ std::filesystem::path ProgressionManager::GetProgressFilePath() const
 
 void ProgressionManager::SendModEvent(const char* eventName, const std::string& strArg, float numArg, RE::TESForm* sender)
 {
+    auto* eventSource = SKSE::GetModCallbackEventSource();
+    if (!eventSource) {
+        logger::warn("ProgressionManager: Cannot send ModEvent '{}' - event source not available", eventName);
+        return;
+    }
     SKSE::ModCallbackEvent modEvent(eventName, RE::BSFixedString(strArg.c_str()), numArg, sender);
-    SKSE::GetModCallbackEventSource()->SendEvent(&modEvent);
+    eventSource->SendEvent(&modEvent);
     logger::trace("ProgressionManager: Sent ModEvent '{}' (str={}, num={:.1f})", eventName, strArg, numArg);
 }
 

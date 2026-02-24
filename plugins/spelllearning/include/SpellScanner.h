@@ -4,10 +4,9 @@
 
 #include <nlohmann/json.hpp>
 
-using json = nlohmann::json;
-
 namespace SpellScanner
 {
+    using json = nlohmann::json;
     // Field output configuration
     struct FieldConfig {
         bool editorId = true;

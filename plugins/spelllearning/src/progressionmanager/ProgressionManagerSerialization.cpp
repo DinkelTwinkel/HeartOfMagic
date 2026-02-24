@@ -89,17 +89,33 @@ void ProgressionManager::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
             case kTargetsRecord: {
                 // Read learning targets
                 uint32_t numTargets = 0;
-                a_intfc->ReadRecordData(&numTargets, sizeof(numTargets));
+                if (!a_intfc->ReadRecordData(&numTargets, sizeof(numTargets))) {
+                    logger::error("ProgressionManager: Failed to read numTargets");
+                    break;
+                }
 
                 for (uint32_t i = 0; i < numTargets; ++i) {
                     uint32_t schoolLen = 0;
-                    a_intfc->ReadRecordData(&schoolLen, sizeof(schoolLen));
+                    if (!a_intfc->ReadRecordData(&schoolLen, sizeof(schoolLen))) {
+                        logger::error("ProgressionManager: Failed to read schoolLen at target {}", i);
+                        break;
+                    }
+                    if (schoolLen > 4096) {
+                        logger::error("ProgressionManager: schoolLen {} exceeds limit at target {}", schoolLen, i);
+                        break;
+                    }
 
                     std::string school(schoolLen, '\0');
-                    a_intfc->ReadRecordData(school.data(), schoolLen);
+                    if (!a_intfc->ReadRecordData(school.data(), schoolLen)) {
+                        logger::error("ProgressionManager: Failed to read school string at target {}", i);
+                        break;
+                    }
 
                     RE::FormID formId = 0;
-                    a_intfc->ReadRecordData(&formId, sizeof(formId));
+                    if (!a_intfc->ReadRecordData(&formId, sizeof(formId))) {
+                        logger::error("ProgressionManager: Failed to read formId at target {}", i);
+                        break;
+                    }
 
                     // Resolve formId (handles load order changes)
                     RE::FormID resolvedId = 0;
@@ -118,30 +134,62 @@ void ProgressionManager::OnGameLoaded(SKSE::SerializationInterface* a_intfc)
             case kProgressRecord: {
                 // Read spell progress
                 uint32_t numProgress = 0;
-                a_intfc->ReadRecordData(&numProgress, sizeof(numProgress));
+                if (!a_intfc->ReadRecordData(&numProgress, sizeof(numProgress))) {
+                    logger::error("ProgressionManager: Failed to read numProgress");
+                    break;
+                }
 
                 for (uint32_t i = 0; i < numProgress; ++i) {
                     RE::FormID formId = 0;
-                    a_intfc->ReadRecordData(&formId, sizeof(formId));
+                    if (!a_intfc->ReadRecordData(&formId, sizeof(formId))) {
+                        logger::error("ProgressionManager: Failed to read formId at progress entry {}", i);
+                        break;
+                    }
 
                     float progressPercent = 0.0f;
-                    a_intfc->ReadRecordData(&progressPercent, sizeof(progressPercent));
+                    if (!a_intfc->ReadRecordData(&progressPercent, sizeof(progressPercent))) {
+                        logger::error("ProgressionManager: Failed to read progressPercent at progress entry {}", i);
+                        break;
+                    }
 
                     uint8_t unlocked = 0;
-                    a_intfc->ReadRecordData(&unlocked, sizeof(unlocked));
+                    if (!a_intfc->ReadRecordData(&unlocked, sizeof(unlocked))) {
+                        logger::error("ProgressionManager: Failed to read unlocked at progress entry {}", i);
+                        break;
+                    }
 
                     // v2: Read modded source XP tracking
                     std::unordered_map<std::string, float> moddedXP;
                     if (version >= 2) {
                         uint32_t moddedCount = 0;
-                        a_intfc->ReadRecordData(&moddedCount, sizeof(moddedCount));
+                        if (!a_intfc->ReadRecordData(&moddedCount, sizeof(moddedCount))) {
+                            logger::error("ProgressionManager: Failed to read moddedCount at progress entry {}", i);
+                            break;
+                        }
+                        if (moddedCount > 4096) {
+                            logger::error("ProgressionManager: moddedCount {} exceeds limit at progress entry {}", moddedCount, i);
+                            break;
+                        }
                         for (uint32_t m = 0; m < moddedCount; ++m) {
                             uint32_t nameLen = 0;
-                            a_intfc->ReadRecordData(&nameLen, sizeof(nameLen));
+                            if (!a_intfc->ReadRecordData(&nameLen, sizeof(nameLen))) {
+                                logger::error("ProgressionManager: Failed to read nameLen at progress entry {}, modded {}", i, m);
+                                break;
+                            }
+                            if (nameLen > 4096) {
+                                logger::error("ProgressionManager: nameLen {} exceeds limit at progress entry {}, modded {}", nameLen, i, m);
+                                break;
+                            }
                             std::string name(nameLen, '\0');
-                            a_intfc->ReadRecordData(name.data(), nameLen);
+                            if (!a_intfc->ReadRecordData(name.data(), nameLen)) {
+                                logger::error("ProgressionManager: Failed to read name string at progress entry {}, modded {}", i, m);
+                                break;
+                            }
                             float xp = 0.0f;
-                            a_intfc->ReadRecordData(&xp, sizeof(xp));
+                            if (!a_intfc->ReadRecordData(&xp, sizeof(xp))) {
+                                logger::error("ProgressionManager: Failed to read xp at progress entry {}, modded {}", i, m);
+                                break;
+                            }
                             moddedXP[name] = xp;
                         }
                     }

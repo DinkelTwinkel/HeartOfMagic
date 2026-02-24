@@ -174,9 +174,6 @@ TreeBuilder::BuildResult TreeBuilder::BuildGraph(
     float forceBalance = std::clamp(config.forceBalance, 0.0f, 1.0f);
     int maxChildren = std::clamp(config.maxChildrenPerNode, 1, 8);
 
-    // Graph builder defaults to max_children=4 if not overridden
-    if (config.maxChildrenPerNode == 3) maxChildren = 4;
-
     if (config.gridHint) {
         auto& hint = *config.gridHint;
         if (hint.mode == "sun" && maxChildren > 3 && hint.avgPointsPerSchool < 40)
@@ -313,7 +310,6 @@ TreeBuilder::BuildResult TreeBuilder::BuildGraph(
 
                         if (score > bestScore) { bestScore = score; bestParent = cand; }
                     }
-                    if (bestParent) break;
                 }
 
                 if (bestParent) {

@@ -362,8 +362,8 @@ void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
         logger::info("UIManager: Re-notified {} modded XP sources to UI", notifiedCount);
     }
 
-    // Notify UI of ISL detection status (fresh detection, not from saved config)
-    instance->NotifyISLDetectionStatus();
+    // Notify UI of DEST detection status (fresh detection, not from saved config)
+    instance->NotifyDESTDetectionStatus();
     });
 }
 
@@ -418,10 +418,8 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
             } catch (...) {}
         }
 
-        // Merge new config into existing (new values override)
-        for (auto& [key, value] : newConfig.items()) {
-            existingConfig[key] = value;
-        }
+        // Deep merge new config into existing (preserves nested keys)
+        MergeJsonNonNull(existingConfig, newConfig);
 
         // Update hotkey in InputHandler if changed
         if (newConfig.contains("hotkeyCode")) {
@@ -558,7 +556,16 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
 
         // Write merged config
         std::ofstream file(path);
-        file << existingConfig.dump(2);  // Pretty print with 2 space indent
+        if (!file.is_open()) {
+            logger::error("UIManager: Failed to open unified config for writing: {}", path.string());
+            return;
+        }
+        file << existingConfig.dump(2);
+        file.flush();
+        if (file.fail()) {
+            logger::error("UIManager: Failed to write unified config to {}", path.string());
+            return;
+        }
 
         logger::info("UIManager: Unified config saved to {}", path.string());
 

@@ -66,8 +66,8 @@ public:
     void NotifyModdedSourceRegistered(const std::string& sourceId, const std::string& displayName,
                                        float multiplier, float cap);
 
-    // ISL integration notifications
-    void NotifyISLDetectionStatus();  // Notify UI of ISL-DESTified mod detection
+    // DEST integration notifications
+    void NotifyDESTDetectionStatus();  // Notify UI of DEST mod detection
 
     // Get the PrismaUI API (for SpellScanner to use)
     //PRISMA_UI_API::IVPrismaUI1* GetAPI() const { return m_prismaUI; }

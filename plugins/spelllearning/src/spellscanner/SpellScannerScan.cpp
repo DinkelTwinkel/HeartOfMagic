@@ -576,8 +576,8 @@ namespace SpellScanner
 
             // Validate: FormIDs should be max 8 hex characters
             if (cleanId.length() > 8) {
-                logger::warn("SpellScanner: FormId too long ({}), truncating: {}", cleanId.length(), formIdStr);
-                cleanId = cleanId.substr(0, 8);  // Truncate to 8 chars
+                logger::error("SpellScanner: FormId too long ({} chars), rejecting: {}", cleanId.length(), formIdStr);
+                return "";
             }
 
             // Validate hex characters only

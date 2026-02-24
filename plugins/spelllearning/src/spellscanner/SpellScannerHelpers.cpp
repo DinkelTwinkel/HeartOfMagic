@@ -14,7 +14,6 @@ namespace SpellScanner
 
 You MUST return ONLY valid JSON matching this exact schema. No explanations, no markdown code blocks, just raw JSON.
 
-```json
 {
   "version": "1.0",
   "schools": {
@@ -35,7 +34,6 @@ You MUST return ONLY valid JSON matching this exact schema. No explanations, no 
     "Restoration": { ... }
   }
 }
-```
 
 ### Field Requirements:
 - **formId**: The hex FormID from the spell data (e.g., "0x00012FCD"). MUST match exactly.

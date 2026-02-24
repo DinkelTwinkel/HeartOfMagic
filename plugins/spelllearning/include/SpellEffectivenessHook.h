@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include <atomic>
 #include <unordered_set>
 #include <unordered_map>
 #include <shared_mutex>
@@ -62,12 +63,12 @@ public:
 
     // Settings management
     void SetSettings(const EarlyLearningSettings& settings);
-    const EarlyLearningSettings& GetSettings() const { return m_settings; }
-    
+    EarlyLearningSettings GetSettings() const;
+
     // Power steps management (configurable)
     void SetPowerSteps(const std::vector<PowerStep>& steps);
-    const std::vector<PowerStep>& GetPowerSteps() const { return m_powerSteps; }
-    int GetNumPowerSteps() const { return static_cast<int>(m_powerSteps.size()); }
+    std::vector<PowerStep> GetPowerSteps() const;
+    int GetNumPowerSteps() const;
     
     // Early-learned spell tracking
     void AddEarlyLearnedSpell(RE::FormID formId);
@@ -113,7 +114,7 @@ public:
     std::string GetModifiedSpellName(RE::SpellItem* spell);
     
     // Get modified description showing scaled values
-    std::string GetScaledSpellDescription(RE::SpellItem* spell) const;
+    std::string GetScaledSpellDescription(RE::SpellItem* spell);
     
     // Format a magnitude value with effectiveness scaling
     float GetScaledMagnitude(RE::SpellItem* spell, float originalMagnitude) const;
@@ -163,24 +164,52 @@ private:
         { 100.0f, 1.00f, "Mastered" }  // Final step always present
     };
     
+    // =========================================================================
+    // GUARDED STATE — all fields below are protected by m_mutex.
+    // Use shared_lock for read-only access, unique_lock for mutations.
+    // Game object fields (RE::SpellItem::fullName, RE::EffectSetting::magicItemDescription)
+    // are NOT protected by m_mutex — they rely on the game-thread-only invariant.
+    // =========================================================================
+
     // Set of spells that are early-learned (granted but not mastered)
-    std::unordered_set<RE::FormID> m_earlyLearnedSpells;
-    
+    std::unordered_set<RE::FormID> m_earlyLearnedSpells;  // guarded by m_mutex
+
     // Display cache for modified names/descriptions
-    std::unordered_map<RE::FormID, SpellDisplayCache> m_displayCache;
-    
+    std::unordered_map<RE::FormID, SpellDisplayCache> m_displayCache;  // guarded by m_mutex
+
     // Original spell names (before modification)
-    std::unordered_map<RE::FormID, std::string> m_originalSpellNames;
-    
+    std::unordered_map<RE::FormID, std::string> m_originalSpellNames;  // guarded by m_mutex
+
     // Original effect descriptions (keyed by EffectSetting FormID)
     // We track which spells use which effects to know when to restore
-    std::unordered_map<RE::FormID, std::string> m_originalEffectDescriptions;
+    std::unordered_map<RE::FormID, std::string> m_originalEffectDescriptions;  // guarded by m_mutex
 
     // Track which spells have contributed to each effect's usage count
     // Key: effectId, Value: set of spellIds that are currently using this effect
     // This prevents double-counting when ApplyModifiedDescriptions is called multiple times
-    std::unordered_map<RE::FormID, std::unordered_set<RE::FormID>> m_effectSpellTracking;
-    
-    // Mutex for thread safety (shared_mutex allows concurrent reads)
+    std::unordered_map<RE::FormID, std::unordered_set<RE::FormID>> m_effectSpellTracking;  // guarded by m_mutex
+
+    // Atomic mirror of m_earlyLearnedSpells.size() for lock-free fast-path check.
+    // INVARIANT: count == 0 implies set is empty. Maintained by AddToEarlySet/RemoveFromEarlySet.
+    // All mutations to m_earlyLearnedSpells MUST go through these helpers to keep count in sync.
+    //
+    // AddToEarlySet: inserts into m_earlyLearnedSpells, then calls fetch_add(1) only if
+    //   insert actually added a new element (checks insert's .second return value).
+    // RemoveFromEarlySet: erases from m_earlyLearnedSpells first, then calls fetch_sub(1)
+    //   only if erase actually removed an element (checks erase's return value > 0).
+    //   This ordering (erase-then-decrement) and the conditional decrement prevent
+    //   unsigned wraparound and maintain the count == 0 ↔ set-empty invariant.
+    std::atomic<size_t> m_earlySpellCount{0};
+
+    // Reader-writer mutex for thread safety (shared_mutex allows concurrent reads).
+    // Protects all internal data structures above. Does NOT protect RE game object
+    // fields — those are only accessed from the game thread (see display file comments).
     mutable std::shared_mutex m_mutex;
+
+    // Centralized mutation helpers for m_earlyLearnedSpells / m_earlySpellCount.
+    // Caller MUST hold unique_lock on m_mutex.
+    // Only modifies m_earlySpellCount when m_earlyLearnedSpells actually changes
+    // (conditional fetch_add/fetch_sub based on insert/erase return values).
+    void AddToEarlySet(RE::FormID formId);
+    void RemoveFromEarlySet(RE::FormID formId);
 };

@@ -41,7 +41,11 @@ public:
 
         // Computed property
         float GetCurrentXP() const { return progressPercent * requiredXP; }
-        float GetTotalTrackedXP() const { return xpFromAny + xpFromSchool + xpFromDirect + xpFromSelf; }
+        float GetTotalTrackedXP() const {
+            float total = xpFromAny + xpFromSchool + xpFromDirect + xpFromSelf;
+            for (const auto& [name, xp] : xpFromModded) total += xp;
+            return total;
+        }
     };
 
     static ProgressionManager* GetSingleton();

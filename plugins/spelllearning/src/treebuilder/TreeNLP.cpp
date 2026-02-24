@@ -80,7 +80,7 @@ std::vector<std::string> TreeNLP::Tokenize(const std::string& text)
     std::istringstream iss(lower);
     std::string word;
     while (iss >> word) {
-        if (word.size() > 2) {
+        if (word.size() > 2 && !IsStopWord(word)) {
             tokens.push_back(std::move(word));
         }
     }
@@ -340,7 +340,7 @@ int TreeNLP::FuzzyTokenSetRatio(const std::string& a, const std::string& b)
     if (a.empty() || b.empty()) return 0;
 
     return static_cast<int>(std::round(
-        rapidfuzz::fuzz::token_set_ratio(a, b)));
+        rapidfuzz::fuzz::token_set_ratio(ToLower(a), ToLower(b))));
 }
 
 // =============================================================================

@@ -60,15 +60,21 @@ void UIManager::OnLLMGenerate([[maybe_unused]] const char* argument)
         std::string spellData = request.value("spellData", "");
         std::string promptRules = request.value("promptRules", "");
 
-        // Override config from request if provided
+        // NOTE: Mutates global config for this request. Thread safety depends on
+        // UI callbacks being serialized via AddTaskToGameThread.
         auto& config = OpenRouterAPI::GetConfig();
         if (request.contains("model") && !request["model"].get<std::string>().empty()) {
             config.model = request["model"].get<std::string>();
             logger::info("UIManager: Using model from request: {}", config.model);
         }
-        if (request.contains("maxTokens")) {
-            config.maxTokens = request["maxTokens"].get<int>();
-            logger::info("UIManager: Using maxTokens from request: {}", config.maxTokens);
+        if (request.contains("maxTokens") && request["maxTokens"].is_number_integer()) {
+            int maxTokens = request["maxTokens"].get<int>();
+            if (maxTokens > 0 && maxTokens <= 100000) {
+                config.maxTokens = maxTokens;
+                logger::info("UIManager: Using maxTokens from request: {}", config.maxTokens);
+            } else {
+                logger::warn("UIManager: maxTokens {} out of range, keeping default {}", maxTokens, config.maxTokens);
+            }
         }
         if (request.contains("apiKey") && !request["apiKey"].get<std::string>().empty()) {
             std::string newKey = request["apiKey"].get<std::string>();
@@ -356,6 +362,12 @@ void UIManager::OnSaveLLMConfig(const char* argument)
 
             // Always update model
             config.model = SafeJsonValue<std::string>(request, "model", config.model);
+
+            // Update maxTokens if provided
+            int newMaxTokens = SafeJsonValue<int>(request, "maxTokens", config.maxTokens);
+            if (newMaxTokens > 0 && newMaxTokens <= 100000) {
+                config.maxTokens = newMaxTokens;
+            }
 
             // Save to file
             OpenRouterAPI::SaveConfig();

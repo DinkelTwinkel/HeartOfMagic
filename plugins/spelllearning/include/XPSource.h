@@ -67,6 +67,12 @@ public:
      * Used when multiple sources could handle the same event
      */
     virtual int GetPriority() const { return 0; }
+
+    /**
+     * Check if this XP source has been initialized
+     * Used by ShutdownAll to only shut down sources that were initialized
+     */
+    virtual bool IsInitialized() const = 0;
 };
 
 /**
@@ -151,7 +157,9 @@ public:
      */
     void ShutdownAll() {
         for (auto& source : m_sources) {
-            source->Shutdown();
+            if (source->IsInitialized()) {
+                source->Shutdown();
+            }
         }
     }
     
@@ -190,15 +198,17 @@ public:
     void SetEnabled(bool enabled) override { m_enabled = enabled; }
     
     bool IsAvailable() const override { return true; }  // Override if dependencies needed
-    
-    void Initialize() override {}  // Override to add initialization logic
-    void Shutdown() override {}    // Override to add cleanup logic
+    bool IsInitialized() const override { return m_initialized; }
+
+    void Initialize() override { m_initialized = true; }
+    void Shutdown() override { m_initialized = false; }
 
 protected:
     std::string m_name;
     std::string m_displayName;
     std::string m_description;
     bool m_enabled;
+    bool m_initialized = false;
 };
 
 } // namespace SpellLearning

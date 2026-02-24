@@ -11,26 +11,30 @@ using namespace TreeBuilder::Internal;
 // TREE BUILDER — NLP Thematic with Round-Robin & Convergence
 // =============================================================================
 
-// Check if nodeId is a descendant of potentialAncestor (cycle check)
 static bool IsDescendant(
     const std::string& potentialAncestor,
     const std::string& nodeId,
     const std::unordered_map<std::string, TreeBuilder::TreeNode>& nodes)
 {
+    // Returns true if nodeId is in the subtree of potentialAncestor (via children).
+    // Used to prevent creating cycles during convergence enforcement.
     auto paIt = nodes.find(potentialAncestor);
     auto ndIt = nodes.find(nodeId);
-    if (paIt != nodes.end() && ndIt != nodes.end() && paIt->second.depth <= ndIt->second.depth)
-        return false;
+    if (paIt == nodes.end() || ndIt == nodes.end()) return false;
 
+    // Ancestor must have strictly smaller depth than descendant
+    if (paIt->second.depth >= ndIt->second.depth) return false;
+
+    // BFS from potentialAncestor, traverse children, look for nodeId
     std::unordered_set<std::string> visited;
     std::queue<std::string> bfsQ;
-    bfsQ.push(nodeId);
+    bfsQ.push(potentialAncestor);
     while (!bfsQ.empty()) {
         auto fid = bfsQ.front();
         bfsQ.pop();
         if (visited.contains(fid)) continue;
         visited.insert(fid);
-        if (fid == potentialAncestor) return true;
+        if (fid == nodeId) return true;
         auto it = nodes.find(fid);
         if (it != nodes.end())
             for (const auto& ch : it->second.children) bfsQ.push(ch);
@@ -274,6 +278,7 @@ TreeBuilder::BuildResult TreeBuilder::BuildTree(
                 if (!bestParent) {
                     for (int d = tierDepth - 1; d >= 0 && !bestParent; --d) {
                         for (auto* p : available[d]) {
+                            // Fallback allows +2 overflow to avoid orphan nodes in edge cases
                             if (static_cast<int>(p->children.size()) < maxChildren + 2) {
                                 bestParent = p;
                                 break;

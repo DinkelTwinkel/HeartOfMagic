@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <numeric>
 
 // =============================================================================
@@ -68,7 +69,7 @@ void TreeBuilder::LinkNodes(TreeNode& parent, TreeNode& child)
 {
     parent.AddChild(child.formId);
     child.AddPrerequisite(parent.formId);
-    child.depth = parent.depth + 1;
+    child.depth = (std::max)(child.depth, parent.depth + 1);
 }
 
 void TreeBuilder::UnlinkNodes(TreeNode& parent, TreeNode& child)
@@ -516,7 +517,9 @@ TreeBuilder::DeriveThemeColors(const std::string& schoolColorHex,
 
         char buf[8];
         snprintf(buf, sizeof(buf), "#%02x%02x%02x",
-                 static_cast<int>(nr * 255), static_cast<int>(ng * 255), static_cast<int>(nb * 255));
+                 std::clamp(static_cast<int>(std::lround(nr * 255)), 0, 255),
+                 std::clamp(static_cast<int>(std::lround(ng * 255)), 0, 255),
+                 std::clamp(static_cast<int>(std::lround(nb * 255)), 0, 255));
         colors[sortedThemes[i]] = buf;
     }
 
@@ -604,7 +607,11 @@ std::unordered_map<std::string, TreeBuilder::TreeNode>
 TreeBuilder::Internal::RebuildValNodes(const json& schoolData)
 {
     std::unordered_map<std::string, TreeNode> valNodes;
+    if (!schoolData.contains("nodes") || !schoolData["nodes"].is_array()) {
+        return valNodes;
+    }
     for (const auto& nd : schoolData["nodes"]) {
+        if (!nd.is_object()) continue;
         TreeNode n;
         n.formId = nd.value("formId", std::string(""));
         n.name = nd.value("name", std::string(""));

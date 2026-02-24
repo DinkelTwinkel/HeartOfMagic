@@ -335,7 +335,7 @@ TreeBuilder::ValidationResult TreeBuilder::ValidateSchoolTree(
         if (static_cast<int>(node.children.size()) > maxChildren + 2) {
             result.warnings.push_back(
                 "Node " + fid + " has " + std::to_string(node.children.size()) +
-                " children (max " + std::to_string(maxChildren) + ")");
+                " children (max " + std::to_string(maxChildren) + " + 2 overflow tolerance)");
         }
     }
 

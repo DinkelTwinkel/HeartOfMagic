@@ -96,6 +96,9 @@ void ProgressionManager::ClearLearningTarget(const std::string& school)
 
         // Clear prerequisites for this target
         m_targetPrerequisites.erase(oldTargetId);
+
+        // Notify UI that learning target was cleared
+        UIManager::GetSingleton()->NotifyLearningTargetCleared(oldTargetId);
     }
 
     m_learningTargets.erase(school);
@@ -357,22 +360,9 @@ void ProgressionManager::SetLearningTargetFromTome(const std::string& formIdStr,
         }
 
         for (const auto& schoolToClear : schoolsToClear) {
-            RE::FormID oldTargetId = m_learningTargets[schoolToClear];
-            logger::info("ProgressionManager: Single mode - clearing {} target {:08X} for new {} target",
-                schoolToClear, oldTargetId, schoolName);
-
-            // Remove the early spell if it was granted
-            auto* effectivenessHook = SpellEffectivenessHook::GetSingleton();
-            if (effectivenessHook && effectivenessHook->IsEarlyLearnedSpell(oldTargetId)) {
-                SpellEffectivenessHook::RemoveEarlySpellFromPlayer(oldTargetId);
-            }
-
-            // Notify UI that this spell is no longer being learned
-            UIManager::GetSingleton()->NotifyLearningTargetCleared(oldTargetId);
-
-            // Clear the target
-            m_learningTargets.erase(schoolToClear);
-            m_targetPrerequisites.erase(oldTargetId);
+            logger::info("ProgressionManager: Single mode - clearing {} target for new {} target",
+                schoolToClear, schoolName);
+            ClearLearningTarget(schoolToClear);
         }
     }
 

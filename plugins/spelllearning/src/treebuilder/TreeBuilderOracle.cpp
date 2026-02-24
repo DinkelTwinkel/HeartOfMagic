@@ -12,6 +12,22 @@ using namespace TreeBuilder::Internal;
 // ORACLE BUILDER — LLM-Guided Semantic Chain or Cluster Lane Fallback
 // =============================================================================
 
+static std::string EscapeForPrompt(const std::string& s)
+{
+    std::string result;
+    result.reserve(s.size() + 8);
+    for (char c : s) {
+        switch (c) {
+            case '\\': result += "\\\\"; break;
+            case '"':  result += "\\\""; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            default:   result += c; break;
+        }
+    }
+    return result;
+}
+
 // Build LLM grouping prompt for a school's spells
 static std::string BuildLLMGroupingPrompt(
     const std::vector<json>& spells, const std::string& schoolName)
@@ -19,11 +35,12 @@ static std::string BuildLLMGroupingPrompt(
     std::string spellBlock;
     for (const auto& s : spells) {
         auto fid = s.value("formId", std::string("?"));
-        auto name = s.value("name", fid);
-        auto tier = s.value("skillLevel", std::string("?"));
+        auto name = EscapeForPrompt(s.value("name", fid));
+        auto tier = EscapeForPrompt(s.value("skillLevel", std::string("?")));
         auto desc = s.value("description", std::string(""));
         if (desc.empty()) desc = s.value("desc", std::string(""));
         if (desc.size() > 60) desc = desc.substr(0, 60);
+        desc = EscapeForPrompt(desc);
 
         std::string effStr;
         auto effs = s.value("effectNames", json::array());
@@ -33,7 +50,7 @@ static std::string BuildLLMGroupingPrompt(
                 if (count >= 3) break;
                 if (e.is_string()) {
                     if (!effStr.empty()) effStr += ", ";
-                    effStr += e.get<std::string>();
+                    effStr += EscapeForPrompt(e.get<std::string>());
                     count++;
                 }
             }
@@ -185,9 +202,12 @@ static std::vector<json> MergeSimilarChains(const std::vector<json>& chains)
                     std::unordered_set<std::string> existingIds;
                     for (const auto& id : combined["spellIds"])
                         if (id.is_string()) existingIds.insert(id.get<std::string>());
-                    for (const auto& id : chains[j]["spellIds"])
-                        if (!id.is_string() || !existingIds.contains(id.get<std::string>()))
-                            combined["spellIds"].push_back(id);
+                    for (const auto& id : chains[j]["spellIds"]) {
+                        if (!id.is_string()) continue;
+                        if (existingIds.contains(id.get<std::string>())) continue;
+                        existingIds.insert(id.get<std::string>());
+                        combined["spellIds"].push_back(id);
+                    }
                     used[j] = true;
                     if (combined.value("narrative", std::string("")).empty())
                         combined["narrative"] = chains[j].value("narrative", std::string(""));
@@ -521,6 +541,7 @@ static json BuildSchoolTreeFallback(
                 size_t minCh = 999;
                 for (const auto& cid : connected) {
                     auto& n = nodes[cid];
+                    // Fallback allows +2 overflow to avoid orphan nodes in edge cases
                     if (n.children.size() < minCh && static_cast<int>(n.children.size()) < maxChildren + 2) {
                         minCh = n.children.size();
                         avail = &n;
@@ -629,7 +650,7 @@ TreeBuilder::BuildResult TreeBuilder::BuildOracle(
     // Check if LLM is available
     bool llmAvailable = false;
     if (config.llmApi && config.llmApi->enabled && !config.llmApi->apiKey.empty()) {
-        // Config provides LLM settings — configure OpenRouterAPI
+        // NOTE: Mutates global config. Thread safety depends on single-threaded tree building.
         auto& orConfig = OpenRouterAPI::GetConfig();
         orConfig.apiKey = config.llmApi->apiKey;
         if (!config.llmApi->model.empty()) orConfig.model = config.llmApi->model;

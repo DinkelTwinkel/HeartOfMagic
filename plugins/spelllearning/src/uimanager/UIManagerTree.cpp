@@ -75,9 +75,13 @@ void UIManager::OnLoadSpellTree([[maybe_unused]] const char* argument)
                                         if (node.contains("requiredXP") && node["requiredXP"].is_number()) {
                                             float reqXP = node["requiredXP"].get<float>();
                                             if (reqXP > 0) {
-                                                RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
-                                                pm->SetRequiredXP(formId, reqXP);
-                                                xpSyncCount++;
+                                                try {
+                                                    RE::FormID formId = std::stoul(formIdStr, nullptr, 0);
+                                                    pm->SetRequiredXP(formId, reqXP);
+                                                    xpSyncCount++;
+                                                } catch (const std::exception& e) {
+                                                    logger::warn("UIManager: Failed to parse formId '{}' for XP sync: {}", formIdStr, e.what());
+                                                }
                                             }
                                         }
                                     }
@@ -96,7 +100,11 @@ void UIManager::OnLoadSpellTree([[maybe_unused]] const char* argument)
                         for (const auto& formIdStr : formIds) {
                             auto spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
                             if (!spellInfo.empty()) {
-                                spellInfoArray.push_back(json::parse(spellInfo));
+                                try {
+                                    spellInfoArray.push_back(json::parse(spellInfo));
+                                } catch (const std::exception& e) {
+                                    logger::warn("UIManager: Failed to parse spell info for formId {}: {}", formIdStr, e.what());
+                                }
                             }
                         }
                         instance->SendSpellInfoBatch(spellInfoArray.dump());
@@ -171,6 +179,10 @@ void UIManager::OnGetSpellInfoBatch(const char* argument)
             int notFoundCount = 0;
 
             for (const auto& formIdJson : formIdArray) {
+                if (!formIdJson.is_string()) {
+                    logger::warn("UIManager: Skipping non-string formId in batch request");
+                    continue;
+                }
                 std::string formIdStr = formIdJson.get<std::string>();
 
                 // Validate formId format (should be 0x followed by 8 hex chars)
@@ -187,8 +199,17 @@ void UIManager::OnGetSpellInfoBatch(const char* argument)
                 std::string spellInfo = SpellScanner::GetSpellInfoByFormId(formIdStr);
 
                 if (!spellInfo.empty()) {
-                    resultArray.push_back(json::parse(spellInfo));
-                    foundCount++;
+                    try {
+                        resultArray.push_back(json::parse(spellInfo));
+                        foundCount++;
+                    } catch (const std::exception& e) {
+                        logger::warn("UIManager: Failed to parse spell info in batch for {}: {}", formIdStr, e.what());
+                        json notFound;
+                        notFound["formId"] = formIdStr;
+                        notFound["notFound"] = true;
+                        resultArray.push_back(notFound);
+                        notFoundCount++;
+                    }
                 } else {
                     json notFound;
                     notFound["formId"] = formIdStr;
@@ -235,9 +256,14 @@ void UIManager::OnSaveSpellTree(const char* argument)
             std::ofstream file(treePath);
             if (file.is_open()) {
                 file << argStr;
-                file.close();
-                logger::info("UIManager: Saved spell tree to {}", treePath.string());
-                instance->UpdateTreeStatus("Tree saved");
+                file.flush();
+                if (file.fail()) {
+                    logger::error("UIManager: Failed to write spell tree to {}", treePath.string());
+                    instance->UpdateTreeStatus("Save failed");
+                } else {
+                    logger::info("UIManager: Saved spell tree to {}", treePath.string());
+                    instance->UpdateTreeStatus("Tree saved");
+                }
             } else {
                 logger::error("UIManager: Failed to open spell tree file for writing");
                 instance->UpdateTreeStatus("Save failed");
@@ -299,30 +325,56 @@ void UIManager::OnProceduralTreeGenerate(const char* argument)
 
             // Launch background thread — TreeBuilder has ZERO RE:: dependencies
             std::thread([command, spells = std::move(spells), configJson]() {
-                auto result = TreeBuilder::Build(command, spells, configJson);
+                try {
+                    auto result = TreeBuilder::Build(command, spells, configJson);
 
-                // Marshal result back to game thread for UI callback
-                AddTaskToGameThread("TreeBuildComplete", [result = std::move(result), command]() {
-                    auto* inst = GetSingleton();
-                    if (!inst) return;
-                    inst->m_treeBuildInProgress = false;
+                    // Marshal result back to game thread for UI callback
+                    AddTaskToGameThread("TreeBuildComplete", [result = std::move(result), command]() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_treeBuildInProgress = false;
 
-                    if (!inst->m_prismaUI) return;
+                        if (!inst->m_prismaUI) return;
 
-                    nlohmann::json response;
-                    if (result.success) {
-                        response["success"] = true;
-                        response["treeData"] = result.treeData.dump();
-                        response["elapsed"] = result.elapsedMs / 1000.0;
-                        logger::info("UIManager: {} completed in {:.2f}s Data size: {} bytes (background thread)", command, result.elapsedMs / 1000.0, result.treeData.dump().size());
-                    } else {
+                        nlohmann::json response;
+                        if (result.success) {
+                            response["success"] = true;
+                            response["treeData"] = result.treeData.dump();
+                            response["elapsed"] = result.elapsedMs / 1000.0;
+                            logger::info("UIManager: {} completed in {:.2f}s Data size: {} bytes (background thread)", command, result.elapsedMs / 1000.0, result.treeData.dump().size());
+                        } else {
+                            response["success"] = false;
+                            response["error"] = result.error;
+                            logger::error("UIManager: {} failed: {}", command, result.error);
+                        }
+
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onProceduralTreeComplete", response.dump().c_str());
+                    });
+                } catch (const std::exception& e) {
+                    logger::error("UIManager: TreeBuilder::Build exception: {}", e.what());
+                    AddTaskToGameThread("TreeBuildFailed", [error = std::string(e.what())]() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_treeBuildInProgress = false;
+                        if (!inst->m_prismaUI) return;
+                        nlohmann::json response;
                         response["success"] = false;
-                        response["error"] = result.error;
-                        logger::error("UIManager: {} failed: {}", command, result.error);
-                    }
-
-                    inst->m_prismaUI->InteropCall(inst->m_view, "onProceduralTreeComplete", response.dump().c_str());
-                });
+                        response["error"] = error;
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onProceduralTreeComplete", response.dump().c_str());
+                    });
+                } catch (...) {
+                    logger::error("UIManager: TreeBuilder::Build unknown exception");
+                    AddTaskToGameThread("TreeBuildFailed", []() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_treeBuildInProgress = false;
+                        if (!inst->m_prismaUI) return;
+                        nlohmann::json response;
+                        response["success"] = false;
+                        response["error"] = "Unknown internal error during tree build";
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onProceduralTreeComplete", response.dump().c_str());
+                    });
+                }
             }).detach();
 
         } catch (const std::exception& e) {
@@ -369,21 +421,47 @@ void UIManager::OnPreReqMasterScore(const char* argument)
 
             // Launch background thread — TreeNLP has ZERO RE:: dependencies
             std::thread([request = std::move(request)]() {
-                auto startTime = std::chrono::high_resolution_clock::now();
-                auto result = TreeNLP::ProcessPRMRequest(request);
-                auto endTime = std::chrono::high_resolution_clock::now();
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
+                try {
+                    auto startTime = std::chrono::high_resolution_clock::now();
+                    auto result = TreeNLP::ProcessPRMRequest(request);
+                    auto endTime = std::chrono::high_resolution_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count() / 1000.0;
 
-                logger::info("UIManager: prm_score completed in {:.2f}s (background thread)", elapsed);
+                    logger::info("UIManager: prm_score completed in {:.2f}s (background thread)", elapsed);
 
-                AddTaskToGameThread("PRMScoreComplete", [result = std::move(result)]() {
-                    auto* inst = GetSingleton();
-                    if (!inst) return;
-                    inst->m_prmScoreInProgress = false;
+                    AddTaskToGameThread("PRMScoreComplete", [result = std::move(result)]() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_prmScoreInProgress = false;
 
-                    if (!inst->m_prismaUI) return;
-                    inst->m_prismaUI->InteropCall(inst->m_view, "onPreReqMasterComplete", result.dump().c_str());
-                });
+                        if (!inst->m_prismaUI) return;
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onPreReqMasterComplete", result.dump().c_str());
+                    });
+                } catch (const std::exception& e) {
+                    logger::error("UIManager: ProcessPRMRequest exception: {}", e.what());
+                    AddTaskToGameThread("PRMScoreFailed", [error = std::string(e.what())]() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_prmScoreInProgress = false;
+                        if (!inst->m_prismaUI) return;
+                        nlohmann::json result;
+                        result["success"] = false;
+                        result["error"] = error;
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onPreReqMasterComplete", result.dump().c_str());
+                    });
+                } catch (...) {
+                    logger::error("UIManager: ProcessPRMRequest unknown exception");
+                    AddTaskToGameThread("PRMScoreFailed", []() {
+                        auto* inst = GetSingleton();
+                        if (!inst) return;
+                        inst->m_prmScoreInProgress = false;
+                        if (!inst->m_prismaUI) return;
+                        nlohmann::json result;
+                        result["success"] = false;
+                        result["error"] = "Unknown internal error during PRM scoring";
+                        inst->m_prismaUI->InteropCall(inst->m_view, "onPreReqMasterComplete", result.dump().c_str());
+                    });
+                }
             }).detach();
 
         } catch (const std::exception& e) {
