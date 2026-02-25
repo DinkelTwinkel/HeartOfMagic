@@ -1,14 +1,17 @@
 #include "Common.h"
-#include "SpellScanner.h"
+#include "EncodingUtils.h"
 
-namespace SpellScanner
+#include <algorithm>
+#include <unordered_set>
+
+namespace EncodingUtils
 {
     // =============================================================================
     // UTF-8 ENCODING - Handles international text (Chinese/Japanese/Korean/etc.)
     // =============================================================================
 
     // Forward declaration (internal to this file)
-    std::string SanitizeToUTF8Strict(const std::string& input);
+    static std::string SanitizeToUTF8Strict(const std::string& input);
 
     /**
      * Convert string from system ANSI codepage (e.g., GBK for Chinese Windows) to UTF-8.
@@ -51,7 +54,7 @@ namespace SpellScanner
      * Uses Windows API (MB_ERR_INVALID_CHARS) for correct handling of overlongs,
      * surrogates, and code points above U+10FFFF.
      */
-    std::string SanitizeToUTF8Strict(const std::string& input)
+    static std::string SanitizeToUTF8Strict(const std::string& input)
     {
         // Fast path: validate entire string as UTF-8 via Windows API
         int wideLen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
@@ -143,5 +146,48 @@ namespace SpellScanner
 
         // Not valid UTF-8, try converting from system codepage (GBK/Shift-JIS/etc.)
         return ConvertToUTF8(input);
+    }
+
+    // =============================================================================
+    // FILENAME SANITIZATION - Ensures strings are safe for Windows filenames
+    // =============================================================================
+
+    std::string SanitizeFilename(const std::string& name)
+    {
+        std::string safe;
+        safe.reserve(name.size());
+        for (char c : name) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+                c == '"' || c == '<'  || c == '>' || c == '|' ||
+                (static_cast<unsigned char>(c) < 0x20)) {
+                safe += '_';
+            } else {
+                safe += c;
+            }
+        }
+        // Trim trailing dots/spaces (Windows doesn't allow them in filenames)
+        while (!safe.empty() && (safe.back() == '.' || safe.back() == ' ')) {
+            safe.pop_back();
+        }
+        if (safe.empty()) safe = "_unnamed";
+
+        // Check for Windows reserved device names (case-insensitive)
+        std::string upper = safe;
+        std::transform(upper.begin(), upper.end(), upper.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+        // Strip extension for comparison (e.g., "CON.txt" -> "CON")
+        auto dotPos = upper.find('.');
+        std::string stem = (dotPos != std::string::npos) ? upper.substr(0, dotPos) : upper;
+
+        static const std::unordered_set<std::string> kReservedNames = {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
+            "LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"
+        };
+        if (kReservedNames.count(stem)) {
+            safe = "_" + safe;
+        }
+
+        return safe;
     }
 }

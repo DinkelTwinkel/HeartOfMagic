@@ -98,8 +98,8 @@ const SpellCache = {
     },
 
     requestBatch(formIds, callback) {
-        const needed = formIds.filter(id => !this.has(id) && !this.isPending(id));
-        
+        const needed = formIds.filter(id => !this.has(id));
+
         if (needed.length === 0) {
             if (callback) callback();
             return;
@@ -111,7 +111,17 @@ const SpellCache = {
             if (remaining === 0 && callback) callback();
         };
 
-        needed.forEach(formId => this.request(formId, onComplete));
+        needed.forEach(formId => {
+            if (this.isPending(formId)) {
+                // Already requested — just add completion callback
+                if (!this._callbacks.has(formId)) {
+                    this._callbacks.set(formId, []);
+                }
+                this._callbacks.get(formId).push(onComplete);
+            } else {
+                this.request(formId, onComplete);
+            }
+        });
     },
 
     _generateMockSpell(formId) {
@@ -890,7 +900,8 @@ class SpellTreeApp {
         stateBadge.textContent = node.state.charAt(0).toUpperCase() + node.state.slice(1);
         stateBadge.className = 'state-badge ' + node.state;
 
-        document.getElementById('unlock-btn').disabled = node.state !== 'available';
+        var unlockBtn = document.getElementById('unlock-btn');
+        if (unlockBtn) unlockBtn.disabled = node.state !== 'available';
     }
 
     selectById(id) {
@@ -986,9 +997,13 @@ const DEMO_FORMID_TREE = {
  * Called by C++ to provide tree data
  */
 window.updateTreeData = function(json) {
-    console.log('[SpellTree] Received tree data');
-    if (window.app) {
-        window.app.loadTree(typeof json === 'string' ? JSON.parse(json) : json);
+    try {
+        console.log('[SpellTree] Received tree data');
+        if (window.app) {
+            window.app.loadTree(typeof json === 'string' ? JSON.parse(json) : json);
+        }
+    } catch (e) {
+        console.error('[SpellTree] updateTreeData error:', e);
     }
 };
 
@@ -997,18 +1012,22 @@ window.updateTreeData = function(json) {
  * Expected format: { formId, name, school, level, cost, type, effects, description }
  */
 window.updateSpellInfo = function(json) {
-    const data = typeof json === 'string' ? JSON.parse(json) : json;
-    if (data.formId) {
-        SpellCache.set(data.formId, data);
-        
-        // If app is loaded, update any node with this formId and re-render
-        if (window.app?.data) {
-            const node = window.app.data.nodes.find(n => n.formId === data.formId);
-            if (node) {
-                window.app.parser.updateNodeFromCache(node);
-                window.app.renderer.render();
+    try {
+        const data = typeof json === 'string' ? JSON.parse(json) : json;
+        if (data.formId) {
+            SpellCache.set(data.formId, data);
+
+            // If app is loaded, update any node with this formId and re-render
+            if (window.app?.data) {
+                const node = window.app.data.nodes.find(n => n.formId === data.formId);
+                if (node) {
+                    window.app.parser.updateNodeFromCache(node);
+                    window.app.renderer.render();
+                }
             }
         }
+    } catch (e) {
+        console.error('[SpellTree] updateSpellInfo error:', e);
     }
 };
 
@@ -1017,22 +1036,26 @@ window.updateSpellInfo = function(json) {
  * Expected format: array of spell info objects
  */
 window.updateSpellInfoBatch = function(json) {
-    const dataArray = typeof json === 'string' ? JSON.parse(json) : json;
-    if (!Array.isArray(dataArray)) return;
-    
-    for (const data of dataArray) {
-        if (data.formId) {
-            SpellCache.set(data.formId, data);
+    try {
+        const dataArray = typeof json === 'string' ? JSON.parse(json) : json;
+        if (!Array.isArray(dataArray)) return;
+
+        for (const data of dataArray) {
+            if (data.formId) {
+                SpellCache.set(data.formId, data);
+            }
         }
-    }
-    
-    // Update all nodes and re-render
-    if (window.app?.data) {
-        for (const node of window.app.data.nodes) {
-            window.app.parser.updateNodeFromCache(node);
+
+        // Update all nodes and re-render
+        if (window.app?.data) {
+            for (const node of window.app.data.nodes) {
+                window.app.parser.updateNodeFromCache(node);
+            }
+            window.app.renderer.render();
+            window.app.setStatus(`Loaded ${window.app.data.nodes.length} spells`);
         }
-        window.app.renderer.render();
-        window.app.setStatus(`Loaded ${window.app.data.nodes.length} spells`);
+    } catch (e) {
+        console.error('[SpellTree] updateSpellInfoBatch error:', e);
     }
 };
 
@@ -1040,14 +1063,19 @@ window.updateSpellInfoBatch = function(json) {
  * Called by C++ to update a spell's unlock state
  */
 window.updateSpellState = function(formId, state) {
+    const validStates = ['locked', 'available', 'unlocked', 'learning'];
+    if (!validStates.includes(state)) {
+        console.warn('[SpellTree] Invalid state:', state);
+        return;
+    }
     if (window.app?.data) {
         const node = window.app.data.nodes.find(n => n.formId === formId || n.id === formId);
         if (node) {
             node.state = state;
             window.app.renderer.render();
-            
+
             // Update counts
-            document.getElementById('unlocked-count').textContent = 
+            document.getElementById('unlocked-count').textContent =
                 window.app.data.nodes.filter(n => n.state === 'unlocked').length;
         }
     }

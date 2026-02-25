@@ -14,6 +14,96 @@
 // SETTINGS (Legacy - now uses Unified Config)
 // =============================================================================
 
+// Apply runtime settings from a fully-merged config JSON.
+// Shared between OnLoadUnifiedConfig and DoSaveUnifiedConfig to avoid duplication.
+// Handles: early learning, spell tome, passive learning, and notification settings.
+static void ApplySettingsFromConfig(const nlohmann::json& config)
+{
+    // Early learning settings
+    if (config.contains("earlySpellLearning") && !config["earlySpellLearning"].is_null()) {
+        auto& elConfig = config["earlySpellLearning"];
+        SpellEffectivenessHook::EarlyLearningSettings elSettings;
+        elSettings.enabled = SafeJsonValue<bool>(elConfig, "enabled", true);
+        elSettings.unlockThreshold = SafeJsonValue<float>(elConfig, "unlockThreshold", 25.0f);
+        elSettings.selfCastRequiredAt = SafeJsonValue<float>(elConfig, "selfCastRequiredAt", 75.0f);
+        elSettings.selfCastXPMultiplier = SafeJsonValue<float>(elConfig, "selfCastXPMultiplier", 150.0f) / 100.0f;
+        elSettings.binaryEffectThreshold = SafeJsonValue<float>(elConfig, "binaryEffectThreshold", 80.0f);
+        elSettings.modifyGameDisplay = SafeJsonValue<bool>(elConfig, "modifyGameDisplay", true);
+        SpellEffectivenessHook::GetSingleton()->SetSettings(elSettings);
+
+        // Load configurable power steps if present
+        if (elConfig.contains("powerSteps") && !elConfig["powerSteps"].is_null() && elConfig["powerSteps"].is_array()) {
+            std::vector<SpellEffectivenessHook::PowerStep> steps;
+            for (const auto& stepJson : elConfig["powerSteps"]) {
+                if (stepJson.is_null()) continue;
+                SpellEffectivenessHook::PowerStep step;
+                step.progressThreshold = SafeJsonValue<float>(stepJson, "xp", 25.0f);
+                step.effectiveness = SafeJsonValue<float>(stepJson, "power", 20.0f) / 100.0f;
+                step.label = SafeJsonValue<std::string>(stepJson, "label", "Stage");
+                steps.push_back(step);
+            }
+            if (!steps.empty()) {
+                SpellEffectivenessHook::GetSingleton()->SetPowerSteps(steps);
+            }
+        }
+    }
+
+    // Spell tome settings
+    if (config.contains("spellTomeLearning") && !config["spellTomeLearning"].is_null()) {
+        auto& tomeConfig = config["spellTomeLearning"];
+        SpellTomeHook::Settings tomeSettings;
+        tomeSettings.enabled = SafeJsonValue<bool>(tomeConfig, "enabled", true);
+        tomeSettings.useProgressionSystem = SafeJsonValue<bool>(tomeConfig, "useProgressionSystem", true);
+        tomeSettings.grantXPOnRead = SafeJsonValue<bool>(tomeConfig, "grantXPOnRead", true);
+        tomeSettings.autoSetLearningTarget = SafeJsonValue<bool>(tomeConfig, "autoSetLearningTarget", true);
+        tomeSettings.showNotifications = SafeJsonValue<bool>(tomeConfig, "showNotifications", true);
+        tomeSettings.xpPercentToGrant = SafeJsonValue<float>(tomeConfig, "xpPercentToGrant", 25.0f);
+        tomeSettings.tomeInventoryBoost = SafeJsonValue<bool>(tomeConfig, "tomeInventoryBoost", true);
+        tomeSettings.tomeInventoryBoostPercent = SafeJsonValue<float>(tomeConfig, "tomeInventoryBoostPercent", 25.0f);
+        tomeSettings.requirePrereqs = SafeJsonValue<bool>(tomeConfig, "requirePrereqs", true);
+        tomeSettings.requireAllPrereqs = SafeJsonValue<bool>(tomeConfig, "requireAllPrereqs", true);
+        tomeSettings.requireSkillLevel = SafeJsonValue<bool>(tomeConfig, "requireSkillLevel", false);
+        SpellTomeHook::GetSingleton()->SetSettings(tomeSettings);
+        logger::info("UIManager: Applied SpellTomeHook settings - useProgressionSystem: {}, requirePrereqs: {}",
+            tomeSettings.useProgressionSystem, tomeSettings.requirePrereqs);
+    }
+
+    // Passive learning settings
+    if (config.contains("passiveLearning") && !config["passiveLearning"].is_null()) {
+        auto& plConfig = config["passiveLearning"];
+        SpellLearning::PassiveLearningSource::Settings plSettings;
+        plSettings.enabled = SafeJsonValue<bool>(plConfig, "enabled", false);
+        plSettings.scope = SafeJsonValue<std::string>(plConfig, "scope", "novice");
+        plSettings.xpPerGameHour = SafeJsonValue<float>(plConfig, "xpPerGameHour", 5.0f);
+        if (plConfig.contains("maxByTier") && plConfig["maxByTier"].is_object()) {
+            auto& tiers = plConfig["maxByTier"];
+            plSettings.maxNovice = SafeJsonValue<float>(tiers, "novice", 100.0f);
+            plSettings.maxApprentice = SafeJsonValue<float>(tiers, "apprentice", 75.0f);
+            plSettings.maxAdept = SafeJsonValue<float>(tiers, "adept", 50.0f);
+            plSettings.maxExpert = SafeJsonValue<float>(tiers, "expert", 25.0f);
+            plSettings.maxMaster = SafeJsonValue<float>(tiers, "master", 5.0f);
+        }
+        auto* passiveSource = SpellLearning::PassiveLearningSource::GetSingleton();
+        if (passiveSource) {
+            passiveSource->SetSettings(plSettings);
+        }
+        logger::info("UIManager: Applied passive learning settings - enabled: {}, scope: {}",
+            plSettings.enabled, plSettings.scope);
+    }
+
+    // Notification settings
+    if (config.contains("notifications") && !config["notifications"].is_null()) {
+        auto& notifConfig = config["notifications"];
+        auto* castHandler = SpellCastHandler::GetSingleton();
+        if (castHandler) {
+            castHandler->SetWeakenedNotificationsEnabled(SafeJsonValue<bool>(notifConfig, "weakenedSpellNotifications", true));
+            castHandler->SetNotificationInterval(SafeJsonValue<float>(notifConfig, "weakenedSpellInterval", 10.0f));
+            logger::info("UIManager: Applied notification settings - interval: {}s",
+                castHandler->GetNotificationInterval());
+        }
+    }
+}
+
 std::filesystem::path GetSettingsFilePath()
 {
     return "Data/SKSE/Plugins/SpellLearning/settings.json";
@@ -248,88 +338,8 @@ void UIManager::OnLoadUnifiedConfig([[maybe_unused]] const char* argument)
     xpSettings.moddedSources = ProgressionManager::GetSingleton()->GetXPSettings().moddedSources;
     ProgressionManager::GetSingleton()->SetXPSettings(xpSettings);
 
-    // Update SpellEffectivenessHook with early learning settings
-    if (unifiedConfig.contains("earlySpellLearning") && !unifiedConfig["earlySpellLearning"].is_null()) {
-        auto& elConfig = unifiedConfig["earlySpellLearning"];
-        SpellEffectivenessHook::EarlyLearningSettings elSettings;
-        elSettings.enabled = SafeJsonValue<bool>(elConfig, "enabled", true);
-        elSettings.unlockThreshold = SafeJsonValue<float>(elConfig, "unlockThreshold", 25.0f);
-        elSettings.selfCastRequiredAt = SafeJsonValue<float>(elConfig, "selfCastRequiredAt", 75.0f);
-        elSettings.selfCastXPMultiplier = SafeJsonValue<float>(elConfig, "selfCastXPMultiplier", 150.0f) / 100.0f;
-        elSettings.binaryEffectThreshold = SafeJsonValue<float>(elConfig, "binaryEffectThreshold", 80.0f);
-        elSettings.modifyGameDisplay = SafeJsonValue<bool>(elConfig, "modifyGameDisplay", true);
-        SpellEffectivenessHook::GetSingleton()->SetSettings(elSettings);
-
-        // Load configurable power steps if present
-        if (elConfig.contains("powerSteps") && !elConfig["powerSteps"].is_null() && elConfig["powerSteps"].is_array()) {
-            std::vector<SpellEffectivenessHook::PowerStep> steps;
-            for (const auto& stepJson : elConfig["powerSteps"]) {
-                if (stepJson.is_null()) continue;
-                SpellEffectivenessHook::PowerStep step;
-                step.progressThreshold = SafeJsonValue<float>(stepJson, "xp", 25.0f);
-                step.effectiveness = SafeJsonValue<float>(stepJson, "power", 20.0f) / 100.0f;  // Convert % to 0-1
-                step.label = SafeJsonValue<std::string>(stepJson, "label", "Stage");
-                steps.push_back(step);
-            }
-            if (!steps.empty()) {
-                SpellEffectivenessHook::GetSingleton()->SetPowerSteps(steps);
-            }
-        }
-    }
-
-    // Update SpellTomeHook with tome learning settings
-    if (unifiedConfig.contains("spellTomeLearning") && !unifiedConfig["spellTomeLearning"].is_null()) {
-        auto& tomeConfig = unifiedConfig["spellTomeLearning"];
-        SpellTomeHook::Settings tomeSettings;
-        tomeSettings.enabled = SafeJsonValue<bool>(tomeConfig, "enabled", true);
-        tomeSettings.useProgressionSystem = SafeJsonValue<bool>(tomeConfig, "useProgressionSystem", true);
-        tomeSettings.grantXPOnRead = SafeJsonValue<bool>(tomeConfig, "grantXPOnRead", true);
-        tomeSettings.autoSetLearningTarget = SafeJsonValue<bool>(tomeConfig, "autoSetLearningTarget", true);
-        tomeSettings.showNotifications = SafeJsonValue<bool>(tomeConfig, "showNotifications", true);
-        tomeSettings.xpPercentToGrant = SafeJsonValue<float>(tomeConfig, "xpPercentToGrant", 25.0f);
-        tomeSettings.tomeInventoryBoost = SafeJsonValue<bool>(tomeConfig, "tomeInventoryBoost", true);
-        tomeSettings.tomeInventoryBoostPercent = SafeJsonValue<float>(tomeConfig, "tomeInventoryBoostPercent", 25.0f);
-        // Learning requirements
-        tomeSettings.requirePrereqs = SafeJsonValue<bool>(tomeConfig, "requirePrereqs", true);
-        tomeSettings.requireAllPrereqs = SafeJsonValue<bool>(tomeConfig, "requireAllPrereqs", true);
-        tomeSettings.requireSkillLevel = SafeJsonValue<bool>(tomeConfig, "requireSkillLevel", false);
-        SpellTomeHook::GetSingleton()->SetSettings(tomeSettings);
-        logger::info("UIManager: Applied SpellTomeHook settings - useProgressionSystem: {}, requirePrereqs: {}, requireAllPrereqs: {}, requireSkillLevel: {}",
-            tomeSettings.useProgressionSystem, tomeSettings.requirePrereqs, tomeSettings.requireAllPrereqs, tomeSettings.requireSkillLevel);
-    }
-
-    // Update PassiveLearningSource with passive learning settings
-    if (unifiedConfig.contains("passiveLearning") && !unifiedConfig["passiveLearning"].is_null()) {
-        auto& plConfig = unifiedConfig["passiveLearning"];
-        SpellLearning::PassiveLearningSource::Settings plSettings;
-        plSettings.enabled = SafeJsonValue<bool>(plConfig, "enabled", false);
-        plSettings.scope = SafeJsonValue<std::string>(plConfig, "scope", "novice");
-        plSettings.xpPerGameHour = SafeJsonValue<float>(plConfig, "xpPerGameHour", 5.0f);
-        if (plConfig.contains("maxByTier") && plConfig["maxByTier"].is_object()) {
-            auto& tiers = plConfig["maxByTier"];
-            plSettings.maxNovice = SafeJsonValue<float>(tiers, "novice", 100.0f);
-            plSettings.maxApprentice = SafeJsonValue<float>(tiers, "apprentice", 75.0f);
-            plSettings.maxAdept = SafeJsonValue<float>(tiers, "adept", 50.0f);
-            plSettings.maxExpert = SafeJsonValue<float>(tiers, "expert", 25.0f);
-            plSettings.maxMaster = SafeJsonValue<float>(tiers, "master", 5.0f);
-        }
-        auto* passiveSource = SpellLearning::PassiveLearningSource::GetSingleton();
-        if (passiveSource) {
-            passiveSource->SetSettings(plSettings);
-        }
-        logger::info("UIManager: Applied passive learning settings - enabled: {}, scope: {}, xp/hr: {}",
-            plSettings.enabled, plSettings.scope, plSettings.xpPerGameHour);
-    }
-
-    // Update SpellCastHandler with notification settings
-    if (unifiedConfig.contains("notifications") && !unifiedConfig["notifications"].is_null()) {
-        auto& notifConfig = unifiedConfig["notifications"];
-        auto* castHandler = SpellCastHandler::GetSingleton();
-        castHandler->SetWeakenedNotificationsEnabled(SafeJsonValue<bool>(notifConfig, "weakenedSpellNotifications", true));
-        castHandler->SetNotificationInterval(SafeJsonValue<float>(notifConfig, "weakenedSpellInterval", 10.0f));
-        logger::info("UIManager: Applied notification settings - weakened enabled: {}, interval: {}s",
-            castHandler->GetWeakenedNotificationsEnabled(), castHandler->GetNotificationInterval());
-    }
+    // Apply early learning, tome, passive, and notification settings
+    ApplySettingsFromConfig(unifiedConfig);
 
     // Strip internal sources from config before sending to UI (they have their own UI sections)
     if (unifiedConfig.contains("moddedXPSources") && unifiedConfig["moddedXPSources"].is_object()) {
@@ -405,10 +415,9 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
 {
     auto path = GetUnifiedConfigPath();
 
-    // Ensure directory exists
-    std::filesystem::create_directories(path.parent_path());
-
     try {
+        // Ensure directory exists
+        std::filesystem::create_directories(path.parent_path());
         // Parse incoming config
         json newConfig = json::parse(configData);
 
@@ -438,25 +447,25 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
 
         // Update XP settings in ProgressionManager if changed
         ProgressionManager::XPSettings xpSettings;
-        xpSettings.learningMode = SafeJsonValue<std::string>(newConfig, "learningMode", "perSchool");
-        xpSettings.globalMultiplier = SafeJsonValue<float>(newConfig, "xpGlobalMultiplier", 1.0f);
-        xpSettings.multiplierDirect = SafeJsonValue<float>(newConfig, "xpMultiplierDirect", 100.0f) / 100.0f;
-        xpSettings.multiplierSchool = SafeJsonValue<float>(newConfig, "xpMultiplierSchool", 50.0f) / 100.0f;
-        xpSettings.multiplierAny = SafeJsonValue<float>(newConfig, "xpMultiplierAny", 10.0f) / 100.0f;
+        xpSettings.learningMode = SafeJsonValue<std::string>(existingConfig, "learningMode", "perSchool");
+        xpSettings.globalMultiplier = SafeJsonValue<float>(existingConfig, "xpGlobalMultiplier", 1.0f);
+        xpSettings.multiplierDirect = SafeJsonValue<float>(existingConfig, "xpMultiplierDirect", 100.0f) / 100.0f;
+        xpSettings.multiplierSchool = SafeJsonValue<float>(existingConfig, "xpMultiplierSchool", 50.0f) / 100.0f;
+        xpSettings.multiplierAny = SafeJsonValue<float>(existingConfig, "xpMultiplierAny", 10.0f) / 100.0f;
         // XP caps (max contribution from each source)
-        xpSettings.capAny = SafeJsonValue<float>(newConfig, "xpCapAny", 5.0f);
-        xpSettings.capSchool = SafeJsonValue<float>(newConfig, "xpCapSchool", 15.0f);
-        xpSettings.capDirect = SafeJsonValue<float>(newConfig, "xpCapDirect", 50.0f);
+        xpSettings.capAny = SafeJsonValue<float>(existingConfig, "xpCapAny", 5.0f);
+        xpSettings.capSchool = SafeJsonValue<float>(existingConfig, "xpCapSchool", 15.0f);
+        xpSettings.capDirect = SafeJsonValue<float>(existingConfig, "xpCapDirect", 50.0f);
         // Tier XP requirements
-        xpSettings.xpNovice = SafeJsonValue<float>(newConfig, "xpNovice", 100.0f);
-        xpSettings.xpApprentice = SafeJsonValue<float>(newConfig, "xpApprentice", 200.0f);
-        xpSettings.xpAdept = SafeJsonValue<float>(newConfig, "xpAdept", 400.0f);
-        xpSettings.xpExpert = SafeJsonValue<float>(newConfig, "xpExpert", 800.0f);
-        xpSettings.xpMaster = SafeJsonValue<float>(newConfig, "xpMaster", 1500.0f);
+        xpSettings.xpNovice = SafeJsonValue<float>(existingConfig, "xpNovice", 100.0f);
+        xpSettings.xpApprentice = SafeJsonValue<float>(existingConfig, "xpApprentice", 200.0f);
+        xpSettings.xpAdept = SafeJsonValue<float>(existingConfig, "xpAdept", 400.0f);
+        xpSettings.xpExpert = SafeJsonValue<float>(existingConfig, "xpExpert", 800.0f);
+        xpSettings.xpMaster = SafeJsonValue<float>(existingConfig, "xpMaster", 1500.0f);
 
         // Load modded XP source settings from config
-        if (newConfig.contains("moddedXPSources") && newConfig["moddedXPSources"].is_object()) {
-            for (auto& [srcId, srcData] : newConfig["moddedXPSources"].items()) {
+        if (existingConfig.contains("moddedXPSources") && existingConfig["moddedXPSources"].is_object()) {
+            for (auto& [srcId, srcData] : existingConfig["moddedXPSources"].items()) {
                 ProgressionManager::ModdedSourceConfig config;
                 config.displayName = SafeJsonValue<std::string>(srcData, "displayName", srcId);
                 config.enabled = SafeJsonValue<bool>(srcData, "enabled", true);
@@ -475,87 +484,8 @@ void UIManager::DoSaveUnifiedConfig(const std::string& configData)
         }
         ProgressionManager::GetSingleton()->SetXPSettings(xpSettings);
 
-        // Update early learning settings in SpellEffectivenessHook if changed
-        if (newConfig.contains("earlySpellLearning") && !newConfig["earlySpellLearning"].is_null()) {
-            auto& elConfig = newConfig["earlySpellLearning"];
-            SpellEffectivenessHook::EarlyLearningSettings elSettings;
-            elSettings.enabled = SafeJsonValue<bool>(elConfig, "enabled", true);
-            elSettings.unlockThreshold = SafeJsonValue<float>(elConfig, "unlockThreshold", 25.0f);
-            elSettings.selfCastRequiredAt = SafeJsonValue<float>(elConfig, "selfCastRequiredAt", 75.0f);
-            elSettings.selfCastXPMultiplier = SafeJsonValue<float>(elConfig, "selfCastXPMultiplier", 150.0f) / 100.0f;
-            elSettings.binaryEffectThreshold = SafeJsonValue<float>(elConfig, "binaryEffectThreshold", 80.0f);
-            elSettings.modifyGameDisplay = SafeJsonValue<bool>(elConfig, "modifyGameDisplay", true);
-            SpellEffectivenessHook::GetSingleton()->SetSettings(elSettings);
-
-            // Load configurable power steps if present
-            if (elConfig.contains("powerSteps") && !elConfig["powerSteps"].is_null() && elConfig["powerSteps"].is_array()) {
-                std::vector<SpellEffectivenessHook::PowerStep> steps;
-                for (const auto& stepJson : elConfig["powerSteps"]) {
-                    if (stepJson.is_null()) continue;
-                    SpellEffectivenessHook::PowerStep step;
-                    step.progressThreshold = SafeJsonValue<float>(stepJson, "xp", 25.0f);
-                    step.effectiveness = SafeJsonValue<float>(stepJson, "power", 20.0f) / 100.0f;  // Convert % to 0-1
-                    step.label = SafeJsonValue<std::string>(stepJson, "label", "Stage");
-                    steps.push_back(step);
-                }
-                if (!steps.empty()) {
-                    SpellEffectivenessHook::GetSingleton()->SetPowerSteps(steps);
-                }
-            }
-        }
-
-        // Update SpellTomeHook settings if changed
-        if (newConfig.contains("spellTomeLearning") && !newConfig["spellTomeLearning"].is_null()) {
-            auto& tomeConfig = newConfig["spellTomeLearning"];
-            SpellTomeHook::Settings tomeSettings;
-            tomeSettings.enabled = SafeJsonValue<bool>(tomeConfig, "enabled", true);
-            tomeSettings.useProgressionSystem = SafeJsonValue<bool>(tomeConfig, "useProgressionSystem", true);
-            tomeSettings.grantXPOnRead = SafeJsonValue<bool>(tomeConfig, "grantXPOnRead", true);
-            tomeSettings.autoSetLearningTarget = SafeJsonValue<bool>(tomeConfig, "autoSetLearningTarget", true);
-            tomeSettings.showNotifications = SafeJsonValue<bool>(tomeConfig, "showNotifications", true);
-            tomeSettings.xpPercentToGrant = SafeJsonValue<float>(tomeConfig, "xpPercentToGrant", 25.0f);
-            tomeSettings.tomeInventoryBoost = SafeJsonValue<bool>(tomeConfig, "tomeInventoryBoost", true);
-            tomeSettings.tomeInventoryBoostPercent = SafeJsonValue<float>(tomeConfig, "tomeInventoryBoostPercent", 25.0f);
-            // Learning requirements
-            tomeSettings.requirePrereqs = SafeJsonValue<bool>(tomeConfig, "requirePrereqs", true);
-            tomeSettings.requireAllPrereqs = SafeJsonValue<bool>(tomeConfig, "requireAllPrereqs", true);
-            tomeSettings.requireSkillLevel = SafeJsonValue<bool>(tomeConfig, "requireSkillLevel", false);
-            SpellTomeHook::GetSingleton()->SetSettings(tomeSettings);
-            logger::info("UIManager: Applied SpellTomeHook settings from save");
-        }
-
-        // Update passive learning settings if changed
-        if (newConfig.contains("passiveLearning") && !newConfig["passiveLearning"].is_null()) {
-            auto& plConfig = newConfig["passiveLearning"];
-            SpellLearning::PassiveLearningSource::Settings plSettings;
-            plSettings.enabled = SafeJsonValue<bool>(plConfig, "enabled", false);
-            plSettings.scope = SafeJsonValue<std::string>(plConfig, "scope", "novice");
-            plSettings.xpPerGameHour = SafeJsonValue<float>(plConfig, "xpPerGameHour", 5.0f);
-            if (plConfig.contains("maxByTier") && plConfig["maxByTier"].is_object()) {
-                auto& tiers = plConfig["maxByTier"];
-                plSettings.maxNovice = SafeJsonValue<float>(tiers, "novice", 100.0f);
-                plSettings.maxApprentice = SafeJsonValue<float>(tiers, "apprentice", 75.0f);
-                plSettings.maxAdept = SafeJsonValue<float>(tiers, "adept", 50.0f);
-                plSettings.maxExpert = SafeJsonValue<float>(tiers, "expert", 25.0f);
-                plSettings.maxMaster = SafeJsonValue<float>(tiers, "master", 5.0f);
-            }
-            auto* passiveSource = SpellLearning::PassiveLearningSource::GetSingleton();
-            if (passiveSource) {
-                passiveSource->SetSettings(plSettings);
-            }
-            logger::info("UIManager: Applied passive learning settings from save - enabled: {}",
-                plSettings.enabled);
-        }
-
-        // Update notification settings if changed
-        if (newConfig.contains("notifications") && !newConfig["notifications"].is_null()) {
-            auto& notifConfig = newConfig["notifications"];
-            auto* castHandler = SpellCastHandler::GetSingleton();
-            castHandler->SetWeakenedNotificationsEnabled(SafeJsonValue<bool>(notifConfig, "weakenedSpellNotifications", true));
-            castHandler->SetNotificationInterval(SafeJsonValue<float>(notifConfig, "weakenedSpellInterval", 10.0f));
-            logger::info("UIManager: Applied notification settings from save - interval: {}s",
-                castHandler->GetNotificationInterval());
-        }
+        // Apply early learning, tome, passive, and notification settings
+        ApplySettingsFromConfig(existingConfig);
 
         // Write merged config
         std::ofstream file(path);

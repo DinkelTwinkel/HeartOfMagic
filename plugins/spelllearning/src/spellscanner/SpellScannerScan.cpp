@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "SpellScanner.h"
+#include "EncodingUtils.h"
 #include "SpellEffectivenessHook.h"
 
 namespace SpellScanner
@@ -232,7 +233,7 @@ namespace SpellScanner
             // Essential fields (always included)
             spellJson["formId"] = std::format("0x{:08X}", formId);
             spellJson["persistentId"] = GetPersistentFormId(formId);  // Load order resilient ID
-            spellJson["name"] = SanitizeToUTF8(name);  // Sanitize for valid UTF-8 JSON
+            spellJson["name"] = EncodingUtils::SanitizeToUTF8(name);  // Sanitize for valid UTF-8 JSON
             spellJson["school"] = GetSchoolName(school);
             spellJson["skillLevel"] = DetermineSpellTier(spell);
 
@@ -272,14 +273,14 @@ namespace SpellScanner
                     if (!effect || !effect->baseEffect) continue;
 
                     json effectJson;
-                    effectJson["name"] = SanitizeToUTF8(effect->baseEffect->GetFullName());
+                    effectJson["name"] = EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName());
                     effectJson["magnitude"] = effect->effectItem.magnitude;
                     effectJson["duration"] = effect->effectItem.duration;
                     effectJson["area"] = effect->effectItem.area;
 
                     const char* description = effect->baseEffect->magicItemDescription.c_str();
                     if (description && strlen(description) > 0) {
-                        effectJson["description"] = SanitizeToUTF8(description);
+                        effectJson["description"] = EncodingUtils::SanitizeToUTF8(description);
                     }
                     effectsArray.push_back(effectJson);
                 }
@@ -288,7 +289,7 @@ namespace SpellScanner
                 json effectNamesArray = json::array();
                 for (auto* effect : spell->effects) {
                     if (effect && effect->baseEffect) {
-                        effectNamesArray.push_back(SanitizeToUTF8(effect->baseEffect->GetFullName()));
+                        effectNamesArray.push_back(EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName()));
                     }
                 }
                 spellJson["effectNames"] = effectNamesArray;
@@ -367,7 +368,7 @@ namespace SpellScanner
         // Add system instructions (hidden from user)
         combinedPrompt += GetSystemInstructions();
 
-        output["llmPrompt"] = SanitizeToUTF8(combinedPrompt);  // Sanitize user prompt for valid UTF-8 JSON
+        output["llmPrompt"] = EncodingUtils::SanitizeToUTF8(combinedPrompt);  // Sanitize user prompt for valid UTF-8 JSON
 
         return output.dump(2);
     }
@@ -447,13 +448,13 @@ namespace SpellScanner
             // Essential fields (always included)
             spellJson["formId"] = std::format("0x{:08X}", spellFormId);
             spellJson["persistentId"] = GetPersistentFormId(spellFormId);  // Load order resilient ID
-            spellJson["name"] = SanitizeToUTF8(spellName);  // Sanitize for valid UTF-8 JSON
+            spellJson["name"] = EncodingUtils::SanitizeToUTF8(spellName);  // Sanitize for valid UTF-8 JSON
             spellJson["school"] = GetSchoolName(school);
             spellJson["skillLevel"] = DetermineSpellTier(spell);
 
             // Also include tome info for reference (sanitize - mods like DynDOLOD can have invalid UTF-8 in book names)
             spellJson["tomeFormId"] = std::format("0x{:08X}", book->GetFormID());
-            spellJson["tomeName"] = SanitizeToUTF8(book->GetFullName());
+            spellJson["tomeName"] = EncodingUtils::SanitizeToUTF8(book->GetFullName());
 
             // Optional fields
             if (fields.editorId && spellEditorId) {
@@ -491,14 +492,14 @@ namespace SpellScanner
                     if (!effect || !effect->baseEffect) continue;
 
                     json effectJson;
-                    effectJson["name"] = SanitizeToUTF8(effect->baseEffect->GetFullName());
+                    effectJson["name"] = EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName());
                     effectJson["magnitude"] = effect->effectItem.magnitude;
                     effectJson["duration"] = effect->effectItem.duration;
                     effectJson["area"] = effect->effectItem.area;
 
                     const char* description = effect->baseEffect->magicItemDescription.c_str();
                     if (description && strlen(description) > 0) {
-                        effectJson["description"] = SanitizeToUTF8(description);
+                        effectJson["description"] = EncodingUtils::SanitizeToUTF8(description);
                     }
                     effectsArray.push_back(effectJson);
                 }
@@ -507,7 +508,7 @@ namespace SpellScanner
                 json effectNamesArray = json::array();
                 for (auto* effect : spell->effects) {
                     if (effect && effect->baseEffect) {
-                        effectNamesArray.push_back(SanitizeToUTF8(effect->baseEffect->GetFullName()));
+                        effectNamesArray.push_back(EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName()));
                     }
                 }
                 spellJson["effectNames"] = effectNamesArray;
@@ -557,7 +558,7 @@ namespace SpellScanner
             combinedPrompt += "\n\n";
         }
         combinedPrompt += GetSystemInstructions();
-        output["llmPrompt"] = SanitizeToUTF8(combinedPrompt);  // Sanitize user prompt for valid UTF-8 JSON
+        output["llmPrompt"] = EncodingUtils::SanitizeToUTF8(combinedPrompt);  // Sanitize user prompt for valid UTF-8 JSON
 
         return output.dump(2);
     }
@@ -612,7 +613,7 @@ namespace SpellScanner
         // Build spell info JSON
         json spellInfo;
         spellInfo["formId"] = formIdStr;
-        spellInfo["name"] = SanitizeToUTF8(spell->GetFullName());  // Sanitize for valid UTF-8 JSON
+        spellInfo["name"] = EncodingUtils::SanitizeToUTF8(spell->GetFullName());  // Sanitize for valid UTF-8 JSON
 
         const char* editorId = spell->GetFormEditorID();
         spellInfo["editorId"] = editorId ? editorId : "";
@@ -656,7 +657,7 @@ namespace SpellScanner
         for (auto* effect : spell->effects) {
             if (!effect || !effect->baseEffect) continue;
 
-            std::string effectName = SanitizeToUTF8(effect->baseEffect->GetFullName());
+            std::string effectName = EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName());
             effectNamesArray.push_back(effectName);
 
             json effectJson;
@@ -667,7 +668,7 @@ namespace SpellScanner
 
             const char* desc = effect->baseEffect->magicItemDescription.c_str();
             if (desc && strlen(desc) > 0) {
-                std::string descSanitized = SanitizeToUTF8(desc);
+                std::string descSanitized = EncodingUtils::SanitizeToUTF8(desc);
                 effectJson["description"] = descSanitized;
                 if (description.empty()) {
                     description = descSanitized;  // Use first effect's description as spell description
@@ -693,7 +694,7 @@ namespace SpellScanner
                 if (!effect || !effect->baseEffect) continue;
 
                 json scaledEffect;
-                scaledEffect["name"] = SanitizeToUTF8(effect->baseEffect->GetFullName());
+                scaledEffect["name"] = EncodingUtils::SanitizeToUTF8(effect->baseEffect->GetFullName());
                 scaledEffect["originalMagnitude"] = effect->effectItem.magnitude;
                 scaledEffect["scaledMagnitude"] = static_cast<int>(effect->effectItem.magnitude * effectiveness);
                 scaledEffect["duration"] = effect->effectItem.duration;

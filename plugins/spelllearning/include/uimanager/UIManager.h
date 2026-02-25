@@ -5,7 +5,6 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
-#include <thread>
 
 #include "PrismaUI_API.h"
 #include "treebuilder/TreeBuilder.h"

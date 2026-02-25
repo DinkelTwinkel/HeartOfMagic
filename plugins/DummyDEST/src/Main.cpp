@@ -12,21 +12,10 @@
 #include "Common.h"
 
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
-  SKSE::Init(skse, false);
+    SKSE::Init(skse, false);
+    SetupLog(
+        "DontEatSpellTomes (Heart of Magic shim): Loaded. "
+        "This is an inert replacement - SpellLearning.dll provides DEST API.");
 
-  // Intentionally empty — SpellLearning.dll handles everything.
-  // This DLL exists only to prevent the real DontEatSpellTomes.dll
-  // from loading and conflicting with our spell tome hook.
-
-  logger::init();
-
-  // pattern: [2024-01-01 12:00:00.000] [info] [1234] [sourcefile.cpp:123] Log
-  spdlog::set_pattern("[%Y-%m-%d %T.%e] [%l] [%t] [%s:%#] %v");
-  spdlog::set_level(spdlog::level::info);
-
-  logger::info(
-      "DontEatSpellTomes (Heart of Magic shim): Loaded. "
-      "This is an inert replacement - SpellLearning.dll provides DEST API.");
-
-  return true;
+    return true;
 }

@@ -22,6 +22,7 @@ static std::string EscapeForPrompt(const std::string& s)
             case '"':  result += "\\\""; break;
             case '\n': result += "\\n"; break;
             case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
             default:   result += c; break;
         }
     }

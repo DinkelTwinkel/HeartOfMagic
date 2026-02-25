@@ -1,5 +1,6 @@
 #include "Common.h"
 #include "uimanager/UIManager.h"
+#include "EncodingUtils.h"
 #include "ThreadUtils.h"
 
 // =============================================================================
@@ -84,9 +85,10 @@ void UIManager::OnGetClipboard([[maybe_unused]] const char* argument)
                 if (pWideText) {
                     // Convert UTF-16 back to UTF-8
                     int utf8Len = WideCharToMultiByte(CP_UTF8, 0, pWideText, -1, nullptr, 0, nullptr, nullptr);
-                    if (utf8Len > 0) {
-                        content.resize(static_cast<size_t>(utf8Len) - 1);  // -1 to exclude null terminator
+                    if (utf8Len > 1) {
+                        content.resize(static_cast<size_t>(utf8Len));
                         WideCharToMultiByte(CP_UTF8, 0, pWideText, -1, content.data(), utf8Len, nullptr, nullptr);
+                        content.pop_back();  // Remove null terminator written by WideCharToMultiByte
                     }
                     GlobalUnlock(hData);
                     logger::info("UIManager: Read {} bytes from clipboard", content.size());
@@ -116,27 +118,6 @@ static std::filesystem::path GetPresetsBasePath()
     return "Data/SKSE/Plugins/SpellLearning/presets";
 }
 
-// Sanitize a preset name for use as a filename (remove dangerous chars)
-static std::string SanitizePresetFilename(const std::string& name)
-{
-    std::string safe;
-    safe.reserve(name.size());
-    for (char c : name) {
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
-            c == '"' || c == '<'  || c == '>' || c == '|') {
-            safe += '_';
-        } else {
-            safe += c;
-        }
-    }
-    // Trim trailing dots/spaces (Windows doesn't allow them in filenames)
-    while (!safe.empty() && (safe.back() == '.' || safe.back() == ' ')) {
-        safe.pop_back();
-    }
-    if (safe.empty()) safe = "_unnamed";
-    return safe;
-}
-
 void UIManager::OnSavePreset(const char* argument)
 {
     if (!argument || strlen(argument) == 0) {
@@ -158,9 +139,16 @@ void UIManager::OnSavePreset(const char* argument)
                 return;
             }
 
-            std::string safeName = SanitizePresetFilename(name);
+            std::string safeName = EncodingUtils::SanitizeFilename(name);
             // Sanitize type to prevent path traversal
-            std::string safeType = SanitizePresetFilename(type);
+            std::string safeType = EncodingUtils::SanitizeFilename(type);
+
+            // Defense-in-depth: reject if sanitized values still contain ".."
+            if (safeName.find("..") != std::string::npos || safeType.find("..") != std::string::npos) {
+                logger::error("UIManager: SavePreset - rejected suspicious name/type");
+                return;
+            }
+
             auto dir = GetPresetsBasePath() / safeType;
             std::filesystem::create_directories(dir);
 
@@ -200,9 +188,16 @@ void UIManager::OnDeletePreset(const char* argument)
                 return;
             }
 
-            std::string safeName = SanitizePresetFilename(name);
+            std::string safeName = EncodingUtils::SanitizeFilename(name);
             // Sanitize type to prevent path traversal
-            std::string safeType = SanitizePresetFilename(type);
+            std::string safeType = EncodingUtils::SanitizeFilename(type);
+
+            // Defense-in-depth: reject if sanitized values still contain ".."
+            if (safeName.find("..") != std::string::npos || safeType.find("..") != std::string::npos) {
+                logger::error("UIManager: DeletePreset - rejected suspicious name/type");
+                return;
+            }
+
             auto filePath = GetPresetsBasePath() / safeType / (safeName + ".json");
 
             if (std::filesystem::exists(filePath)) {
@@ -243,7 +238,14 @@ void UIManager::OnLoadPresets(const char* argument)
             }
 
             // Sanitize type to prevent path traversal
-            std::string safeType = SanitizePresetFilename(type);
+            std::string safeType = EncodingUtils::SanitizeFilename(type);
+
+            // Defense-in-depth: reject if sanitized value still contains ".."
+            if (safeType.find("..") != std::string::npos) {
+                logger::error("UIManager: LoadPresets - rejected suspicious type");
+                return;
+            }
+
             auto dir = GetPresetsBasePath() / safeType;
             json result;
             result["type"] = type;

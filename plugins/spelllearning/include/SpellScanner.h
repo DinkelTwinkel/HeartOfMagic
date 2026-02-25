@@ -92,10 +92,6 @@ namespace SpellScanner
     std::string DetermineSpellTier(RE::SpellItem* spell);
     std::string GetPluginName(RE::FormID formId);
 
-    // UTF-8 encoding helpers (used across scanner files)
-    std::string ConvertToUTF8(const std::string& input);
-    std::string SanitizeToUTF8(const std::string& input);
-
     // Internal scanning (returns spell array JSON, used by ScanAllSpells/ScanSpellTomes)
     json ScanSpellsToJson(const FieldConfig& fields);
 }

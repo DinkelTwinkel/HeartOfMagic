@@ -473,6 +473,8 @@ body {
     flex: 1;
     padding: 14px;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .detail-row {
@@ -862,7 +864,33 @@ body {
     animation: pulse 2s ease-in-out infinite;
 }
 
-/* Scrollbar */
+/* Disable pulse on selected+available nodes (animation filter overrides glow) */
+.spell-node.selected.available .node-bg {
+    animation: none;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .spell-node.available .node-bg {
+        animation: none;
+    }
+}
+
+/* Focus-visible styles for keyboard accessibility */
+.btn:focus-visible,
+.header-btn:focus-visible,
+.zoom-btn:focus-visible {
+    outline: 2px solid var(--accent-gold);
+    outline-offset: 2px;
+}
+
+/* Scrollbar - Firefox */
+.details-body {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* Scrollbar - Webkit */
 ::-webkit-scrollbar {
     width: 6px;
 }

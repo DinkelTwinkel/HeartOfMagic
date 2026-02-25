@@ -118,15 +118,8 @@ void ProgressionManager::ClearLearningTargetForSpell(RE::FormID formId)
     if (!effect || !effect->baseEffect) return;
 
     auto school = effect->baseEffect->GetMagickSkill();
-    std::string schoolName;
-    switch (school) {
-        case RE::ActorValue::kAlteration:  schoolName = "Alteration"; break;
-        case RE::ActorValue::kConjuration: schoolName = "Conjuration"; break;
-        case RE::ActorValue::kDestruction: schoolName = "Destruction"; break;
-        case RE::ActorValue::kIllusion:    schoolName = "Illusion"; break;
-        case RE::ActorValue::kRestoration: schoolName = "Restoration"; break;
-        default: return;
-    }
+    std::string schoolName = SpellScanner::GetSchoolName(school);
+    if (schoolName == "Unknown") return;
 
     // Only clear if this spell is the current target for this school
     auto it = m_learningTargets.find(schoolName);
@@ -331,16 +324,10 @@ void ProgressionManager::SetLearningTargetFromTome(const std::string& formIdStr,
     }
 
     auto school = effect->baseEffect->GetMagickSkill();
-    std::string schoolName;
-    switch (school) {
-        case RE::ActorValue::kAlteration:  schoolName = "Alteration"; break;
-        case RE::ActorValue::kConjuration: schoolName = "Conjuration"; break;
-        case RE::ActorValue::kDestruction: schoolName = "Destruction"; break;
-        case RE::ActorValue::kIllusion:    schoolName = "Illusion"; break;
-        case RE::ActorValue::kRestoration: schoolName = "Restoration"; break;
-        default:
-            logger::warn("ProgressionManager: Unknown school for spell {}", spell->GetName());
-            return;
+    std::string schoolName = SpellScanner::GetSchoolName(school);
+    if (schoolName == "Unknown") {
+        logger::warn("ProgressionManager: Unknown school for spell {}", spell->GetName());
+        return;
     }
 
     RE::FormID formId = spell->GetFormID();
@@ -443,17 +430,22 @@ bool ProgressionManager::UnlockSpell(RE::FormID formId)
     auto* effect = spell->GetCostliestEffectItem();
     if (effect && effect->baseEffect) {
         auto school = effect->baseEffect->GetMagickSkill();
-        std::string schoolName;
-        switch (school) {
-            case RE::ActorValue::kAlteration:  schoolName = "Alteration"; break;
-            case RE::ActorValue::kConjuration: schoolName = "Conjuration"; break;
-            case RE::ActorValue::kDestruction: schoolName = "Destruction"; break;
-            case RE::ActorValue::kIllusion:    schoolName = "Illusion"; break;
-            case RE::ActorValue::kRestoration: schoolName = "Restoration"; break;
-            default: break;
-        }
-        if (!schoolName.empty()) {
+        std::string schoolName = SpellScanner::GetSchoolName(school);
+        if (schoolName != "Unknown") {
             ClearLearningTarget(schoolName);
+        } else {
+            // Unknown school — find and clear by formId instead
+            logger::warn("ProgressionManager: Unknown school for unlocked spell {:08X}, searching by formId", formId);
+            std::string schoolToErase;
+            for (const auto& [s, targetId] : m_learningTargets) {
+                if (targetId == formId) {
+                    schoolToErase = s;
+                    break;
+                }
+            }
+            if (!schoolToErase.empty()) {
+                ClearLearningTarget(schoolToErase);
+            }
         }
     }
 

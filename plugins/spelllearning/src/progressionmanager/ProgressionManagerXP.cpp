@@ -289,17 +289,9 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
 
                 // Fire ModEvent: SpellLearning_SpellEarlyGranted
                 auto* costliest = spell->GetCostliestEffectItem();
-                std::string schoolStr = "Unknown";
-                if (costliest && costliest->baseEffect) {
-                    switch (costliest->baseEffect->GetMagickSkill()) {
-                        case RE::ActorValue::kAlteration:  schoolStr = "Alteration"; break;
-                        case RE::ActorValue::kConjuration: schoolStr = "Conjuration"; break;
-                        case RE::ActorValue::kDestruction: schoolStr = "Destruction"; break;
-                        case RE::ActorValue::kIllusion:    schoolStr = "Illusion"; break;
-                        case RE::ActorValue::kRestoration: schoolStr = "Restoration"; break;
-                        default: break;
-                    }
-                }
+                std::string schoolStr = (costliest && costliest->baseEffect)
+                    ? SpellScanner::GetSchoolName(costliest->baseEffect->GetMagickSkill())
+                    : "Unknown";
                 SendModEvent("SpellLearning_SpellEarlyGranted", schoolStr, newProgress * 100.0f, spell);
             }
         }
@@ -347,17 +339,9 @@ void ProgressionManager::AddXP(RE::FormID targetSpellId, float amount)
 
                 // Fire ModEvent: SpellLearning_SpellMastered
                 auto* costliest = spell->GetCostliestEffectItem();
-                std::string schoolStr = "Unknown";
-                if (costliest && costliest->baseEffect) {
-                    switch (costliest->baseEffect->GetMagickSkill()) {
-                        case RE::ActorValue::kAlteration:  schoolStr = "Alteration"; break;
-                        case RE::ActorValue::kConjuration: schoolStr = "Conjuration"; break;
-                        case RE::ActorValue::kDestruction: schoolStr = "Destruction"; break;
-                        case RE::ActorValue::kIllusion:    schoolStr = "Illusion"; break;
-                        case RE::ActorValue::kRestoration: schoolStr = "Restoration"; break;
-                        default: break;
-                    }
-                }
+                std::string schoolStr = (costliest && costliest->baseEffect)
+                    ? SpellScanner::GetSchoolName(costliest->baseEffect->GetMagickSkill())
+                    : "Unknown";
                 SendModEvent("SpellLearning_SpellMastered", schoolStr, 0.0f, spell);
             }
 

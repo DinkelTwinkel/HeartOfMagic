@@ -3,6 +3,7 @@
 // =============================================================================
 
 #include "ProgressionManager.h"
+#include "EncodingUtils.h"
 #include "SKSE/SKSE.h"
 
 ProgressionManager* ProgressionManager::GetSingleton()
@@ -13,12 +14,14 @@ ProgressionManager* ProgressionManager::GetSingleton()
 
 std::filesystem::path ProgressionManager::GetProgressFilePath() const
 {
-    // Sanitize save name — strip path separators and special characters
-    std::string safeName = m_currentSaveName;
-    for (auto& c : safeName) {
-        if (c == '/' || c == '\\' || c == ':' || c == '<' || c == '>' || c == '"' || c == '|' || c == '?' || c == '*') {
-            c = '_';
-        }
+    if (m_currentSaveName.empty()) {
+        logger::warn("ProgressionManager: Save name is empty, using fallback filename");
+    }
+    std::string safeName = EncodingUtils::SanitizeFilename(m_currentSaveName);
+    // Defense-in-depth: reject if sanitized name still contains ".."
+    if (safeName.find("..") != std::string::npos) {
+        logger::error("ProgressionManager: Rejected suspicious save name: {}", m_currentSaveName);
+        safeName = "_unnamed";
     }
     std::string filename = "progress_" + safeName + ".json";
     return std::filesystem::path("Data/SKSE/Plugins/SpellLearning") / filename;

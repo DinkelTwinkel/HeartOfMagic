@@ -110,6 +110,7 @@ namespace SpellScanner
         TreeValidationResult result;
         std::set<std::string> missingPluginsSet;
         std::set<std::string> invalidFormIdsSet;
+        std::unordered_map<std::string, std::string> formIdRemapping;
 
         if (!treeData.contains("schools")) {
             logger::warn("SpellScanner: Tree has no schools key");
@@ -144,8 +145,10 @@ namespace SpellScanner
                     RE::FormID resolvedId = ResolvePersistentFormId(persistentId);
 
                     if (resolvedId != 0 && IsFormIdValid(resolvedId)) {
-                        // Update formId with resolved value
+                        // Update formId with resolved value, track old->new mapping
+                        std::string oldFormId = formIdStr;
                         node["formId"] = std::format("0x{:08X}", resolvedId);
+                        formIdRemapping[oldFormId] = node["formId"].get<std::string>();
                         isValid = true;
                         result.resolvedFromPersistent++;
                         logger::info("SpellScanner: Resolved {} -> 0x{:08X} from persistent ID",
@@ -196,6 +199,32 @@ namespace SpellScanner
                 }
             }
 
+            // Rewrite children/prerequisites that referenced old formIds of resolved nodes
+            if (!formIdRemapping.empty()) {
+                for (auto& node : nodes) {
+                    if (node.contains("children") && node["children"].is_array()) {
+                        for (auto& child : node["children"]) {
+                            if (child.is_string()) {
+                                auto it = formIdRemapping.find(child.get<std::string>());
+                                if (it != formIdRemapping.end()) {
+                                    child = it->second;
+                                }
+                            }
+                        }
+                    }
+                    if (node.contains("prerequisites") && node["prerequisites"].is_array()) {
+                        for (auto& prereq : node["prerequisites"]) {
+                            if (prereq.is_string()) {
+                                auto it = formIdRemapping.find(prereq.get<std::string>());
+                                if (it != formIdRemapping.end()) {
+                                    prereq = it->second;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Update root if it was invalid
             if (schoolData.contains("root") && schoolData["root"].is_string()) {
                 std::string rootId = schoolData["root"].get<std::string>();
@@ -206,6 +235,12 @@ namespace SpellScanner
                         logger::info("SpellScanner: Updated {} root to {}", schoolName, nodes[0]["formId"].dump());
                     }
                 }
+
+                // Update root if its formId was remapped via persistent ID resolution
+                auto remapIt = formIdRemapping.find(rootId);
+                if (remapIt != formIdRemapping.end()) {
+                    schoolData["root"] = remapIt->second;
+                }
             }
         }
 
@@ -213,8 +248,8 @@ namespace SpellScanner
         result.missingPlugins.assign(missingPluginsSet.begin(), missingPluginsSet.end());
         result.invalidFormIds.assign(invalidFormIdsSet.begin(), invalidFormIdsSet.end());
 
-        logger::info("SpellScanner: Tree validation complete - {}/{} valid, {} resolved from persistent, {} invalid",
-            result.validNodes, result.totalNodes, result.resolvedFromPersistent, result.invalidNodes);
+        logger::info("SpellScanner: Tree validation complete - {}/{} valid, {} resolved from persistent, {} invalid, {} references remapped",
+            result.validNodes, result.totalNodes, result.resolvedFromPersistent, result.invalidNodes, formIdRemapping.size());
 
         return result;
     }

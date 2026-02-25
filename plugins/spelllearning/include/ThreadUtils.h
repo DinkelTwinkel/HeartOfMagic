@@ -23,8 +23,8 @@
 inline void AddTaskToGameThread(std::string taskName, std::function<void()>&& task)
 {
     const SKSE::TaskInterface* taskInterface = SKSE::GetTaskInterface();
-    logger::debug("AddTaskToGameThread: Submitting task '{}' to main game thread", taskName);
     if (taskInterface) {
+        logger::debug("AddTaskToGameThread: Submitting task '{}' to main game thread", taskName);
         auto safeTask = [taskName = std::move(taskName), task = std::move(task)]() {
             try {
                 task();

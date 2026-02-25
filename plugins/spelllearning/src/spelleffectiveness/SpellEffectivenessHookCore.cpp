@@ -29,7 +29,8 @@ SpellEffectivenessHook* SpellEffectivenessHook::GetSingleton()
 
 // Shared player pointer cache — safe because PlayerCharacter::GetSingleton()
 // returns the same pointer for the entire game session.
-static RE::PlayerCharacter* g_cachedPlayer = nullptr;
+// Atomic to avoid formal UB under the C++ memory model (zero cost on x86-64).
+static std::atomic<RE::PlayerCharacter*> g_cachedPlayer{nullptr};
 
 template<std::size_t UniqueID>
 struct EffectivenessHook
@@ -43,10 +44,14 @@ struct EffectivenessHook
         if (!a_caster) {
             return;
         }
-        if (!g_cachedPlayer) {
-            g_cachedPlayer = RE::PlayerCharacter::GetSingleton();
+        auto* player = g_cachedPlayer.load(std::memory_order_relaxed);
+        if (!player) {
+            player = RE::PlayerCharacter::GetSingleton();
+            if (player) {
+                g_cachedPlayer.store(player, std::memory_order_relaxed);
+            }
         }
-        if (!g_cachedPlayer || a_caster != g_cachedPlayer) {
+        if (!player || a_caster != player) {
             return;
         }
 
