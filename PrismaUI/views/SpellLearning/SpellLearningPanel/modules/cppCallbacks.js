@@ -348,6 +348,14 @@ window.updateStatus = function(message) {
     if (typeof updateScanStatus === 'function') updateScanStatus(msg, type);
 };
 
+window.updateTreeStatus = function(message) {
+    var msg = message;
+    if (msg.startsWith('"') && msg.endsWith('"')) {
+        try { msg = JSON.parse(msg); } catch (e) {}
+    }
+    if (typeof setTreeStatus === 'function') setTreeStatus(msg);
+};
+
 window.updatePrompt = function(promptContent) {
     console.log('[SpellLearning] Received prompt, length:', promptContent.length);
     

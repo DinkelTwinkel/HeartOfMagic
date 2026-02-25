@@ -13,7 +13,7 @@ endif()
 #   - Compiler flags (plugins/cmake/CompilerFlags.cmake)
 #   - Static MSVC runtime
 # ============================================================================
-set(PROJECT_VERSION "2.3.0")
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" PROJECT_VERSION)
 project(HeartOfMagic VERSION ${PROJECT_VERSION} LANGUAGES CXX)
 
 # Prevent in-source builds

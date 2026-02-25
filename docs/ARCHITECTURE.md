@@ -36,7 +36,8 @@ Scan Spells → Generate Tree (C++ NLP builders) → Validate FormIDs → Displa
 
 ## Component Architecture
 
-### 1. **SpellScanner** (`plugin/src/SpellScanner.cpp/h`)
+### 1. **SpellScanner** (`plugins/spelllearning/src/spellscanner/`, `plugins/spelllearning/include/SpellScanner.h`)
+Split across: SpellScannerScan.cpp, SpellScannerFormId.cpp, SpellScannerHelpers.cpp, SpellScannerEncoding.cpp
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -65,7 +66,8 @@ Runtime FormID (e.g. 0x02001234) → "Skyrim.esm|0x001234"
 - On tree load, stale FormIDs auto-resolved from persistentId field
 ```
 
-### 2. **UIManager** (`plugin/src/UIManager.cpp/h`)
+### 2. **UIManager** (`plugins/spelllearning/src/uimanager/`, `plugins/spelllearning/include/uimanager/UIManager.h`)
+Split across: UIManagerCore.cpp, UIManagerNotify.cpp, UIManagerScanner.cpp, UIManagerTree.cpp, UIManagerLLM.cpp, UIManagerIO.cpp, UIManagerProgression.cpp, UIManagerConfig.cpp
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -82,7 +84,7 @@ Runtime FormID (e.g. 0x02001234) → "Skyrim.esm|0x001234"
 - `TogglePanel()` - Show/hide SpellLearningPanel
 - `InteropCall(view, function, data)` - Send data to UI
 - `OnLoadUnifiedConfig()` / `OnSaveUnifiedConfig()` - Settings persistence
-- `NotifyISLDetectionStatus()` - Update UI with ISL mod status
+- `NotifyDESTDetectionStatus()` - Update UI with DEST mod status
 - Various `On*` callback functions for UI interop
 
 **PrismaUI View Path:**
@@ -94,7 +96,8 @@ CreateView("SpellLearning/SpellLearningPanel/index.html", ...)
 MO2/mods/HeartOfMagic_RELEASE/PrismaUI/views/SpellLearning/SpellLearningPanel/
 ```
 
-### 3. **ProgressionManager** (`plugin/src/ProgressionManager.cpp/h`)
+### 3. **ProgressionManager** (`plugins/spelllearning/src/progressionmanager/`, `plugins/spelllearning/include/ProgressionManager.h`)
+Split across: ProgressionManagerCore.cpp, ProgressionManagerSerialization.cpp, ProgressionManagerAPI.cpp, ProgressionManagerTargets.cpp, ProgressionManagerXP.cpp
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -150,7 +153,8 @@ struct XPSettings {
 std::unordered_map<RE::FormID, std::vector<RE::FormID>> m_targetPrerequisites;
 ```
 
-### 4. **SpellEffectivenessHook** (`plugin/src/SpellEffectivenessHook.cpp/h`)
+### 4. **SpellEffectivenessHook** (`plugins/spelllearning/src/spelleffectiveness/`, `plugins/spelllearning/include/SpellEffectivenessHook.h`)
+Split across: SpellEffectivenessHookCore.cpp, SpellEffectivenessHookDisplay.cpp, SpellEffectivenessHookLegacy.cpp, SpellEffectivenessHookGrant.cpp
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -218,7 +222,7 @@ struct EarlyLearningSettings {
 // SpellItem::GetFullName (vtable) - Display name modification
 ```
 
-### 5. **SpellCastHandler** (`plugin/src/SpellCastHandler.cpp/h`)
+### 5. **SpellCastHandler** (`plugins/spelllearning/src/SpellCastHandler.cpp`, `plugins/spelllearning/include/SpellCastHandler.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -235,7 +239,7 @@ struct EarlyLearningSettings {
 - `SetNotificationInterval()` / `GetNotificationInterval()` - Notification throttling
 - `SetWeakenedNotificationsEnabled()` / `GetWeakenedNotificationsEnabled()`
 
-### 5b. **SpellTomeHook** (`plugin/src/SpellTomeHook.cpp/h`)
+### 6. **SpellTomeHook** (`plugins/spelllearning/src/SpellTomeHook.cpp`, `plugins/spelllearning/include/SpellTomeHook.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -262,7 +266,7 @@ float tomeInventoryBoostPercent = 25.0; // Bonus while tome in inventory
 - `OnSpellTomeRead()` - Internal hook handler
 - `GetSettings()` / `SetSettings()` - Configuration
 
-### 6. **ISLIntegration / DEST** (`plugin/src/ISLIntegration.cpp/h`)
+### 7. **ISLIntegration / DEST** (`plugins/spelllearning/src/ISLIntegration.cpp`, `plugins/spelllearning/include/ISLIntegration.h`)
 **Status:** ✅ Implemented (Bundled as DEST)
 
 **Note:** Renamed from ISL to DEST (Don't Eat Spell Tomes). DEST is now bundled with
@@ -296,7 +300,7 @@ the mod - always available. SpellTomeHook handles the core tome interception in 
 - `SpellLearning_ISL.psc` - Native function stubs
 - `SpellLearning_ISL_Handler.psc` - Event handler on player alias
 
-### 7. **OpenRouterAPI** (`plugin/src/OpenRouterAPI.cpp/h`)
+### 8. **OpenRouterAPI** (`plugins/spelllearning/src/OpenRouterAPI.cpp`, `plugins/spelllearning/include/OpenRouterAPI.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -313,7 +317,7 @@ the mod - always available. SpellTomeHook handles the core tome interception in 
 - `SendPrompt(systemPrompt, userPrompt)` - Blocking call
 - `GetConfig()` / `SaveConfig()` - Persistence
 
-### 8. **TreeNLP** (`plugin/src/TreeNLP.cpp/h`)
+### 9. **TreeNLP** (`plugins/spelllearning/src/treebuilder/TreeNLP.cpp`, `plugins/spelllearning/include/treebuilder/TreeNLP.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -344,7 +348,8 @@ struct SparseVector {
 };
 ```
 
-### 9. **TreeBuilder** (`plugin/src/TreeBuilder.cpp/h`)
+### 10. **TreeBuilder** (`plugins/spelllearning/src/treebuilder/`, `plugins/spelllearning/include/treebuilder/TreeBuilder.h`)
+Split across: TreeBuilderCore.cpp, TreeBuilderClassic.cpp, TreeBuilderGraph.cpp, TreeBuilderOracle.cpp, TreeBuilderThematic.cpp, TreeBuilderThemes.cpp, TreeBuilderTree.cpp, SimdKernels.cpp
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -415,7 +420,7 @@ struct BuildResult {
 };
 ```
 
-### 10. **PapyrusAPI** (`plugin/src/PapyrusAPI.cpp/h`)
+### 11. **PapyrusAPI** (`plugins/spelllearning/src/PapyrusAPI.cpp`, `plugins/spelllearning/include/PapyrusAPI.h`)
 **Status:** ✅ Implemented
 
 **Responsibilities:**
@@ -512,6 +517,31 @@ amount → × source multiplier (0-200%) → × global multiplier
 ---
 
 ## Performance Optimizations
+
+### Threading Model
+
+The plugin uses a game-thread-primary model with targeted background offloading. All game-thread dispatch goes through `AddTaskToGameThread()` (defined in `ThreadUtils.h`), which provides null-safety, exception handling, and named-task logging.
+
+**Game thread (SKSE main thread):**
+- All `RE::` engine calls (form lookups, spell add/remove, HUD messages)
+- Event sinks (SpellCastHandler, InputHandler, BookMenuWatcher)
+- Hooks (SpellTomeHook, SpellEffectivenessHook)
+- Papyrus native functions (PapyrusAPI, ISLIntegration)
+- SKSE serialization callbacks (co-save read/write)
+- UIManager callbacks dispatch to game thread via `AddTaskToGameThread()`
+
+**Background threads:**
+- `PassiveLearningSource` — dedicated `std::thread` polling every 3s, dispatches XP grants back to game thread via `AddTaskToGameThread()`
+- `OpenRouterAPI` — detached `std::thread` for HTTP requests, dispatches callback to game thread via `AddTaskToGameThread()`
+- `TreeBuilder::Build()` — detached `std::thread` for NLP tree construction (TF-IDF, similarity matrices, Edmonds' arborescence). Uses OpenMP for inner-loop parallelism. No `RE::` dependencies. Result dispatched to game thread via `AddTaskToGameThread()`
+- `TreeNLP::ProcessPRMRequest()` — detached `std::thread` for prerequisite-master scoring. No `RE::` dependencies. Result dispatched to game thread via `AddTaskToGameThread()`
+
+**Synchronization primitives:**
+- `SpellEffectivenessHook` — `std::shared_mutex` (reader-writer) for hot-path spell data
+- `SpellTomeHook` — `std::mutex` for tome XP tracking set
+- `PassiveLearningSource` — `std::mutex` for settings, `std::atomic<bool>` for lifecycle
+- `UIManager` — `std::atomic<bool>` guards for concurrent build/score prevention
+- `ProgressionManager` — no mutex (game-thread-only invariant, documented in header)
 
 ### C++ Plugin Performance (Feb 2026)
 - **`std::shared_mutex`** for read-heavy concurrent access (replaces `std::mutex`)
@@ -626,12 +656,12 @@ amount → × source multiplier (0-200%) → × global multiplier
 
 ## Native C++ Tree Builder System
 
-**Purpose:** Native C++ tree generation with 5 builder modes. All algorithms run directly in the SKSE plugin via `TreeBuilder.cpp/h` and `TreeNLP.cpp/h`. No external subprocess, no IPC, no Python dependency.
+**Purpose:** Native C++ tree generation with 5 builder modes. All algorithms run directly in the SKSE plugin via `plugins/spelllearning/src/treebuilder/TreeBuilder*.cpp` and `TreeNLP.cpp`. No external subprocess, no IPC, no Python dependency.
 
 ### Architecture
 
 ```
-UIManager.cpp
+UIManagerTree.cpp
   └─ OnProceduralTreeGenerate()
        └─ SKSE TaskInterface (async)
             └─ TreeBuilder::Build(command, spells, config)
@@ -690,7 +720,7 @@ Conjuration → portals     // Organic fill with doorway arch
 Illusion    → organic     // Natural flowing spread
 ```
 
-Defined in both `TreeBuilder.cpp` and JS `shapeProfiles.js`.
+Defined in both the C++ tree builder files (`plugins/spelllearning/src/treebuilder/`) and JS `shapeProfiles.js`.
 
 ---
 
@@ -909,40 +939,83 @@ HeartOfMagic/
 │   │   └── Spriggit.cmake         # Spriggit ESP serialization
 │   ├── external/
 │   │   └── commonlibsse-ng/       # Git submodule (built once, shared by all targets)
+│   ├── SpellLearningAPI.h         ✅ Public C++ API header (shared across plugins)
+│   ├── PrismaUI_API.h             ✅ PrismaUI modder interface (shared across plugins)
 │   ├── spelllearning/             # Main SpellLearning plugin
 │   │   ├── CMakeLists.txt
-│   │   ├── include/PCH.h          ✅ Precompiled header
+│   │   ├── include/
+│   │   │   ├── ISLIntegration.h             ✅ DEST mod integration header
+│   │   │   ├── OpenRouterAPI.h              ✅ LLM API client header
+│   │   │   ├── PapyrusAPI.h                 ✅ Papyrus native function header
+│   │   │   ├── PassiveLearningSource.h      ✅ Passive learning source header
+│   │   │   ├── ProgressionManager.h         ✅ XP tracking header
+│   │   │   ├── SimdKernels.h                ✅ SIMD kernel header
+│   │   │   ├── SpellCastHandler.h           ✅ Spell cast events header
+│   │   │   ├── SpellCastXPSource.h          ✅ XP source implementation header
+│   │   │   ├── SpellEffectivenessHook.h     ✅ Runtime magnitude scaling header
+│   │   │   ├── SpellScanner.h               ✅ Spell enumeration header
+│   │   │   ├── SpellTomeHook.h              ✅ Tome interception header
+│   │   │   ├── ThreadUtils.h                ✅ Game-thread dispatch utilities
+│   │   │   ├── XPSource.h                   ✅ XP source interface
+│   │   │   ├── treebuilder/
+│   │   │   │   ├── TreeBuilder.h            ✅ Tree construction engine header
+│   │   │   │   ├── TreeBuilderInternal.h    ✅ Internal tree builder helpers
+│   │   │   │   └── TreeNLP.h                ✅ Core NLP header
+│   │   │   └── uimanager/
+│   │   │       ├── UIManager.h              ✅ UI manager header
+│   │   │       └── UIManagerInternal.h      ✅ Internal UI manager helpers
 │   │   └── src/
 │   │       ├── Main.cpp                     ✅ Entry point, event registration, serialization
-│   │       ├── PrismaUI_API.h               ✅ PrismaUI modder interface
-│   │       ├── SpellScanner.cpp/h           ✅ Spell enumeration, FormID persistence
-│   │       ├── UIManager.cpp/h              ✅ PrismaUI bridge, unified config, 41 JS listeners
-│   │       ├── UICallbacks.h                ✅ UI callback declarations (categorized)
-│   │       ├── ProgressionManager.cpp/h     ✅ XP tracking, early grant/mastery, co-save
-│   │       ├── SpellCastHandler.cpp/h       ✅ Spell cast events, notification throttling
-│   │       ├── SpellEffectivenessHook.cpp/h ✅ Runtime magnitude scaling, shared_mutex
-│   │       ├── SpellTomeHook.cpp/h          ✅ Tome interception, XP grant, keep book
-│   │       ├── OpenRouterAPI.cpp/h          ✅ LLM API client (OpenRouter/WinHTTP)
-│   │       ├── TreeNLP.cpp/h               ✅ Core NLP: TF-IDF, cosine sim, fuzzy matching, PRM scoring
-│   │       ├── TreeBuilder.cpp/h           ✅ Tree construction engine (5 builder modes)
-│   │       ├── PapyrusAPI.cpp/h             ✅ Papyrus native function bindings
-│   │       ├── ISLIntegration.cpp/h         ✅ DEST mod integration (bundled)
-│   │       ├── SpellCastXPSource.cpp/h      ✅ XP source implementation
-│   │       ├── SpellLearningAPI.h           ✅ Public C++ API header
-│   │       └── XPSource.h                   ✅ XP source interface
-│   ├── compatibility/
-│   │   └── DummyDEST/             # DEST compatibility shim
-│   │       ├── CMakeLists.txt
-│   │       └── src/
-│   │           ├── PCH.h          ✅ Precompiled header
-│   │           └── Main.cpp       ✅ Inert DontEatSpellTomes.dll replacement
-│   └── addons/
-│       └── BookXP/                # BookXP addon plugin
-│           ├── CMakeLists.txt
-│           └── src/
-│               ├── PCH.h              ✅ Precompiled header
-│               ├── Main.cpp           ✅ BookMenu watcher + API integration
-│               └── SpellLearningAPI.h ✅ Public API header (copy)
+│   │       ├── SpellCastHandler.cpp         ✅ Spell cast events, notification throttling
+│   │       ├── SpellCastXPSource.cpp        ✅ XP source implementation
+│   │       ├── SpellTomeHook.cpp            ✅ Tome interception, XP grant, keep book
+│   │       ├── OpenRouterAPI.cpp            ✅ LLM API client (OpenRouter/WinHTTP)
+│   │       ├── PapyrusAPI.cpp               ✅ Papyrus native function bindings
+│   │       ├── ISLIntegration.cpp           ✅ DEST mod integration (bundled)
+│   │       ├── PassiveLearningSource.cpp    ✅ Passive learning source
+│   │       ├── spellscanner/                ✅ Spell enumeration, FormID persistence
+│   │       │   ├── SpellScannerScan.cpp         (main scan logic)
+│   │       │   ├── SpellScannerFormId.cpp       (FormID persistence)
+│   │       │   ├── SpellScannerHelpers.cpp      (utility helpers)
+│   │       │   └── SpellScannerEncoding.cpp     (encoding/UTF-8)
+│   │       ├── uimanager/                   ✅ PrismaUI bridge (8 files)
+│   │       │   ├── UIManagerCore.cpp            (singleton, init, panel visibility, DOM bridge)
+│   │       │   ├── UIManagerNotify.cpp          (C++→JS data push)
+│   │       │   ├── UIManagerScanner.cpp         (scanner tab callbacks)
+│   │       │   ├── UIManagerTree.cpp            (tree tab callbacks, procedural gen, PRM scoring)
+│   │       │   ├── UIManagerProgression.cpp     (progression system callbacks)
+│   │       │   ├── UIManagerConfig.cpp          (unified config load/save/apply)
+│   │       │   ├── UIManagerLLM.cpp             (LLM/OpenRouter integration)
+│   │       │   └── UIManagerIO.cpp              (clipboard, presets, auto-test I/O)
+│   │       ├── progressionmanager/          ✅ XP tracking, early grant/mastery, co-save (5 files)
+│   │       │   ├── ProgressionManagerCore.cpp       (singleton, core logic)
+│   │       │   ├── ProgressionManagerSerialization.cpp (co-save read/write)
+│   │       │   ├── ProgressionManagerAPI.cpp        (public API methods)
+│   │       │   ├── ProgressionManagerTargets.cpp    (learning target management)
+│   │       │   └── ProgressionManagerXP.cpp         (XP calculation, grants)
+│   │       ├── spelleffectiveness/          ✅ Runtime magnitude scaling (4 files)
+│   │       │   ├── SpellEffectivenessHookCore.cpp   (hook install, settings, main scaling)
+│   │       │   ├── SpellEffectivenessHookDisplay.cpp (display name/description modification)
+│   │       │   ├── SpellEffectivenessHookLegacy.cpp (legacy compatibility)
+│   │       │   └── SpellEffectivenessHookGrant.cpp  (early spell granting/removal)
+│   │       └── treebuilder/                 ✅ Native NLP tree construction (9 files)
+│   │           ├── TreeBuilderCore.cpp          (build dispatch, validation, repair)
+│   │           ├── TreeBuilderClassic.cpp       (Classic mode: tier-first)
+│   │           ├── TreeBuilderTree.cpp          (Tree mode: NLP thematic)
+│   │           ├── TreeBuilderGraph.cpp         (Graph mode: Edmonds' arborescence)
+│   │           ├── TreeBuilderThematic.cpp      (Thematic mode: 3D similarity BFS)
+│   │           ├── TreeBuilderOracle.cpp        (Oracle mode: LLM-guided)
+│   │           ├── TreeBuilderThemes.cpp        (theme discovery + spell grouping)
+│   │           ├── TreeNLP.cpp                  (TF-IDF, cosine sim, fuzzy matching, PRM scoring)
+│   │           └── SimdKernels.cpp              (SIMD-optimized compute kernels)
+│   ├── DummyDEST/                 # DEST compatibility shim
+│   │   ├── CMakeLists.txt
+│   │   └── src/
+│   │       └── Main.cpp           ✅ Inert DontEatSpellTomes.dll replacement
+│   └── BookXP/                    # BookXP addon plugin
+│       ├── CMakeLists.txt
+│       └── src/
+│           └── Main.cpp           ✅ BookMenu watcher + API integration
 ├── Scripts/Source/
 │   ├── SpellLearning_QuestScript.psc  ✅ Quest initialization
 │   ├── SpellLearning_Bridge.psc       ⚠️ Legacy SkyrimNet bridge (unused)
@@ -1051,8 +1124,8 @@ MO2/mods/HeartOfMagic_RELEASE/
 ### ✅ Recently Completed (Feb 14, 2026)
 
 #### Native C++ Tree Builders (Python Eliminated)
-- **`TreeNLP.cpp/h`** — Core NLP engine: TF-IDF vectorization, cosine similarity, char n-gram similarity, Levenshtein distance, fuzzy matching (ratio, partial ratio, token set ratio), theme scoring, PRM candidate scoring
-- **`TreeBuilder.cpp/h`** — Tree construction engine with 5 builder modes (Classic, Tree, Graph, Thematic, Oracle), theme discovery, spell grouping, tree validation, unreachable node repair
+- **`TreeNLP`** (`src/treebuilder/TreeNLP.cpp`, `include/treebuilder/TreeNLP.h`) — Core NLP engine: TF-IDF vectorization, cosine similarity, char n-gram similarity, Levenshtein distance, fuzzy matching (ratio, partial ratio, token set ratio), theme scoring, PRM candidate scoring
+- **`TreeBuilder`** (`src/treebuilder/TreeBuilder*.cpp`, `include/treebuilder/TreeBuilder.h`) — Tree construction engine with 5 builder modes (Classic, Tree, Graph, Thematic, Oracle), theme discovery, spell grouping, tree validation, unreachable node repair
 - **Python completely eliminated** — No PythonBridge, no PythonInstaller, no embedded Python, no server.py, no subprocess IPC
 - **All builder modes native** — TF-IDF, fuzzy matching, Edmonds' arborescence, LLM integration all in C++
 - **PRM scoring native** — `TreeNLP::ProcessPRMRequest()` replaces Python prereq_master_scorer.py
@@ -1106,7 +1179,7 @@ MO2/mods/HeartOfMagic_RELEASE/
 ### ✅ Previously Completed (Feb 7, 2026)
 
 #### Per-School Default Shapes
-- **`SCHOOL_DEFAULT_SHAPES`** in both C++ (`TreeBuilder.cpp`) and JS (`shapeProfiles.js`)
+- **`SCHOOL_DEFAULT_SHAPES`** in both C++ (`plugins/spelllearning/src/treebuilder/`) and JS (`shapeProfiles.js`)
 - Destruction=explosion, Restoration=tree, Alteration=mountain, Conjuration=portals, Illusion=organic
 - Applied automatically when LLM auto-config is disabled
 

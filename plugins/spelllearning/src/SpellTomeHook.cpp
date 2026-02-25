@@ -1,7 +1,7 @@
 #include "SpellTomeHook.h"
 #include "ProgressionManager.h"
 #include "SpellEffectivenessHook.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 #include "ISLIntegration.h"
 
 // Xbyak for assembly code generation

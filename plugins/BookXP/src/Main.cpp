@@ -25,18 +25,6 @@ static SpellLearning::ISpellLearningAPI* g_api = nullptr;
 static bool g_sourceRegistered = false;
 
 // =============================================================================
-// LOGGING SETUP
-// =============================================================================
-
-static void SetupLog()
-{
-    logger::init();
-    // pattern: [2024-01-01 12:00:00.000] [info] [1234] [sourcefile.cpp:123] Log message
-    spdlog::set_pattern("[%Y-%m-%d %T.%e] [%l] [%t] [%s:%#] %v");
-    spdlog::set_level(spdlog::level::info);
-}
-
-// =============================================================================
 // BOOK MENU WATCHER
 // =============================================================================
 // Detects when the player opens any book via BookMenu.
@@ -173,16 +161,7 @@ void OnSpellLearningMessage(SKSE::MessagingInterface::Message* a_msg)
 SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
     SKSE::Init(a_skse, false);
-    SetupLog();
-
-    logger::info("{} v{} by {}", SKSE::GetPluginName(), SKSE::GetPluginVersion(), SKSE::GetPluginAuthor());
-    logger::info("  built using CommonLibSSE-NG v{}", COMMONLIBSSE_VERSION);
-    logger::info("  Running on Skyrim v{}", REL::Module::get().version().string());
-
-    logger::info("===========================================");
-    logger::info("  SL_BookXP v1.0.0 loaded");
-    logger::info("  SpellLearning C++ API Test Plugin");
-    logger::info("===========================================");
+    SetupLog("SpellLearning C++ API Test Plugin");
 
     auto messaging = SKSE::GetMessagingInterface();
 

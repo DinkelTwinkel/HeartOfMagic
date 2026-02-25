@@ -1,6 +1,6 @@
 #include "ISLIntegration.h"
 #include "ProgressionManager.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 #include "SpellEffectivenessHook.h"
 
 namespace DESTIntegration {

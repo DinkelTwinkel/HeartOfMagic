@@ -1,5 +1,5 @@
 #include "Common.h"
-#include "UIManager.h"
+#include "uimanager/UIManager.h"
 #include "SpellScanner.h"
 #include "SpellCastHandler.h"
 #include "ProgressionManager.h"
@@ -161,18 +161,6 @@ void OnExternalPluginMessage(SKSE::MessagingInterface::Message* a_msg)
             break;
         }
     }
-}
-
-// =============================================================================
-// LOGGING SETUP
-// =============================================================================
-
-void SetupLog()
-{
-    logger::init();
-   // pattern: [2024-01-01 12:00:00.000] [info] [1234] [sourcefile.cpp:123] Log message
-    spdlog::set_pattern("[%Y-%m-%d %T.%e] [%l] [%t] [%s:%#] %v");
-    spdlog::set_level(spdlog::level::info);
 }
 
 // =============================================================================
@@ -424,10 +412,6 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse)
 {
     SKSE::Init(a_skse, false);
     SetupLog();
-
-    logger::info("{} v{} by {} loading...", SKSE::GetPluginName(), SKSE::GetPluginVersion(), SKSE::GetPluginAuthor());
-    logger::info("  built using CommonLibSSE-NG v{}", COMMONLIBSSE_VERSION);
-    logger::info("  Running on Skyrim v{}", REL::Module::get().version().string());
 
     // Register messaging interface
     auto messaging = SKSE::GetMessagingInterface();
